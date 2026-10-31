@@ -1,5 +1,3 @@
-process.env.DISABLE_HMR = 'true';
-
 import express from 'express';
 import http from 'http';
 import { createServer as createViteServer } from 'vite';

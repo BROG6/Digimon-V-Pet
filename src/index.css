@@ -59,3 +59,34 @@
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(56, 189, 248, 0.7);
 }
+
+/* Native Android & iOS Safe Area Insets & Status Bar Clearance */
+:root {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+}
+
+.android-safe-top-bar {
+  /* Push buttons comfortably below Android status bar, notch, and punch-hole camera */
+  padding-top: max(calc(env(safe-area-inset-top, 0px) + 0.5rem), 2.75rem);
+}
+
+@media (min-width: 640px) {
+  .android-safe-top-bar {
+    padding-top: max(env(safe-area-inset-top, 0px), 0.625rem);
+  }
+}
+
+.android-safe-modal {
+  padding-top: max(calc(env(safe-area-inset-top, 0px) + 0.5rem), 2.5rem);
+  padding-bottom: max(calc(env(safe-area-inset-bottom, 0px) + 0.5rem), 0.75rem);
+}
+
+@media (min-width: 640px) {
+  .android-safe-modal {
+    padding-top: max(env(safe-area-inset-top, 0px), 0.75rem);
+    padding-bottom: max(env(safe-area-inset-bottom, 0px), 0.75rem);
+  }
+}

@@ -198,7 +198,7 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
       <motion.div
         initial={{ y: -50, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
-        className="absolute top-3 left-1/2 -translate-x-1/2 pointer-events-auto bg-slate-900/90 backdrop-blur-md border border-cyan-500/30 shadow-2xl shadow-cyan-950/50 rounded-full px-4 py-1.5 flex items-center gap-4 text-xs text-slate-200"
+        className="absolute top-[max(calc(env(safe-area-inset-top,0px)+0.75rem),3rem)] sm:top-4 left-1/2 -translate-x-1/2 pointer-events-auto bg-slate-900/95 backdrop-blur-md border border-cyan-500/30 shadow-2xl shadow-cyan-950/50 rounded-full px-4 py-1.5 flex items-center gap-4 text-xs text-slate-200"
       >
         <div className="flex items-center gap-1.5 text-cyan-400 font-pixel text-[10px]">
           <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />

@@ -114,7 +114,7 @@ export const TrainingArena: React.FC<TrainingArenaProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md android-safe-modal">
       <div className="relative w-full max-w-lg bg-slate-900 border-2 border-cyan-500/50 rounded-3xl p-5 shadow-2xl flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between pb-3 border-b border-slate-800">

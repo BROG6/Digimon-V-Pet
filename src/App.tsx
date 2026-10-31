@@ -145,6 +145,30 @@ export default function App() {
   const [isMuted, setIsMuted] = useState<boolean>(sound.getMuted());
   const [statusNotification, setStatusNotification] = useState<string | null>(null);
 
+  // Android Safe Area & Status Bar Clearance Custom Offset
+  const [extraTopPad, setExtraTopPad] = useState<number>(() => {
+    try {
+      return parseInt(localStorage.getItem('digipet_top_pad_offset') || '0', 10);
+    } catch {
+      return 0;
+    }
+  });
+
+  const toggleExtraTopPad = () => {
+    sound.playButton();
+    const next = extraTopPad === 0 ? 14 : extraTopPad === 14 ? 28 : 0;
+    setExtraTopPad(next);
+    try {
+      localStorage.setItem('digipet_top_pad_offset', next.toString());
+    } catch {}
+    setStatusNotification(
+      next === 0
+        ? 'Status bar clearance: Standard Android (44px)'
+        : `Status bar clearance: Extended (+${next}px safe padding)`
+    );
+    setTimeout(() => setStatusNotification(null), 3000);
+  };
+
   // Save to localStorage
   useEffect(() => {
     try {
@@ -563,7 +587,10 @@ export default function App() {
 
 
       {/* TOP APP HEADER BAR */}
-      <header className="relative z-40 border-b border-slate-800/80 bg-slate-900/90 backdrop-blur-md px-3 sm:px-4 py-2 sm:py-2.5 flex items-center justify-between gap-2 overflow-x-auto no-scrollbar">
+      <header
+        className="relative z-40 border-b border-slate-800/80 bg-slate-900/95 backdrop-blur-md px-3 sm:px-4 flex items-center justify-between gap-2 overflow-x-auto no-scrollbar android-safe-top-bar pb-2.5 sm:pb-2.5"
+        style={extraTopPad > 0 ? { paddingTop: `calc(max(calc(env(safe-area-inset-top, 0px) + 0.5rem), 2.75rem) + ${extraTopPad}px)` } : undefined}
+      >
         <div className="flex items-center gap-2 sm:gap-3 min-w-0 shrink">
           {/* DigiDestined Crest Badge */}
           <div
@@ -664,6 +691,16 @@ export default function App() {
             <span>RESET</span>
           </button>
 
+          {/* Android Notch / Status Bar Spacing Adjuster */}
+          <button
+            onClick={toggleExtraTopPad}
+            className="p-1.5 sm:p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors shrink-0 cursor-pointer flex items-center gap-1 text-[10px] font-pixel border border-slate-700/60"
+            title={extraTopPad > 0 ? `Android Notch Offset: +${extraTopPad}px (Click to cycle)` : 'Adjust Android Status Bar / Notch Spacing'}
+          >
+            <span className="text-amber-400">📐</span>
+            <span className="hidden xl:inline">{extraTopPad > 0 ? `+${extraTopPad}px` : 'SAFE AREA'}</span>
+          </button>
+
           {/* Sound Toggle */}
           <button
             onClick={toggleSound}
@@ -682,7 +719,7 @@ export default function App() {
             initial={{ y: -30, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: -30, opacity: 0 }}
-            className="fixed top-16 left-1/2 -translate-x-1/2 z-50 bg-slate-900 border-2 border-cyan-400 text-cyan-200 font-pixel text-xs px-4 py-2.5 rounded-2xl shadow-2xl flex items-center gap-2"
+            className="fixed top-24 sm:top-16 left-1/2 -translate-x-1/2 z-50 bg-slate-900 border-2 border-cyan-400 text-cyan-200 font-pixel text-xs px-4 py-2.5 rounded-2xl shadow-2xl flex items-center gap-2 pointer-events-none"
           >
             <Sparkles className="w-4 h-4 text-cyan-400 animate-spin" />
             <span>{statusNotification}</span>

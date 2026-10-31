@@ -1,4 +1,7 @@
+process.env.DISABLE_HMR = 'true';
+
 import express from 'express';
+import http from 'http';
 import { createServer as createViteServer } from 'vite';
 import fs from 'fs';
 import path from 'path';
@@ -13,6 +16,7 @@ const SPRITES_TS_FILE = path.join(__dirname, 'src', 'utils', 'newDigimonSprites.
 
 async function startServer() {
   const app = express();
+  const httpServer = http.createServer(app);
   app.use(express.json({ limit: '50mb' }));
 
   // API: Get current saved sprite overrides from disk
@@ -51,29 +55,35 @@ async function startServer() {
       const mergedOverrides = { ...currentOverrides, ...overrides };
       fs.writeFileSync(OVERRIDES_FILE, JSON.stringify(mergedOverrides, null, 2), 'utf-8');
 
-      // 2. If mergeIntoCodebase is requested, also update NEW_DIGIMON_SPRITES in newDigimonSprites.ts!
+      // 2. Update NEW_DIGIMON_SPRITES in newDigimonSprites.ts so git commits and exports contain the fixed states
       let codeUpdated = false;
-      if (mergeIntoCodebase && fs.existsSync(SPRITES_TS_FILE)) {
+      if (mergeIntoCodebase !== false && fs.existsSync(SPRITES_TS_FILE)) {
         try {
-          let tsCode = fs.readFileSync(SPRITES_TS_FILE, 'utf-8');
-          const regex = /export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = (\{[\s\S]*?\});?\s*$/;
-          const match = tsCode.match(regex);
-          if (match) {
-            const existingSprites = JSON.parse(match[1]);
-            for (const [speciesId, customConfig] of Object.entries(mergedOverrides)) {
-              existingSprites[speciesId] = customConfig;
+          const tsCode = fs.readFileSync(SPRITES_TS_FILE, 'utf-8');
+          const prefix = 'export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = ';
+          const startIndex = tsCode.indexOf(prefix);
+          if (startIndex !== -1) {
+            const jsonStart = startIndex + prefix.length;
+            const lastBraceIndex = tsCode.lastIndexOf('}');
+            if (lastBraceIndex > jsonStart) {
+              const jsonStr = tsCode.substring(jsonStart, lastBraceIndex + 1);
+              const existingSprites = JSON.parse(jsonStr);
+              for (const [speciesId, customConfig] of Object.entries(mergedOverrides)) {
+                existingSprites[speciesId] = customConfig;
+              }
+              const updatedSection = `${prefix}${JSON.stringify(existingSprites, null, 2)};\n`;
+              const newTsCode = tsCode.substring(0, startIndex) + updatedSection;
+              fs.writeFileSync(SPRITES_TS_FILE, newTsCode, 'utf-8');
+              codeUpdated = true;
+              console.log(`[Sync] Successfully updated ${Object.keys(mergedOverrides).length} species directly inside newDigimonSprites.ts master record.`);
             }
-            const updatedSection = `export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = ${JSON.stringify(existingSprites, null, 2)};\n`;
-            tsCode = tsCode.replace(regex, updatedSection);
-            fs.writeFileSync(SPRITES_TS_FILE, tsCode, 'utf-8');
-            codeUpdated = true;
           }
         } catch (e) {
           console.error('[Sync] Error updating newDigimonSprites.ts:', e);
         }
       }
 
-      console.log(`[Sync] Successfully saved ${Object.keys(mergedOverrides).length} sprite overrides to disk.`);
+      console.log(`[Sync] Successfully saved ${Object.keys(mergedOverrides).length} sprite definitions to disk (codeUpdated: ${codeUpdated}).`);
       return res.json({
         success: true,
         count: Object.keys(mergedOverrides).length,
@@ -81,7 +91,7 @@ async function startServer() {
         codeUpdated,
       });
     } catch (err: any) {
-      console.error('[Sync] Failed to save sprite overrides:', err);
+      console.error('[Sync] Failed to save sprite definitions:', err);
       return res.status(500).json({ success: false, error: err.message });
     }
   });
@@ -89,7 +99,12 @@ async function startServer() {
   // Setup Vite middleware in development
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        hmr: {
+          server: httpServer,
+        },
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);
@@ -100,7 +115,7 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  httpServer.listen(PORT, '0.0.0.0', () => {
     console.log(`Server listening on http://0.0.0.0:${PORT}`);
   });
 }

@@ -100,8 +100,8 @@ export function getMatchingSpritesheets(speciesId: string): AvailableSpritesheet
 // In-memory cache of saved overrides
 let cachedOverrides: Record<string, DigimonSpriteConfig> | null = null;
 
-// Load overrides: Merges baked overrides from git repository (savedSpriteOverrides.json)
-// with any additional browser localStorage edits
+// Initialize master sprites: merges baked overrides from git repository (savedSpriteOverrides.json)
+// and localStorage directly into NEW_DIGIMON_SPRITES so they are the permanent canonical master sprites
 export function loadStoredOverrides(): Record<string, DigimonSpriteConfig> {
   if (typeof window === 'undefined') {
     return (bakedSpriteOverrides as Record<string, DigimonSpriteConfig>) || {};
@@ -124,6 +124,13 @@ export function loadStoredOverrides(): Record<string, DigimonSpriteConfig> {
     ...localData,
   };
 
+  // Directly stamp into master NEW_DIGIMON_SPRITES record
+  for (const [speciesId, config] of Object.entries(cachedOverrides)) {
+    if (config) {
+      NEW_DIGIMON_SPRITES[speciesId] = config;
+    }
+  }
+
   // If localData has overrides that haven't been synced to server yet, trigger background sync
   if (Object.keys(localData).length > 0) {
     setTimeout(() => {
@@ -134,15 +141,26 @@ export function loadStoredOverrides(): Record<string, DigimonSpriteConfig> {
   return cachedOverrides;
 }
 
+// Execute initial load to ensure NEW_DIGIMON_SPRITES is immediately primed
+try {
+  loadStoredOverrides();
+} catch (e) {
+  // safe fallback
+}
+
 export function getEffectiveSpriteConfig(speciesId: string): DigimonSpriteConfig | undefined {
   const overrides = loadStoredOverrides();
   if (overrides[speciesId]) {
+    NEW_DIGIMON_SPRITES[speciesId] = overrides[speciesId];
     return overrides[speciesId];
   }
   return NEW_DIGIMON_SPRITES[speciesId];
 }
 
 export function saveCustomSpriteConfig(speciesId: string, config: DigimonSpriteConfig): void {
+  // Immediately update NEW_DIGIMON_SPRITES in memory so it is the permanent new master sprite
+  NEW_DIGIMON_SPRITES[speciesId] = config;
+
   if (typeof window === 'undefined') return;
   const current = loadStoredOverrides();
   current[speciesId] = config;
@@ -152,10 +170,10 @@ export function saveCustomSpriteConfig(speciesId: string, config: DigimonSpriteC
     localStorage.setItem(STORAGE_KEY, JSON.stringify(cachedOverrides));
     window.dispatchEvent(new CustomEvent('digipet-sprites-updated', { detail: { speciesId, config } }));
 
-    // Seamlessly sync to project files so GitHub download and repository always stay up to date!
+    // Seamlessly persist to project files so newDigimonSprites.ts and GitHub downloads permanently have the fixed sprites
     syncOverridesToRepository(true).catch(() => {});
   } catch (err) {
-    console.error('Failed to save custom sprite override to storage:', err);
+    console.error('Failed to save master sprite definition:', err);
   }
 }
 

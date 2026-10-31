@@ -660,11 +660,11 @@ export const DigimonGallery: React.FC<DigimonGalleryProps> = ({
     try {
       const res = await syncOverridesToRepository(true);
       if (res.success) {
-        showToast(`✓ Saved & Synced ${activeSpecies.name} to GitHub repository files!`);
+        showToast(`✓ Saved ${activeSpecies.name} permanently as new master sprite! Updated in codebase.`);
         return;
       }
     } catch (_) {}
-    showToast(`Saved ${activeSpecies.name} calibrated sprites permanently! Applied app-wide.`);
+    showToast(`✓ Saved ${activeSpecies.name} as permanent master sprite! Applied app-wide.`);
   };
 
   // Sync to Git / GitHub Repository files
@@ -1214,14 +1214,14 @@ export const DigimonGallery: React.FC<DigimonGalleryProps> = ({
           className="w-full py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-slate-950 font-bold font-chakra text-xs flex items-center justify-center gap-1.5 cursor-pointer shadow-md shadow-emerald-500/20 active:scale-95 transition-all mt-auto"
         >
           <Save className="w-3.5 h-3.5" />
-          <span>SAVE FIXES</span>
+          <span>SAVE AS MASTER SPRITE</span>
         </button>
       </div>
     );
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-1 sm:p-3 bg-slate-950/95 backdrop-blur-md font-sans">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-1 sm:p-3 bg-slate-950/95 backdrop-blur-md font-sans android-safe-modal">
       <motion.div
         initial={{ scale: 0.96, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
@@ -1345,10 +1345,11 @@ export const DigimonGallery: React.FC<DigimonGalleryProps> = ({
                   ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-slate-950 shadow-emerald-500/30 animate-pulse'
                   : 'bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-500/60 text-emerald-300'
               }`}
-              title="Save all changes permanently to app storage & sync to repository"
+              title="Save all changes permanently as the new master sprite for this Digimon"
             >
               <Save className="w-4 h-4" />
-              <span className="hidden sm:inline">SAVE FIXES</span>
+              <span className="hidden sm:inline">SAVE AS MASTER</span>
+              <span className="sm:hidden">SAVE MASTER</span>
             </button>
 
             {/* Sync to GitHub / Project Files & Backup Button */}

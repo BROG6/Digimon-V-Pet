@@ -23,7 +23,7 @@ import { PwaInstallModal } from './components/PwaInstallModal';
 import { NativePipOverlay } from './components/NativePipOverlay';
 import { DigiChat } from './components/DigiChat';
 import { DigimonGallery } from './components/DigimonGallery';
-import { getHideGalleryButtonPref } from './utils/customSpriteManager';
+import { getHideGalleryButtonPref, syncOverridesToRepository } from './utils/customSpriteManager';
 import { sound } from './utils/audio';
 import { 
   Sparkles, 
@@ -130,6 +130,11 @@ export default function App() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  // Automatically flush any browser-calibrated sprite fixes to repository files on disk
+  useEffect(() => {
+    syncOverridesToRepository(true).catch(() => {});
   }, []);
 
   // Evolution Transition Modal State

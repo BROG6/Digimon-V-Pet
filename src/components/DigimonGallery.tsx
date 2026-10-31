@@ -13,6 +13,11 @@ import {
   AvailableSpritesheet,
   getHideGalleryButtonPref,
   setHideGalleryButtonPref,
+  downloadCustomSpritesJSON,
+  exportAllCustomSpritesJSON,
+  importCustomSpritesJSON,
+  syncOverridesToRepository,
+  getCustomizedSpeciesCount,
 } from '../utils/customSpriteManager';
 import { sound } from '../utils/audio';
 import {
@@ -43,13 +48,18 @@ import {
   Copy,
   Trash2,
   Save,
+  Download,
+  Upload,
+  RefreshCw,
+  FileText,
+  CheckCheck,
   Eye,
   EyeOff,
   Code,
   MousePointer,
   Hand,
   Target,
-  Maximize2
+  Maximize2,
 } from 'lucide-react';
 import { dissectSpritesheet, DissectedSprite } from '../utils/spriteDissector';
 
@@ -152,6 +162,19 @@ export const DigimonGallery: React.FC<DigimonGalleryProps> = ({
 
   // Preference for hiding the gallery button from header
   const [isGalleryHidden, setIsGalleryHidden] = useState<boolean>(() => getHideGalleryButtonPref());
+
+  // Sync to Git / GitHub Repository & Backup Modal
+  const [isSyncModalOpen, setIsSyncModalOpen] = useState<boolean>(false);
+  const [isSyncing, setIsSyncing] = useState<boolean>(false);
+  const [importJsonText, setImportJsonText] = useState<string>('');
+  const [syncStatusMsg, setSyncStatusMsg] = useState<{ text: string; success: boolean } | null>(null);
+
+  // Auto-sync any existing browser overrides into project repository files whenever the gallery opens
+  useEffect(() => {
+    if (isOpen) {
+      syncOverridesToRepository(true).catch(() => {});
+    }
+  }, [isOpen]);
 
   // Species search & stage filter
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -628,12 +651,75 @@ export const DigimonGallery: React.FC<DigimonGalleryProps> = ({
   };
 
   // Save changes permanently
-  const handleSavePermanently = () => {
+  const handleSavePermanently = async () => {
     if (!workingConfig) return;
     sound.playVictory();
     saveCustomSpriteConfig(selectedSpeciesId, workingConfig);
     setHasUnsavedChanges(false);
+
+    try {
+      const res = await syncOverridesToRepository(true);
+      if (res.success) {
+        showToast(`✓ Saved & Synced ${activeSpecies.name} to GitHub repository files!`);
+        return;
+      }
+    } catch (_) {}
     showToast(`Saved ${activeSpecies.name} calibrated sprites permanently! Applied app-wide.`);
+  };
+
+  // Sync to Git / GitHub Repository files
+  const handlePerformSync = async () => {
+    sound.playButton();
+    setIsSyncing(true);
+    setSyncStatusMsg(null);
+    try {
+      const res = await syncOverridesToRepository(true);
+      if (res.success) {
+        sound.playVictory();
+        setSyncStatusMsg({
+          text: `✓ Successfully synced ${res.count || 0} species configurations to repository files (savedSpriteOverrides.json)! They are now permanently saved and will be included whenever you download from GitHub.`,
+          success: true,
+        });
+        showToast(`✓ Synced ${res.count || 0} species to project files!`);
+      } else {
+        setSyncStatusMsg({
+          text: `Sync note: ${res.message || 'Saved locally in browser'}. You can also download a JSON backup file below.`,
+          success: false,
+        });
+      }
+    } catch (e: any) {
+      setSyncStatusMsg({ text: `Sync error: ${e.message}`, success: false });
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
+  // Download JSON backup
+  const handleDownloadBackup = () => {
+    sound.playVictory();
+    downloadCustomSpritesJSON();
+    showToast('Downloaded custom-sprites backup JSON!');
+  };
+
+  // Import JSON backup
+  const handleImportBackup = () => {
+    if (!importJsonText.trim()) return;
+    sound.playButton();
+    const success = importCustomSpritesJSON(importJsonText);
+    if (success) {
+      sound.playVictory();
+      setImportJsonText('');
+      setSyncStatusMsg({
+        text: '✓ Successfully imported sprite backup and synced to repository files!',
+        success: true,
+      });
+      showToast('✓ Successfully imported & applied sprite backup!');
+      const updated = getEffectiveSpriteConfig(selectedSpeciesId);
+      if (updated) setWorkingConfig(JSON.parse(JSON.stringify(updated)));
+    } else {
+      sound.playAlert();
+      setSyncStatusMsg({ text: 'Error: Invalid JSON format. Please verify the JSON and retry.', success: false });
+    }
   };
 
   // Reset to default coordinates
@@ -1259,10 +1345,24 @@ export const DigimonGallery: React.FC<DigimonGalleryProps> = ({
                   ? 'bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-slate-950 shadow-emerald-500/30 animate-pulse'
                   : 'bg-emerald-950/80 hover:bg-emerald-900 border border-emerald-500/60 text-emerald-300'
               }`}
-              title="Save all changes permanently to app storage"
+              title="Save all changes permanently to app storage & sync to repository"
             >
               <Save className="w-4 h-4" />
               <span className="hidden sm:inline">SAVE FIXES</span>
+            </button>
+
+            {/* Sync to GitHub / Project Files & Backup Button */}
+            <button
+              onClick={() => {
+                sound.playButton();
+                setSyncStatusMsg(null);
+                setIsSyncModalOpen(true);
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl font-chakra font-bold text-xs cursor-pointer transition-all shadow-md active:scale-95 bg-purple-950/80 hover:bg-purple-900 border border-purple-500/60 text-purple-300 hover:text-white"
+              title="Sync & Backup fixes directly to Git / GitHub repository files"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">SYNC / BACKUP</span>
             </button>
 
             <button
@@ -2842,6 +2942,144 @@ export const DigimonGallery: React.FC<DigimonGalleryProps> = ({
             </span>
           </div>
         </div>
+
+        {/* ================================================================= */}
+        {/* SYNC & BACKUP MODAL (FOR GITHUB DOWNLOAD & PERSISTENCE) */}
+        {/* ================================================================= */}
+        <AnimatePresence>
+          {isSyncModalOpen && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-slate-950/90 backdrop-blur-md"
+            >
+              <motion.div
+                initial={{ scale: 0.95, y: 10 }}
+                animate={{ scale: 1, y: 0 }}
+                exit={{ scale: 0.95, y: 10 }}
+                className="relative w-full max-w-xl bg-slate-900 border-2 border-purple-500/60 rounded-3xl p-5 shadow-2xl flex flex-col max-h-[90vh] overflow-y-auto text-slate-100 space-y-4"
+              >
+                {/* Header */}
+                <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-9 h-9 rounded-xl bg-purple-500/20 border border-purple-500/40 flex items-center justify-center text-purple-300">
+                      <RefreshCw className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <h3 className="font-chakra font-bold text-white text-base">
+                        GITHUB REPOSITORY SYNC & BACKUPS
+                      </h3>
+                      <p className="text-slate-400 text-xs">
+                        Ensure all custom sprite fixes are baked into code files for GitHub downloads & APKs
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => setIsSyncModalOpen(false)}
+                    className="p-1.5 rounded-full hover:bg-slate-800 text-slate-400 hover:text-white"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {/* Status summary */}
+                <div className="flex items-center justify-between p-3 bg-slate-950 rounded-2xl border border-slate-800 text-xs">
+                  <div className="flex items-center gap-2">
+                    <span className="text-slate-400 font-pixel">TOTAL CUSTOMIZED SPECIES:</span>
+                    <span className="font-mono font-bold text-amber-300 text-sm">
+                      {getCustomizedSpeciesCount()}
+                    </span>
+                  </div>
+                  <div className="text-[10px] text-cyan-300 font-pixel">
+                    Current: {activeSpecies.name} {isSpeciesCustomized(selectedSpeciesId) ? '(CUSTOMIZED)' : '(DEFAULT)'}
+                  </div>
+                </div>
+
+                {/* Section 1: Sync to Repository */}
+                <div className="p-4 bg-purple-950/30 border border-purple-500/40 rounded-2xl space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-chakra font-bold text-sm text-purple-300 flex items-center gap-1.5">
+                      <Save className="w-4 h-4 text-purple-400" />
+                      <span>1. Commit Fixes to GitHub Repository Files</span>
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-300 leading-relaxed">
+                    Browser edits live in local storage until saved to disk. Clicking below writes all species animations directly into <code className="text-purple-300 font-mono">src/utils/savedSpriteOverrides.json</code> and <code className="text-purple-300 font-mono">newDigimonSprites.ts</code> so they are included when you download the repository from GitHub or build the Android APK.
+                  </p>
+                  <button
+                    onClick={handlePerformSync}
+                    disabled={isSyncing}
+                    className="w-full py-2.5 px-4 bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-400 hover:to-indigo-400 text-white font-chakra font-bold text-xs rounded-xl shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-98 disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-4 h-4 ${isSyncing ? 'animate-spin' : ''}`} />
+                    <span>{isSyncing ? 'SYNCING TO DISK FILES...' : 'SYNC ALL FIXES TO REPOSITORY FILES'}</span>
+                  </button>
+                </div>
+
+                {syncStatusMsg && (
+                  <div className={`p-3 rounded-xl border text-xs leading-relaxed ${
+                    syncStatusMsg.success
+                      ? 'bg-emerald-950/60 border-emerald-500/50 text-emerald-300'
+                      : 'bg-amber-950/60 border-amber-500/50 text-amber-300'
+                  }`}>
+                    {syncStatusMsg.text}
+                  </div>
+                )}
+
+                {/* Section 2: Download / Export Backup */}
+                <div className="p-4 bg-slate-950 border border-slate-800 rounded-2xl space-y-2.5">
+                  <span className="font-chakra font-bold text-sm text-cyan-300 flex items-center gap-1.5">
+                    <Download className="w-4 h-4 text-cyan-400" />
+                    <span>2. Download Offline Backup File (.JSON)</span>
+                  </span>
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    Download a standalone backup containing all your sprite coordinates, rotations, and ground levels.
+                  </p>
+                  <button
+                    onClick={handleDownloadBackup}
+                    className="w-full py-2 px-3 bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-cyan-500/40 rounded-xl font-chakra font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-98"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                    <span>DOWNLOAD CUSTOM-SPRITES.JSON BACKUP</span>
+                  </button>
+                </div>
+
+                {/* Section 3: Restore / Import */}
+                <div className="p-4 bg-slate-950 border border-slate-800 rounded-2xl space-y-2.5">
+                  <span className="font-chakra font-bold text-sm text-emerald-300 flex items-center gap-1.5">
+                    <Upload className="w-4 h-4 text-emerald-400" />
+                    <span>3. Import / Restore from Backup (.JSON)</span>
+                  </span>
+                  <textarea
+                    value={importJsonText}
+                    onChange={(e) => setImportJsonText(e.target.value)}
+                    placeholder="Paste exported custom sprites JSON here to restore..."
+                    className="w-full h-20 p-2 bg-slate-900 border border-slate-700 rounded-xl font-mono text-[11px] text-slate-200 placeholder-slate-600 focus:outline-none focus:border-emerald-500"
+                  />
+                  <button
+                    onClick={handleImportBackup}
+                    disabled={!importJsonText.trim()}
+                    className="w-full py-2 px-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-slate-950 rounded-xl font-chakra font-bold text-xs flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-98"
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>RESTORE AND APPLY JSON FIXES</span>
+                  </button>
+                </div>
+
+                {/* Footer */}
+                <div className="pt-2 border-t border-slate-800 flex justify-end">
+                  <button
+                    onClick={() => setIsSyncModalOpen(false)}
+                    className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white font-chakra text-xs rounded-xl font-bold"
+                  >
+                    CLOSE
+                  </button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
       </motion.div>
     </div>

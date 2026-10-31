@@ -1,4 +1,5 @@
-import { DigimonSpriteConfig, NEW_DIGIMON_SPRITES, SpriteFrame } from './newDigimonSprites';
+import { DigimonSpriteConfig, NEW_DIGIMON_SPRITES } from './newDigimonSprites';
+import bakedSpriteOverrides from './savedSpriteOverrides.json';
 
 const STORAGE_KEY = 'digipet_custom_sprites_v1';
 const HIDE_GALLERY_KEY = 'digipet_hide_gallery_button_v1';
@@ -99,20 +100,37 @@ export function getMatchingSpritesheets(speciesId: string): AvailableSpritesheet
 // In-memory cache of saved overrides
 let cachedOverrides: Record<string, DigimonSpriteConfig> | null = null;
 
-function loadStoredOverrides(): Record<string, DigimonSpriteConfig> {
-  if (typeof window === 'undefined') return {};
+// Load overrides: Merges baked overrides from git repository (savedSpriteOverrides.json)
+// with any additional browser localStorage edits
+export function loadStoredOverrides(): Record<string, DigimonSpriteConfig> {
+  if (typeof window === 'undefined') {
+    return (bakedSpriteOverrides as Record<string, DigimonSpriteConfig>) || {};
+  }
   if (cachedOverrides !== null) return cachedOverrides;
 
+  let localData: Record<string, DigimonSpriteConfig> = {};
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) {
-      cachedOverrides = JSON.parse(raw);
-      return cachedOverrides || {};
+      localData = JSON.parse(raw) || {};
     }
   } catch (err) {
     console.error('Failed to load custom sprite overrides from storage:', err);
   }
-  cachedOverrides = {};
+
+  // Merge: baked overrides from repository first, overlaid by local browser tweaks
+  cachedOverrides = {
+    ...(bakedSpriteOverrides as Record<string, DigimonSpriteConfig>),
+    ...localData,
+  };
+
+  // If localData has overrides that haven't been synced to server yet, trigger background sync
+  if (Object.keys(localData).length > 0) {
+    setTimeout(() => {
+      syncOverridesToRepository(true).catch(() => {});
+    }, 1000);
+  }
+
   return cachedOverrides;
 }
 
@@ -133,6 +151,9 @@ export function saveCustomSpriteConfig(speciesId: string, config: DigimonSpriteC
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(cachedOverrides));
     window.dispatchEvent(new CustomEvent('digipet-sprites-updated', { detail: { speciesId, config } }));
+
+    // Seamlessly sync to project files so GitHub download and repository always stay up to date!
+    syncOverridesToRepository(true).catch(() => {});
   } catch (err) {
     console.error('Failed to save custom sprite override to storage:', err);
   }
@@ -147,6 +168,7 @@ export function resetCustomSpriteConfig(speciesId: string): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(cachedOverrides));
     window.dispatchEvent(new CustomEvent('digipet-sprites-updated', { detail: { speciesId } }));
+    syncOverridesToRepository(true).catch(() => {});
   } catch (err) {
     console.error('Failed to reset custom sprite config:', err);
   }
@@ -157,18 +179,63 @@ export function isSpeciesCustomized(speciesId: string): boolean {
   return Boolean(overrides[speciesId]);
 }
 
+export function getCustomizedSpeciesCount(): number {
+  const overrides = loadStoredOverrides();
+  return Object.keys(overrides).length;
+}
+
 export function exportAllCustomSpritesJSON(): string {
   const current = loadStoredOverrides();
   return JSON.stringify(current, null, 2);
+}
+
+export function downloadCustomSpritesJSON(): void {
+  if (typeof window === 'undefined') return;
+  try {
+    const data = exportAllCustomSpritesJSON();
+    const blob = new Blob([data], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `digipet-custom-sprites-${new Date().toISOString().slice(0, 10)}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    console.error('Failed to download custom sprites backup:', err);
+  }
+}
+
+// Sync all overrides to the backend server (which writes to src/utils/savedSpriteOverrides.json and newDigimonSprites.ts)
+export async function syncOverridesToRepository(mergeIntoCodebase = true): Promise<{ success: boolean; count?: number; message?: string }> {
+  try {
+    const current = loadStoredOverrides();
+    const res = await fetch('/api/sync-sprite-overrides', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ overrides: current, mergeIntoCodebase }),
+    });
+    if (!res.ok) {
+      throw new Error(`Server returned ${res.status}`);
+    }
+    const data = await res.json();
+    return { success: true, count: data.count };
+  } catch (err: any) {
+    console.warn('[Sync] Could not sync to server (offline or static build):', err.message);
+    return { success: false, message: err.message };
+  }
 }
 
 export function importCustomSpritesJSON(jsonStr: string): boolean {
   try {
     const parsed = JSON.parse(jsonStr);
     if (typeof parsed === 'object' && parsed !== null) {
-      cachedOverrides = parsed;
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(parsed));
+      const current = loadStoredOverrides();
+      cachedOverrides = { ...current, ...parsed };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(cachedOverrides));
       window.dispatchEvent(new CustomEvent('digipet-sprites-updated', { detail: { bulk: true } }));
+      syncOverridesToRepository(true).catch(() => {});
       return true;
     }
   } catch (err) {

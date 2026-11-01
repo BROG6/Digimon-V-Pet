@@ -23,7 +23,7 @@ import { PwaInstallModal } from './components/PwaInstallModal';
 import { NativePipOverlay } from './components/NativePipOverlay';
 import { DigiChat } from './components/DigiChat';
 import { DigimonGallery } from './components/DigimonGallery';
-import { getHideGalleryButtonPref, syncOverridesToRepository } from './utils/customSpriteManager';
+import { getHideGalleryButtonPref, syncOverridesToRepository, getEffectiveSpriteConfig } from './utils/customSpriteManager';
 import { NEW_DIGIMON_SPRITES } from './utils/newDigimonSprites';
 import { Capacitor } from '@capacitor/core';
 import { 
@@ -55,7 +55,8 @@ import {
   Menu,
   X,
   ChevronUp,
-  Utensils
+  Utensils,
+  ExternalLink
 } from 'lucide-react';
 
 const STORAGE_KEY = 'digipet_vpet_save_v1';
@@ -199,56 +200,78 @@ export default function App() {
   // Android Native & Web Screen Overlay Launchers
   const handleLaunchOverlay = async () => {
     sound.playButton();
-    if (Capacitor.isNativePlatform()) {
-      const hasPerm = await checkOverlayPermission();
-      if (!hasPerm) {
-        setStatusNotification('Android: Please switch ON "Allow display over other apps" in Settings');
-        setTimeout(() => setStatusNotification(null), 5000);
-        await requestOverlayPermission();
+    try {
+      if (Capacitor.isNativePlatform()) {
+        const hasPerm = await checkOverlayPermission();
+        if (!hasPerm) {
+          setStatusNotification('Android: Please switch ON "Allow display over other apps" in Settings');
+          setTimeout(() => setStatusNotification(null), 5000);
+          await requestOverlayPermission();
+          return;
+        }
+
+        const active = await isNativeOverlayActive();
+        if (active) {
+          await stopNativeFloatingOverlay();
+          setStatusNotification('Floating screen overlay closed.');
+          setTimeout(() => setStatusNotification(null), 3000);
+          return;
+        }
+
+        const currentSpeciesConf = getEffectiveSpriteConfig(pet.currentSpeciesId) || NEW_DIGIMON_SPRITES[pet.currentSpeciesId] || NEW_DIGIMON_SPRITES['agumon'];
+        const activeFrame = currentSpeciesConf?.frames?.walking?.[0] || currentSpeciesConf?.frames?.standing?.[0] || { x: 2, y: 2, w: 48, h: 48 };
+
+        const ok = await startNativeFloatingOverlay({
+          speciesName: currentSpecies?.name || 'Digimon',
+          spriteUrl: currentSpeciesConf?.sheetPath || '/assets/aistudio/Copy_of_Agumon_Adventure_04d0832a.png',
+          frameX: activeFrame.x || 0,
+          frameY: activeFrame.y || 0,
+          frameW: activeFrame.w || 48,
+          frameH: activeFrame.h || 48,
+        });
+
+        if (ok) {
+          setStatusNotification(`✓ ${currentSpecies?.name || 'Digimon'} is now floating over all apps! Drag to move.`);
+        } else {
+          // If native overlay isn't supported, fall back to in-app overlay
+          setIsOverlayMode(true);
+          setStatusNotification('Floating companion active on screen! Drag to move.');
+        }
+        setTimeout(() => setStatusNotification(null), 4000);
         return;
       }
 
-      const active = await isNativeOverlayActive();
-      if (active) {
-        await stopNativeFloatingOverlay();
-        setStatusNotification('Floating screen overlay closed.');
-        setTimeout(() => setStatusNotification(null), 3000);
-        return;
-      }
-
-      const currentSpeciesConf = NEW_DIGIMON_SPRITES[pet.currentSpeciesId] || NEW_DIGIMON_SPRITES['agumon'];
-      const activeFrame = currentSpeciesConf?.frames?.walking?.[0] || currentSpeciesConf?.frames?.standing?.[0] || { x: 2, y: 2, w: 48, h: 48 };
-
-      const ok = await startNativeFloatingOverlay({
-        speciesName: currentSpecies?.name || 'Digimon',
-        spriteUrl: currentSpeciesConf?.sheetPath || '/assets/aistudio/Copy_of_Agumon_Adventure_04d0832a.png',
-        frameX: activeFrame.x,
-        frameY: activeFrame.y,
-        frameW: activeFrame.w,
-        frameH: activeFrame.h,
-      });
-
-      if (ok) {
-        setStatusNotification(`✓ ${currentSpecies?.name || 'Digimon'} is now floating over all apps! Drag to move.`);
-      } else {
-        setStatusNotification('Please enable "Allow display over other apps" to float.');
-      }
-      setTimeout(() => setStatusNotification(null), 4000);
-      return;
+      // In web browser: Launch Hellopet Screen Overlay Mode
+      setIsOverlayMode(true);
+    } catch (err: any) {
+      console.warn('handleLaunchOverlay non-fatal error:', err);
+      setIsOverlayMode(true);
+      setStatusNotification('Floating companion active on screen! Drag to move.');
+      setTimeout(() => setStatusNotification(null), 3000);
     }
-
-    // In web browser: Launch Hellopet Screen Overlay Mode
-    setIsOverlayMode(true);
   };
 
   const handleLaunchFloatOverApps = async () => {
     sound.playButton();
-    if (Capacitor.isNativePlatform()) {
-      await handleLaunchOverlay();
-      return;
+    try {
+      if (isOverlayMode) {
+        setIsOverlayMode(false);
+        showNotification('Docked Digimon back into Digivice.');
+        return;
+      }
+
+      if (Capacitor.isNativePlatform()) {
+        await handleLaunchOverlay();
+        return;
+      }
+
+      // In browser / PWA / preview: toggle floating screen overlay
+      setIsOverlayMode(true);
+      showNotification(`✨ ${currentSpecies?.name || 'Digimon'} is now floating on screen! Drag to move or tap for actions.`);
+    } catch (err: any) {
+      console.error('handleLaunchFloatOverApps error:', err);
+      setIsOverlayMode(true);
     }
-    // Web Picture-in-Picture window popup
-    setIsNativePipOpen(true);
   };
 
   // Save to localStorage
@@ -710,11 +733,15 @@ export default function App() {
               triggerHaptic('medium');
               handleLaunchFloatOverApps();
             }}
-            className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white px-2.5 py-1.5 rounded-xl font-pixel text-[9px] font-bold shadow-md shadow-purple-500/25 flex items-center gap-1 cursor-pointer active:scale-95"
-            title="Float Digimon over other mobile apps"
+            className={`px-2.5 py-1.5 rounded-xl font-pixel text-[9px] font-bold shadow-md flex items-center gap-1 cursor-pointer active:scale-95 transition-all ${
+              isOverlayMode
+                ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-emerald-500/25 ring-1 ring-emerald-400'
+                : 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white shadow-purple-500/25'
+            }`}
+            title={isOverlayMode ? 'Dock Digimon back to Digivice' : 'Float Digimon on screen'}
           >
-            <span>📱</span>
-            <span>FLOAT</span>
+            <span>{isOverlayMode ? '📟' : '📱'}</span>
+            <span>{isOverlayMode ? 'DOCK' : 'FLOAT'}</span>
           </motion.button>
 
           {/* Reset / Hatch New Egg */}
@@ -1102,6 +1129,18 @@ export default function App() {
                     <span className="truncate">SPRITE STUDIO</span>
                   </button>
                 )}
+
+                <button
+                  onClick={() => {
+                    sound.playButton();
+                    setIsMoreSheetOpen(false);
+                    setIsNativePipOpen(true);
+                  }}
+                  className="p-3 bg-slate-800 hover:bg-purple-950/60 border border-purple-500/40 rounded-2xl flex items-center gap-2.5 text-purple-300 cursor-pointer"
+                >
+                  <ExternalLink className="w-5 h-5 text-purple-400 shrink-0" />
+                  <span className="truncate">SYSTEM OVERLAY (PIP)</span>
+                </button>
 
                 <button
                   onClick={() => {

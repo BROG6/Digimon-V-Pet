@@ -274,11 +274,15 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
         }}
         onDragEnd={(_, info) => {
           isDraggingRef.current = false;
-          setPosX((prev) => prev + info.offset.x);
-          setPosY((prev) => prev + info.offset.y);
+          const offsetX = info?.offset?.x || 0;
+          const offsetY = info?.offset?.y || 0;
+          const winW = typeof window !== 'undefined' ? window.innerWidth : 360;
+          const winH = typeof window !== 'undefined' ? window.innerHeight : 640;
+          setPosX((prev) => Math.max(10, Math.min(winW - 100, (Number.isFinite(prev) ? prev : 100) + offsetX)));
+          setPosY((prev) => Math.max(70, Math.min(winH - 120, (Number.isFinite(prev) ? prev : 300) + offsetY)));
           setCurrentAction(pet.isSick ? 'sick' : 'idle');
         }}
-        animate={{ x: posX, y: posY }}
+        animate={{ x: Number.isFinite(posX) ? posX : 100, y: Number.isFinite(posY) ? posY : 300 }}
         transition={{ type: 'spring', damping: 25, stiffness: 120 }}
         className="absolute top-0 left-0 pointer-events-auto cursor-grab active:cursor-grabbing flex flex-col items-center select-none"
       >

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { PetState, DigimonSpecies } from '../types/digimon';
 import { sound } from '../utils/audio';
-import { ExternalLink, Sparkles, AlertCircle, Smartphone, Zap } from 'lucide-react';
+import { ExternalLink, Sparkles, AlertCircle, Smartphone, Zap, X } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 import { 
   checkOverlayPermission, 
@@ -30,6 +30,7 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
   const [wakeLockActive, setWakeLockActive] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isImgLoaded, setIsImgLoaded] = useState<boolean>(false);
+  const [hasAndroidPermission, setHasAndroidPermission] = useState<boolean | null>(null);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -41,33 +42,37 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
 
   // Load effective sprite config & image for the active species
   useEffect(() => {
-    const speciesId = pet.currentSpeciesId;
+    const speciesId = pet?.currentSpeciesId;
     if (!speciesId) return;
-    const config = getEffectiveSpriteConfig(speciesId);
-    configRef.current = config;
+    try {
+      const config = getEffectiveSpriteConfig(speciesId);
+      configRef.current = config;
 
-    if (config?.sheetPath) {
-      const img = new Image();
-      img.crossOrigin = 'anonymous';
-      img.src = config.sheetPath;
-      img.onload = () => {
-        spriteImageRef.current = img;
-        setIsImgLoaded(true);
-      };
-      img.onerror = () => {
-        console.warn('Failed to load sprite sheet for PiP:', config.sheetPath);
+      if (config?.sheetPath) {
+        const img = new Image();
+        img.crossOrigin = 'anonymous';
+        img.src = config.sheetPath;
+        img.onload = () => {
+          spriteImageRef.current = img;
+          setIsImgLoaded(true);
+        };
+        img.onerror = () => {
+          console.warn('Failed to load sprite sheet for PiP:', config.sheetPath);
+          setIsImgLoaded(false);
+        };
+      } else {
+        spriteImageRef.current = null;
         setIsImgLoaded(false);
-      };
-    } else {
-      spriteImageRef.current = null;
-      setIsImgLoaded(false);
+      }
+    } catch (e) {
+      console.warn('Error loading sprite config for PiP:', e);
     }
-  }, [pet.currentSpeciesId]);
+  }, [pet?.currentSpeciesId]);
 
   // Screen Wake Lock API management
   const toggleWakeLock = async () => {
     sound.playButton();
-    if (!('wakeLock' in navigator)) {
+    if (typeof navigator === 'undefined' || !('wakeLock' in navigator)) {
       setErrorMsg('Screen Wake Lock is not supported on this browser.');
       return;
     }
@@ -102,158 +107,188 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
     };
   }, []);
 
+  // Check Android overlay permission when modal opens
+  useEffect(() => {
+    let active = true;
+    const checkPerm = async () => {
+      try {
+        if (Capacitor.isNativePlatform()) {
+          const granted = await checkOverlayPermission();
+          if (active) setHasAndroidPermission(granted);
+          const isAct = await isNativeOverlayActive();
+          if (active) setIsPipActive(isAct);
+          return;
+        }
+        if (active) setHasAndroidPermission(true);
+      } catch (err) {
+        console.warn('checkPerm error:', err);
+      }
+    };
+    if (isOpen) {
+      checkPerm();
+    }
+    return () => {
+      active = false;
+    };
+  }, [isOpen]);
+
   // Canvas drawing loop for Video PiP fallback
   useEffect(() => {
     if (!isOpen) return;
 
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
+    let ctx: CanvasRenderingContext2D | null = null;
+    try {
+      ctx = canvas.getContext('2d');
+    } catch (e) {
+      console.warn('Could not get 2d context for PiP canvas:', e);
+      return;
+    }
     if (!ctx) return;
 
+    let isCancelled = false;
     let frame = 0;
     let xPos = 40;
     let dir = 1;
 
     const renderLoop = () => {
-      frame++;
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      if (isCancelled) return;
 
-      // Disable smoothing for sharp retro pixel art
-      ctx.imageSmoothingEnabled = false;
+      try {
+        frame++;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.imageSmoothingEnabled = false;
 
-      // Dark sci-fi background
-      ctx.fillStyle = '#070b14';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
+        // Dark sci-fi background
+        ctx.fillStyle = '#070b14';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      // Subtle cyber grid
-      ctx.strokeStyle = '#111e33';
-      ctx.lineWidth = 1;
-      for (let i = 0; i < canvas.width; i += 24) {
+        // Subtle cyber grid
+        ctx.strokeStyle = '#111e33';
+        ctx.lineWidth = 1;
+        for (let i = 0; i < canvas.width; i += 24) {
+          ctx.beginPath();
+          ctx.moveTo(i, 0);
+          ctx.lineTo(i, canvas.height);
+          ctx.stroke();
+        }
+        for (let j = 0; j < canvas.height; j += 24) {
+          ctx.beginPath();
+          ctx.moveTo(0, j);
+          ctx.lineTo(canvas.width, j);
+          ctx.stroke();
+        }
+
+        // Title header
+        ctx.fillStyle = '#38bdf8';
+        ctx.font = 'bold 12px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText(species?.name ? species.name.toUpperCase() : 'DIGIMON COMPANION', canvas.width / 2, 20);
+
+        // Status HUD
+        ctx.fillStyle = '#94a3b8';
+        ctx.font = '10px monospace';
+        ctx.fillText(`♥ H:${pet?.hunger ?? 80}%  ⚡ E:${pet?.energy ?? 80}%  ★ STR:${pet?.strength ?? 20}`, canvas.width / 2, 36);
+
+        // Ground baseline line
+        const floorY = canvas.height - 32;
+        ctx.strokeStyle = '#22c55e';
+        ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.moveTo(i, 0);
-        ctx.lineTo(i, canvas.height);
+        ctx.moveTo(8, floorY);
+        ctx.lineTo(canvas.width - 8, floorY);
         ctx.stroke();
-      }
-      for (let j = 0; j < canvas.height; j += 24) {
-        ctx.beginPath();
-        ctx.moveTo(0, j);
-        ctx.lineTo(canvas.width, j);
-        ctx.stroke();
-      }
 
-      // Title header
-      ctx.fillStyle = '#38bdf8';
-      ctx.font = 'bold 12px monospace';
-      ctx.textAlign = 'center';
-      ctx.fillText(species?.name.toUpperCase() || 'DIGIMON COMPANION', canvas.width / 2, 20);
+        // Walking motion
+        const walkSpeed = 0.5;
+        xPos += walkSpeed * dir;
+        if (xPos > canvas.width - 50) dir = -1;
+        if (xPos < 50) dir = 1;
 
-      // Status HUD
-      ctx.fillStyle = '#94a3b8';
-      ctx.font = '10px monospace';
-      ctx.fillText(`♥ H:${pet.hunger}%  ⚡ E:${pet.energy}%  ★ STR:${pet.strength}`, canvas.width / 2, 36);
+        const config = configRef.current;
+        const spriteImg = spriteImageRef.current;
 
-      // Ground baseline line
-      const floorY = canvas.height - 32;
-      ctx.strokeStyle = '#22c55e';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(8, floorY);
-      ctx.lineTo(canvas.width - 8, floorY);
-      ctx.stroke();
-
-      // Walking motion
-      const walkSpeed = 0.5;
-      xPos += walkSpeed * dir;
-      if (xPos > canvas.width - 50) dir = -1;
-      if (xPos < 50) dir = 1;
-
-      const config = configRef.current;
-      const spriteImg = spriteImageRef.current;
-
-      if (config && spriteImg && spriteImg.complete && spriteImg.naturalWidth > 0) {
-        // Real Digimon Sprite animation
-        const walkFrames: SpriteFrame[] = (config.frames.walking && config.frames.walking.length > 0)
+        const walkFrames: SpriteFrame[] = (config?.frames?.walking && config.frames.walking.length > 0)
           ? config.frames.walking
-          : (config.frames.standing && config.frames.standing.length > 0)
+          : (config?.frames?.standing && config.frames.standing.length > 0)
           ? config.frames.standing
           : [{ x: 0, y: 0, w: 32, h: 32 }];
 
-        const frameIndex = Math.floor(frame / 12) % walkFrames.length;
-        const currentFrame = walkFrames[frameIndex] || walkFrames[0];
+        const frameIndex = Math.floor(frame / 12) % Math.max(1, walkFrames.length);
+        const currentFrame = walkFrames[frameIndex] || walkFrames[0] || { x: 0, y: 0, w: 32, h: 32 };
 
-        const srcX = currentFrame.x;
-        const srcY = currentFrame.y;
-        const srcW = currentFrame.w;
-        const srcH = currentFrame.h;
+        const srcX = currentFrame.x || 0;
+        const srcY = currentFrame.y || 0;
+        const srcW = Math.max(1, currentFrame.w || 32);
+        const srcH = Math.max(1, currentFrame.h || 32);
 
-        // Render scale on PiP canvas (scaled to fit well)
         const renderScale = 1.3;
         const destW = srcW * renderScale;
         const destH = srcH * renderScale;
 
-        // Ground baseline alignment:
-        // Sprite feet naturally rest exactly on floorY!
-        const totalGroundOffset = ((currentFrame.offsetY || 0) + (config.groundOffset || 0)) * renderScale;
+        const totalGroundOffset = (((currentFrame.offsetY || 0) + (config?.groundOffset || 0)) * renderScale) || 0;
         const destY = floorY - destH - totalGroundOffset;
         const destX = xPos - destW / 2;
 
-        // Ground shadow beneath feet
+        // Ground shadow beneath feet (safe ellipse / arc fallback)
         ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
         ctx.beginPath();
-        ctx.ellipse(xPos, floorY - 1, Math.max(12, destW * 0.35), 4, 0, 0, Math.PI * 2);
-        ctx.fill();
-
-        ctx.save();
-        // Flip horizontally based on walking direction
-        if (dir < 0) {
-          ctx.translate(destX + destW, destY);
-          ctx.scale(-1, 1);
-          ctx.drawImage(spriteImg, srcX, srcY, srcW, srcH, 0, 0, destW, destH);
+        if (typeof ctx.ellipse === 'function') {
+          ctx.ellipse(xPos, floorY - 1, Math.max(12, destW * 0.35), 4, 0, 0, Math.PI * 2);
         } else {
-          ctx.drawImage(spriteImg, srcX, srcY, srcW, srcH, destX, destY, destW, destH);
+          ctx.arc(xPos, floorY - 1, Math.max(8, destW * 0.25), 0, Math.PI * 2);
         }
-        ctx.restore();
-      } else {
-        // Fallback animated avatar if sprite is loading
-        const bounce = Math.sin(frame * 0.15) * 3;
-        const cy = floorY - 22 + bounce;
-
-        // Glowing shadow
-        ctx.fillStyle = 'rgba(245, 158, 11, 0.2)';
-        ctx.beginPath();
-        ctx.arc(xPos, cy, 22, 0, Math.PI * 2);
         ctx.fill();
 
-        // Avatar body
-        ctx.fillStyle = '#f59e0b';
-        ctx.beginPath();
-        ctx.arc(xPos, cy, 14, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = '#d97706';
-        ctx.lineWidth = 2;
-        ctx.stroke();
+        if (spriteImg && spriteImg.complete && spriteImg.naturalWidth > 0) {
+          ctx.save();
+          if (dir < 0) {
+            ctx.translate(destX + destW, destY);
+            ctx.scale(-1, 1);
+            ctx.drawImage(spriteImg, srcX, srcY, srcW, srcH, 0, 0, destW, destH);
+          } else {
+            ctx.drawImage(spriteImg, srcX, srcY, srcW, srcH, destX, destY, destW, destH);
+          }
+          ctx.restore();
+        } else {
+          // Fallback animated avatar if sprite is loading
+          const bounce = Math.sin(frame * 0.15) * 3;
+          const cy = floorY - 22 + bounce;
 
-        // Eyes
-        ctx.fillStyle = '#0f172a';
-        const eyeOffset = dir > 0 ? 3 : -3;
-        ctx.beginPath();
-        ctx.arc(xPos + eyeOffset, cy - 3, 2.5, 0, Math.PI * 2);
-        ctx.fill();
+          ctx.fillStyle = '#f59e0b';
+          ctx.beginPath();
+          ctx.arc(xPos, cy, 14, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.strokeStyle = '#d97706';
+          ctx.lineWidth = 2;
+          ctx.stroke();
+
+          ctx.fillStyle = '#0f172a';
+          const eyeOffset = dir > 0 ? 3 : -3;
+          ctx.beginPath();
+          ctx.arc(xPos + eyeOffset, cy - 3, 2.5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+
+        // Footer badge
+        ctx.fillStyle = '#475569';
+        ctx.font = '9px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('DIGIPET NATIVE OVERLAY • OVER ALL APPS', canvas.width / 2, canvas.height - 10);
+      } catch (loopErr) {
+        console.warn('Canvas renderLoop non-fatal warning:', loopErr);
       }
 
-      // Footer badge
-      ctx.fillStyle = '#475569';
-      ctx.font = '9px monospace';
-      ctx.textAlign = 'center';
-      ctx.fillText('DIGIPET NATIVE OVERLAY • OVER ALL APPS', canvas.width / 2, canvas.height - 10);
-
-      animFrameRef.current = requestAnimationFrame(renderLoop);
+      if (!isCancelled) {
+        animFrameRef.current = requestAnimationFrame(renderLoop);
+      }
     };
 
     renderLoop();
 
     return () => {
+      isCancelled = true;
       cancelAnimationFrame(animFrameRef.current);
     };
   }, [isOpen, pet, species, isImgLoaded]);
@@ -267,43 +302,48 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
 
     // Path 0: Native Android APK System Overlay (Floats over all apps)
     if (Capacitor.isNativePlatform()) {
-      const granted = await checkOverlayPermission();
-      if (!granted) {
-        setErrorMsg('Opening Android Settings: Please enable "Allow display over other apps"');
-        await requestOverlayPermission();
-        return;
-      }
+      try {
+        const granted = await checkOverlayPermission();
+        if (!granted) {
+          setErrorMsg('Opening Android Settings: Please enable "Allow display over other apps"');
+          await requestOverlayPermission();
+          return;
+        }
 
-      const active = await isNativeOverlayActive();
-      if (active) {
-        await stopNativeFloatingOverlay();
-        setIsPipActive(false);
-        return;
-      }
+        const active = await isNativeOverlayActive();
+        if (active) {
+          await stopNativeFloatingOverlay();
+          setIsPipActive(false);
+          return;
+        }
 
-      const config = configRef.current;
-      const walkFrame0 = config?.frames.walking?.[0] || config?.frames.standing?.[0] || { x: 2, y: 2, w: 48, h: 48 };
+        const config = configRef.current;
+        const walkFrame0 = config?.frames?.walking?.[0] || config?.frames?.standing?.[0] || { x: 2, y: 2, w: 48, h: 48 };
 
-      const ok = await startNativeFloatingOverlay({
-        speciesName: species?.name || 'Digimon',
-        spriteUrl: config?.sheetPath || '/assets/aistudio/Copy_of_Agumon_Adventure_04d0832a.png',
-        frameX: walkFrame0.x,
-        frameY: walkFrame0.y,
-        frameW: walkFrame0.w,
-        frameH: walkFrame0.h,
-      });
+        const ok = await startNativeFloatingOverlay({
+          speciesName: species?.name || 'Digimon',
+          spriteUrl: config?.sheetPath || '/assets/aistudio/Copy_of_Agumon_Adventure_04d0832a.png',
+          frameX: walkFrame0.x || 0,
+          frameY: walkFrame0.y || 0,
+          frameW: walkFrame0.w || 48,
+          frameH: walkFrame0.h || 48,
+        });
 
-      if (ok) {
-        setIsPipActive(true);
-        onClose();
-      } else {
-        setErrorMsg('Please grant "Allow display over other apps" permission in Settings.');
+        if (ok) {
+          setIsPipActive(true);
+          onClose();
+        } else {
+          setErrorMsg('Please grant "Allow display over other apps" permission in Settings.');
+        }
+      } catch (err: any) {
+        console.warn('Native overlay invocation error:', err);
+        setErrorMsg('Native overlay error: ' + (err.message || 'Permission denied'));
       }
       return;
     }
 
     // Path 1: Document Picture-in-Picture API (Chrome 116+ on desktop/tablets)
-    if ('documentPictureInPicture' in window) {
+    if (typeof window !== 'undefined' && 'documentPictureInPicture' in window) {
       try {
         const pipWin = await (window as any).documentPictureInPicture.requestWindow({
           width: 240,
@@ -312,26 +352,26 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
         pipWindowRef.current = pipWin;
         setIsPipActive(true);
 
-        // Copy styles into pip window
-        document.querySelectorAll('link[rel="stylesheet"], style').forEach((node) => {
-          pipWin.document.head.appendChild(node.cloneNode(true));
-        });
+        try {
+          document.querySelectorAll('link[rel="stylesheet"], style').forEach((node) => {
+            pipWin.document.head.appendChild(node.cloneNode(true));
+          });
+        } catch (_) {}
 
-        // Create container inside PiP window
         const container = pipWin.document.createElement('div');
         container.style.cssText =
           'width: 100%; height: 100%; background: #070b14; display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: monospace; color: white; padding: 12px; box-sizing: border-box; overflow: hidden;';
 
         const config = configRef.current;
         const spriteSrc = config?.sheetPath || '';
-        const walkFrame0 = config?.frames.walking?.[0] || config?.frames.standing?.[0];
+        const walkFrame0 = config?.frames?.walking?.[0] || config?.frames?.standing?.[0];
 
         container.innerHTML = `
           <div style="font-size: 11px; font-weight: bold; color: #38bdf8; margin-bottom: 6px; letter-spacing: 1px;">
-            ${species?.name.toUpperCase() || 'DIGIMON'}
+            ${species?.name ? species.name.toUpperCase() : 'DIGIMON'}
           </div>
           <div style="font-size: 9px; color: #34d399; margin-bottom: 8px;">
-            ♥ Hunger: ${pet.hunger}% • Energy: ${pet.energy}%
+            ♥ Hunger: ${pet?.hunger ?? 80}% • Energy: ${pet?.energy ?? 80}%
           </div>
           <div style="width: 80px; height: 80px; display: flex; align-items: center; justify-content: center; position: relative; margin: 4px 0;">
             ${
@@ -354,7 +394,7 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
 
         return;
       } catch (err: any) {
-        console.warn('Document PiP request returned or unsupported, falling back to Video PiP:', err);
+        console.warn('Document PiP request returned or unsupported, trying video PiP fallback:', err);
       }
     }
 
@@ -364,54 +404,34 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
         const canvas = canvasRef.current;
         const video = videoRef.current;
 
-        // Capture continuous stream at 30 fps
-        const stream = canvas.captureStream ? canvas.captureStream(30) : (canvas as any).mozCaptureStream(30);
-        video.srcObject = stream;
+        const stream = canvas.captureStream ? canvas.captureStream(30) : (canvas as any).mozCaptureStream?.(30);
+        if (!stream) {
+          setErrorMsg('Canvas video stream is not supported on this device/browser.');
+          return;
+        }
 
-        // Play the video stream
-        await video.play();
+        video.srcObject = stream;
+        await video.play().catch(() => {});
 
         if (document.pictureInPictureElement) {
           await document.exitPictureInPicture();
           setIsPipActive(false);
-        } else {
+        } else if ((video as any).requestPictureInPicture) {
           await video.requestPictureInPicture();
           setIsPipActive(true);
 
           video.addEventListener('leavepictureinpicture', () => {
             setIsPipActive(false);
           });
+        } else {
+          setErrorMsg('Picture-in-Picture is blocked in iframe preview or not supported.');
         }
       } catch (err: any) {
-        console.error('Video PiP error:', err);
+        console.warn('Video PiP non-fatal error:', err);
         setErrorMsg(err.message || 'Picture-in-Picture was blocked or is not supported by your browser.');
       }
     }
   };
-
-  // Native Android Overlay Permission check and trigger
-  const [hasAndroidPermission, setHasAndroidPermission] = useState<boolean | null>(null);
-
-  useEffect(() => {
-    const checkPerm = async () => {
-      try {
-        if (Capacitor.isNativePlatform()) {
-          const granted = await checkOverlayPermission();
-          setHasAndroidPermission(granted);
-          const active = await isNativeOverlayActive();
-          setIsPipActive(active);
-          return;
-        }
-        // In mobile browser/PWA, PiP is natively allowed by Chrome
-        setHasAndroidPermission(true);
-      } catch (err) {
-        console.warn('checkPerm error:', err);
-      }
-    };
-    if (isOpen) {
-      checkPerm();
-    }
-  }, [isOpen]);
 
   const handleOpenAndroidSettings = async () => {
     sound.playButton();
@@ -430,9 +450,8 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
       console.warn('Overlay request failed:', e);
     }
 
-    // In web browsers, advise user on how Chrome native PiP works
     setErrorMsg(
-      'In Android Chrome, Picture-in-Picture is pre-enabled! Simply tap "POP OUT FLOATING OVERLAY" below, then tap Home or switch apps to see your Digimon float over your screen.'
+      'In Android Chrome, Picture-in-Picture is pre-enabled! Tap "POP OUT FLOATING OVERLAY" below, then tap Home or switch apps to see your Digimon float over your screen.'
     );
   };
 
@@ -449,14 +468,14 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
               <h3 className="font-chakra font-bold text-white text-lg">
                 NATIVE SYSTEM SCREEN OVERLAY
               </h3>
-              <p className="text-slate-400 text-xs">Float over other apps & home screen on Android & Desktop</p>
+              <p className="text-slate-400 text-xs">Float over other apps & home screen on Android</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-full hover:bg-slate-800 text-slate-400 hover:text-white"
+            className="p-1.5 rounded-full hover:bg-slate-800 text-slate-400 hover:text-white cursor-pointer"
           >
-            ✕
+            <X className="w-5 h-5" />
           </button>
         </div>
 
@@ -479,13 +498,13 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
             </div>
 
             <p className="text-slate-300 text-xs leading-relaxed">
-              Using Android Chrome's native <strong className="text-amber-300">Picture-in-Picture (PiP)</strong> engine, your real animated Digimon floats freely in a resizable, draggable window on top of WhatsApp, TikTok, Discord, YouTube, or your Android launcher!
+              Using Android's native <strong className="text-amber-300">Picture-in-Picture (PiP)</strong> & system overlay engine, your real animated Digimon floats freely in a resizable, draggable window on top of WhatsApp, TikTok, Discord, YouTube, or your Android launcher!
             </p>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <button
                 onClick={handleOpenAndroidSettings}
-                className="py-2 px-3 bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/40 font-pixel text-[10px] rounded-xl transition-all flex items-center justify-center gap-1.5"
+                className="py-2 px-3 bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/40 font-pixel text-[10px] rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer"
               >
                 <Smartphone className="w-3.5 h-3.5" />
                 <span>CHECK ANDROID PERMISSION</span>
@@ -493,7 +512,7 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
 
               <button
                 onClick={toggleWakeLock}
-                className={`py-2 px-3 font-pixel text-[10px] rounded-xl transition-all flex items-center justify-center gap-1.5 border ${
+                className={`py-2 px-3 font-pixel text-[10px] rounded-xl transition-all flex items-center justify-center gap-1.5 border cursor-pointer ${
                   wakeLockActive
                     ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50'
                     : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
@@ -529,7 +548,6 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
               height={180}
               className="rounded-2xl border-2 border-slate-700 shadow-2xl bg-black"
             />
-            {/* Note: Video must be in DOM tree and not display:none for Chrome Android PiP stream playback */}
             <video
               ref={videoRef}
               muted
@@ -542,7 +560,7 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
           {/* Launch Button */}
           <button
             onClick={handleLaunchPip}
-            className={`w-full py-3.5 px-4 rounded-2xl font-pixel text-xs font-bold transition-all shadow-lg flex items-center justify-center gap-2 active:scale-98 ${
+            className={`w-full py-3.5 px-4 rounded-2xl font-pixel text-xs font-bold transition-all shadow-lg flex items-center justify-center gap-2 active:scale-98 cursor-pointer ${
               isPipActive
                 ? 'bg-emerald-500 text-slate-950 shadow-emerald-500/30'
                 : 'bg-cyan-500 hover:bg-cyan-400 text-slate-950 shadow-cyan-500/30'
@@ -576,7 +594,7 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
               2. When the mini player opens, <strong>swipe up to go Home or switch to any other app</strong>.
             </div>
             <div>
-              3. The Digimon window will stay on your screen! You can drag it anywhere or pinch to resize.
+              3. The Digimon window stays on your screen! You can drag it anywhere or pinch to resize.
             </div>
           </div>
         </div>
@@ -585,7 +603,7 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
         <div className="pt-3 border-t border-slate-800 flex justify-end">
           <button
             onClick={onClose}
-            className="px-5 py-2 bg-slate-800 hover:bg-slate-700 text-white font-pixel text-[10px] rounded-xl font-bold"
+            className="px-5 py-2 bg-slate-800 hover:bg-slate-700 text-white font-pixel text-[10px] rounded-xl font-bold cursor-pointer"
           >
             CLOSE
           </button>

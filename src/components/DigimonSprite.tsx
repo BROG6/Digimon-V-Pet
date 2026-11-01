@@ -7,7 +7,6 @@ import {
 } from '../utils/battleSpiritSprites';
 import { NEW_DIGIMON_SPRITES, SpriteFrame } from '../utils/newDigimonSprites';
 import { getEffectiveSpriteConfig } from '../utils/customSpriteManager';
-import { BattleSpiritOtherSprite } from './BattleSpiritOtherSprites';
 
 export type DigimonPose = 
   | 'standing' 
@@ -299,22 +298,8 @@ export const DigimonSprite: React.FC<DigimonSpriteProps> = ({
   }
 
 
-  // =========================================================================
-  // MATCHING BATTLE SPIRIT 16-BIT RETRO PIXEL ART FOR ANY REMAINING DIGIMON
-  // =========================================================================
-  const isAltFrame = frameIndex % 2 === 1;
-
-  const renderOtherBattleSpiritSprite = () => {
-    return (
-      <BattleSpiritOtherSprite
-        id={species.id}
-        pose={activePose}
-        isAltFrame={isAltFrame}
-        colorTheme={species.colorTheme}
-        lcdMode={lcdMode}
-      />
-    );
-  };
+  // Fallback if sprite sheet is loading or missing
+  const fallbackColor = species.colorTheme || '#f59e0b';
 
   return (
     <div
@@ -323,7 +308,6 @@ export const DigimonSprite: React.FC<DigimonSpriteProps> = ({
       style={{
         transform: `scale(${scale * 0.656}) scaleX(${facing === 'left' ? -1 : 1})`,
       }}
-
     >
       <motion.div
         animate={
@@ -336,7 +320,14 @@ export const DigimonSprite: React.FC<DigimonSpriteProps> = ({
         transition={{ duration: 0.3 }}
         className="relative flex items-center justify-center"
       >
-        {renderOtherBattleSpiritSprite()}
+        <svg viewBox="0 0 110 100" className="w-20 h-20 overflow-visible pixel-art">
+          <ellipse cx="55" cy="56" rx="24" ry="22" fill={fallbackColor} stroke="#0f172a" strokeWidth="3.5" />
+          <ellipse cx="55" cy="62" rx="14" ry="12" fill="#fef08a" stroke="#0f172a" strokeWidth="2" />
+          <circle cx="45" cy="48" r="4.5" fill="#ffffff" stroke="#0f172a" strokeWidth="1.5" />
+          <circle cx="65" cy="48" r="4.5" fill="#ffffff" stroke="#0f172a" strokeWidth="1.5" />
+          <circle cx="46" cy="48" r="2.5" fill="#0f172a" />
+          <circle cx="64" cy="48" r="2.5" fill="#0f172a" />
+        </svg>
       </motion.div>
     </div>
   );

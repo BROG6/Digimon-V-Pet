@@ -1,0 +1,86 @@
+import { registerPlugin, Capacitor } from '@capacitor/core';
+
+export interface OverlayPluginInterface {
+  checkPermission(): Promise<{ granted: boolean }>;
+  requestPermission(): Promise<{ success: boolean; prompted?: boolean }>;
+  startOverlay(options: {
+    speciesName: string;
+    spriteUrl: string;
+    frameX: number;
+    frameY: number;
+    frameW: number;
+    frameH: number;
+  }): Promise<{ success: boolean }>;
+  stopOverlay(): Promise<{ success: boolean }>;
+  isOverlayActive(): Promise<{ active: boolean }>;
+  enterPip(): Promise<{ success: boolean }>;
+}
+
+export const OverlayPlugin = registerPlugin<OverlayPluginInterface>('OverlayPlugin');
+
+export async function checkOverlayPermission(): Promise<boolean> {
+  if (!Capacitor.isNativePlatform()) return true;
+  try {
+    const res = await OverlayPlugin.checkPermission();
+    return !!res?.granted;
+  } catch (err) {
+    console.warn('checkOverlayPermission error:', err);
+    return false;
+  }
+}
+
+export async function requestOverlayPermission(): Promise<boolean> {
+  if (!Capacitor.isNativePlatform()) return true;
+  try {
+    const res = await OverlayPlugin.requestPermission();
+    return !!res?.success;
+  } catch (err) {
+    console.warn('requestOverlayPermission error:', err);
+    return false;
+  }
+}
+
+export async function startNativeFloatingOverlay(params: {
+  speciesName: string;
+  spriteUrl: string;
+  frameX: number;
+  frameY: number;
+  frameW: number;
+  frameH: number;
+}): Promise<boolean> {
+  if (!Capacitor.isNativePlatform()) return false;
+  try {
+    // If permission is not granted, immediately ask for it
+    const granted = await checkOverlayPermission();
+    if (!granted) {
+      await requestOverlayPermission();
+      return false;
+    }
+    const res = await OverlayPlugin.startOverlay(params);
+    return !!res?.success;
+  } catch (err) {
+    console.warn('startNativeFloatingOverlay error:', err);
+    return false;
+  }
+}
+
+export async function stopNativeFloatingOverlay(): Promise<boolean> {
+  if (!Capacitor.isNativePlatform()) return false;
+  try {
+    const res = await OverlayPlugin.stopOverlay();
+    return !!res?.success;
+  } catch (err) {
+    console.warn('stopNativeFloatingOverlay error:', err);
+    return false;
+  }
+}
+
+export async function isNativeOverlayActive(): Promise<boolean> {
+  if (!Capacitor.isNativePlatform()) return false;
+  try {
+    const res = await OverlayPlugin.isOverlayActive();
+    return !!res?.active;
+  } catch {
+    return false;
+  }
+}

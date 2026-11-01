@@ -2,16 +2,16 @@ import React, { useState, useEffect, useRef } from 'react';
 import { PetState, DigimonSpecies } from '../types/digimon';
 import { sound } from '../utils/audio';
 import { ExternalLink, Sparkles, AlertCircle, Smartphone, Zap } from 'lucide-react';
-import { registerPlugin, Capacitor } from '@capacitor/core';
+import { Capacitor } from '@capacitor/core';
+import { 
+  checkOverlayPermission, 
+  requestOverlayPermission, 
+  startNativeFloatingOverlay, 
+  stopNativeFloatingOverlay, 
+  isNativeOverlayActive 
+} from '../utils/nativeOverlay';
 import { getEffectiveSpriteConfig } from '../utils/customSpriteManager';
 import { DigimonSpriteConfig, SpriteFrame } from '../utils/newDigimonSprites';
-
-interface OverlayPluginInterface {
-  checkPermission(): Promise<{ granted: boolean }>;
-  requestPermission(): Promise<{ success: boolean }>;
-}
-
-const OverlayPlugin = registerPlugin<OverlayPluginInterface>('OverlayPlugin');
 
 interface NativePipOverlayProps {
   pet: PetState;
@@ -260,10 +260,47 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
 
   if (!isOpen) return null;
 
-  // Trigger Native Picture-in-Picture window
+  // Trigger Native Picture-in-Picture window or Android Native System Overlay
   const handleLaunchPip = async () => {
     sound.playButton();
     setErrorMsg(null);
+
+    // Path 0: Native Android APK System Overlay (Floats over all apps)
+    if (Capacitor.isNativePlatform()) {
+      const granted = await checkOverlayPermission();
+      if (!granted) {
+        setErrorMsg('Opening Android Settings: Please enable "Allow display over other apps"');
+        await requestOverlayPermission();
+        return;
+      }
+
+      const active = await isNativeOverlayActive();
+      if (active) {
+        await stopNativeFloatingOverlay();
+        setIsPipActive(false);
+        return;
+      }
+
+      const config = configRef.current;
+      const walkFrame0 = config?.frames.walking?.[0] || config?.frames.standing?.[0] || { x: 2, y: 2, w: 48, h: 48 };
+
+      const ok = await startNativeFloatingOverlay({
+        speciesName: species?.name || 'Digimon',
+        spriteUrl: config?.sheetPath || '/assets/aistudio/Copy_of_Agumon_Adventure_04d0832a.png',
+        frameX: walkFrame0.x,
+        frameY: walkFrame0.y,
+        frameW: walkFrame0.w,
+        frameH: walkFrame0.h,
+      });
+
+      if (ok) {
+        setIsPipActive(true);
+        onClose();
+      } else {
+        setErrorMsg('Please grant "Allow display over other apps" permission in Settings.');
+      }
+      return;
+    }
 
     // Path 1: Document Picture-in-Picture API (Chrome 116+ on desktop/tablets)
     if ('documentPictureInPicture' in window) {
@@ -359,14 +396,16 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
     const checkPerm = async () => {
       try {
         if (Capacitor.isNativePlatform()) {
-          const res = await OverlayPlugin.checkPermission();
-          setHasAndroidPermission(!!res?.granted);
+          const granted = await checkOverlayPermission();
+          setHasAndroidPermission(granted);
+          const active = await isNativeOverlayActive();
+          setIsPipActive(active);
           return;
         }
         // In mobile browser/PWA, PiP is natively allowed by Chrome
         setHasAndroidPermission(true);
       } catch (err) {
-        console.warn('OverlayPlugin check error:', err);
+        console.warn('checkPerm error:', err);
       }
     };
     if (isOpen) {
@@ -378,17 +417,17 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
     sound.playButton();
     try {
       if (Capacitor.isNativePlatform()) {
-        await OverlayPlugin.requestPermission();
+        await requestOverlayPermission();
         setTimeout(async () => {
           try {
-            const res = await OverlayPlugin.checkPermission();
-            setHasAndroidPermission(!!res?.granted);
+            const granted = await checkOverlayPermission();
+            setHasAndroidPermission(granted);
           } catch (_) {}
-        }, 1200);
+        }, 1500);
         return;
       }
     } catch (e) {
-      console.warn('OverlayPlugin request failed:', e);
+      console.warn('Overlay request failed:', e);
     }
 
     // In web browsers, advise user on how Chrome native PiP works

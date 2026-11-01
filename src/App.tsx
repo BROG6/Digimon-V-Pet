@@ -24,6 +24,15 @@ import { NativePipOverlay } from './components/NativePipOverlay';
 import { DigiChat } from './components/DigiChat';
 import { DigimonGallery } from './components/DigimonGallery';
 import { getHideGalleryButtonPref, syncOverridesToRepository } from './utils/customSpriteManager';
+import { NEW_DIGIMON_SPRITES } from './utils/newDigimonSprites';
+import { Capacitor } from '@capacitor/core';
+import { 
+  checkOverlayPermission, 
+  requestOverlayPermission, 
+  startNativeFloatingOverlay, 
+  stopNativeFloatingOverlay, 
+  isNativeOverlayActive 
+} from './utils/nativeOverlay';
 import { sound } from './utils/audio';
 import { 
   Sparkles, 
@@ -167,6 +176,73 @@ export default function App() {
         : `Status bar clearance: Extended (+${next}px safe padding)`
     );
     setTimeout(() => setStatusNotification(null), 3000);
+  };
+
+  // Check Android overlay permission on native startup and inform user if needed
+  useEffect(() => {
+    if (Capacitor.isNativePlatform()) {
+      checkOverlayPermission().then((granted) => {
+        if (!granted) {
+          setStatusNotification('Tap "FLOAT OVER APPS" to enable Android Screen Overlay permission!');
+          setTimeout(() => setStatusNotification(null), 6000);
+        }
+      });
+    }
+  }, []);
+
+  // Android Native & Web Screen Overlay Launchers
+  const handleLaunchOverlay = async () => {
+    sound.playButton();
+    if (Capacitor.isNativePlatform()) {
+      const hasPerm = await checkOverlayPermission();
+      if (!hasPerm) {
+        setStatusNotification('Android: Please switch ON "Allow display over other apps" in Settings');
+        setTimeout(() => setStatusNotification(null), 5000);
+        await requestOverlayPermission();
+        return;
+      }
+
+      const active = await isNativeOverlayActive();
+      if (active) {
+        await stopNativeFloatingOverlay();
+        setStatusNotification('Floating screen overlay closed.');
+        setTimeout(() => setStatusNotification(null), 3000);
+        return;
+      }
+
+      const currentSpeciesConf = NEW_DIGIMON_SPRITES[pet.currentSpeciesId] || NEW_DIGIMON_SPRITES['agumon'];
+      const activeFrame = currentSpeciesConf?.frames?.walking?.[0] || currentSpeciesConf?.frames?.standing?.[0] || { x: 2, y: 2, w: 48, h: 48 };
+
+      const ok = await startNativeFloatingOverlay({
+        speciesName: currentSpecies?.name || 'Digimon',
+        spriteUrl: currentSpeciesConf?.sheetPath || '/assets/aistudio/Copy_of_Agumon_Adventure_04d0832a.png',
+        frameX: activeFrame.x,
+        frameY: activeFrame.y,
+        frameW: activeFrame.w,
+        frameH: activeFrame.h,
+      });
+
+      if (ok) {
+        setStatusNotification(`✓ ${currentSpecies?.name || 'Digimon'} is now floating over all apps! Drag to move.`);
+      } else {
+        setStatusNotification('Please enable "Allow display over other apps" to float.');
+      }
+      setTimeout(() => setStatusNotification(null), 4000);
+      return;
+    }
+
+    // In web browser: Launch Hellopet Screen Overlay Mode
+    setIsOverlayMode(true);
+  };
+
+  const handleLaunchFloatOverApps = async () => {
+    sound.playButton();
+    if (Capacitor.isNativePlatform()) {
+      await handleLaunchOverlay();
+      return;
+    }
+    // Web Picture-in-Picture window popup
+    setIsNativePipOpen(true);
   };
 
   // Save to localStorage
@@ -650,26 +726,20 @@ export default function App() {
           <motion.button
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
-            onClick={() => {
-              sound.playButton();
-              setIsOverlayMode(true);
-            }}
+            onClick={handleLaunchOverlay}
             className="bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-slate-950 px-2 sm:px-3 py-1.5 rounded-full font-pixel text-[10px] font-bold shadow-md shadow-cyan-500/30 flex items-center gap-1 cursor-pointer shrink-0"
-            title="Launch Hellopet Screen Overlay Mode"
+            title="Launch Screen Overlay Mode"
           >
             <Maximize2 className="w-3.5 h-3.5" />
             <span className="hidden md:inline">SCREEN OVERLAY</span>
             <span className="md:hidden hidden sm:inline">OVERLAY</span>
           </motion.button>
 
-          {/* Native Picture-in-Picture Floating Window */}
+          {/* Native Floating Window / Overlay */}
           <motion.button
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
-            onClick={() => {
-              sound.playButton();
-              setIsNativePipOpen(true);
-            }}
+            onClick={handleLaunchFloatOverApps}
             className="bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-400 hover:to-indigo-400 text-white px-2 sm:px-3 py-1.5 rounded-full font-pixel text-[10px] font-bold shadow-md shadow-purple-500/30 flex items-center gap-1 cursor-pointer shrink-0"
             title="Float over YouTube, WhatsApp, and Android Home Screen"
           >

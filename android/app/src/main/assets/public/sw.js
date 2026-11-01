@@ -77,11 +77,20 @@ define(['./workbox-7e5eb42b'], (function (workbox) { 'use strict';
    * See https://goo.gl/S9QRab
    */
   workbox.precacheAndRoute([{
+    "url": "wargreymon_check.html",
+    "revision": "11ab796941907fb64618a2b6378d071f"
+  }, {
     "url": "walk_review.html",
     "revision": "2fd035ef7e3d6a23cbc0430077c4301a"
   }, {
+    "url": "visual_diagnose.html",
+    "revision": "cf16129c4da0282abd04b29f560079a3"
+  }, {
     "url": "sprite_review.html",
     "revision": "c5848636cc09945a488f1b85758bfae2"
+  }, {
+    "url": "sheet_viewer.html",
+    "revision": "340faec9afe7876e96aed99d66a45866"
   }, {
     "url": "registerSW.js",
     "revision": "1872c500de691dce40960bb85481de07"
@@ -95,8 +104,41 @@ define(['./workbox-7e5eb42b'], (function (workbox) { 'use strict';
     "url": "pwa-192x192.png",
     "revision": "ad28899eb489019d3d79d2f52c17715c"
   }, {
+    "url": "punimon_view.html",
+    "revision": "519a6c84c400bb597c210e3f9addf84c"
+  }, {
+    "url": "punimon_flat_test.html",
+    "revision": "db928bc8641b37772121cce9b5c9cba1"
+  }, {
+    "url": "magnadramon_preview.html",
+    "revision": "3f6478eba2566c0a8d19653faee97955"
+  }, {
+    "url": "inspect_debug.html",
+    "revision": "6a6198496ea3e595c6a0b927b36f1184"
+  }, {
     "url": "index.html",
-    "revision": "8adadeede04897b05bf1700ddd83b2ff"
+    "revision": "7eedce428e25952c40a672ad396f3004"
+  }, {
+    "url": "garuda_test.html",
+    "revision": "31b8bbeb9b34406e3b1c5488b1784cfc"
+  }, {
+    "url": "garuda_boxes.html",
+    "revision": "06ba99b9587520d484b7216f26e0fef6"
+  }, {
+    "url": "garuda_anim_test.html",
+    "revision": "a64bd984c0ee98afba99013e8c770350"
+  }, {
+    "url": "garuda_all_boxes.html",
+    "revision": "dc4c35ad87c5d6edbcfcf9a6fdc06c79"
+  }, {
+    "url": "full_audit.html",
+    "revision": "c226f92f773b6b90b30a5dc6e7bc5612"
+  }, {
+    "url": "compare_garuda.html",
+    "revision": "1e1d1dd24acc3fbb5cde415617790723"
+  }, {
+    "url": "biyomon_check.html",
+    "revision": "ce5aefc0a41224357caa4fcd48b396b2"
   }, {
     "url": "apple-touch-icon.png",
     "revision": "f87feb6dcaaa6f2862f6b1422deff2f3"
@@ -1028,10 +1070,10 @@ define(['./workbox-7e5eb42b'], (function (workbox) { 'use strict';
     "url": "assets/koromon_transparent.png",
     "revision": null
   }, {
-    "url": "assets/index-uUro1KRh.js",
+    "url": "assets/index-YKqiDZ8Z.css",
     "revision": null
   }, {
-    "url": "assets/index-dXWueEPE.css",
+    "url": "assets/index-Bnje-udC.js",
     "revision": null
   }, {
     "url": "assets/greymon_transparent.png",
@@ -1076,6 +1118,15 @@ define(['./workbox-7e5eb42b'], (function (workbox) { 'use strict';
     "url": "assets/aistudio/Screenshot_20261023-055733_Chrome_f0bbc493.jpg",
     "revision": null
   }, {
+    "url": "assets/aistudio/Motimon_5cc21ee4.png",
+    "revision": null
+  }, {
+    "url": "assets/aistudio/Kabuterimon_07cf7d29.png",
+    "revision": null
+  }, {
+    "url": "assets/aistudio/HerculesKabuterimon_2_89341216.png",
+    "revision": null
+  }, {
     "url": "assets/aistudio/Copy_of_Zudomon_72c1c161.png",
     "revision": null
   }, {
@@ -1086,6 +1137,9 @@ define(['./workbox-7e5eb42b'], (function (workbox) { 'use strict';
     "revision": null
   }, {
     "url": "assets/aistudio/Copy_of_Yuramon_3ad2937a.png",
+    "revision": null
+  }, {
+    "url": "assets/aistudio/Copy_of_Yukimibotamon_425de778.png",
     "revision": null
   }, {
     "url": "assets/aistudio/Copy_of_Yokomon_dd201051.png",
@@ -1116,6 +1170,9 @@ define(['./workbox-7e5eb42b'], (function (workbox) { 'use strict';
     "revision": null
   }, {
     "url": "assets/aistudio/Copy_of_Togemon_11c9cc70.png",
+    "revision": null
+  }, {
+    "url": "assets/aistudio/Copy_of_Tentomon_326c02c3.png",
     "revision": null
   }, {
     "url": "assets/aistudio/Copy_of_Tanemon_17517f84.png",
@@ -1173,6 +1230,9 @@ define(['./workbox-7e5eb42b'], (function (workbox) { 'use strict';
     "revision": null
   }, {
     "url": "assets/aistudio/Copy_of_MetalGarurumon_4_3c810c39.png",
+    "revision": null
+  }, {
+    "url": "assets/aistudio/Copy_of_MegaKabuterimon_42236ae2.png",
     "revision": null
   }, {
     "url": "assets/aistudio/Copy_of_Magnadramon_d8456cbf.png",

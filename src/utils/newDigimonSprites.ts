@@ -5,7 +5,7 @@ export interface SpriteFrame {
   w: number;
   h: number;
   rotate?: number;
-  offsetY?: number; // Vertical ground offset (+/- px) to align feet naturally on ground level
+  offsetY?: number;
   sheetPath?: string;
   sheetWidth?: number;
   sheetHeight?: number;
@@ -15,7 +15,7 @@ export interface DigimonSpriteConfig {
   sheetPath: string;
   sheetWidth: number;
   sheetHeight: number;
-  groundOffset?: number; // Global ground level adjustment (+/- px) for this species
+  groundOffset?: number;
   frames: {
     standing: SpriteFrame[];
     walking: SpriteFrame[];
@@ -27,7 +27,6 @@ export interface DigimonSpriteConfig {
     sitting: SpriteFrame[];
   };
 }
-
 
 export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
   "botamon": {
@@ -41,14 +40,14 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
           "y": 21,
           "w": 29,
           "h": 34,
-          "rotate": 0
+          "rotate": 90
         },
         {
           "x": 100,
           "y": 24,
           "w": 30,
           "h": 34,
-          "rotate": 0
+          "rotate": 90
         }
       ],
       "walking": [
@@ -57,7 +56,7 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
           "y": 42,
           "w": 27,
           "h": 35,
-          "rotate": 0
+          "rotate": 90
         },
         {
           "x": 132,
@@ -87,7 +86,7 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
           "y": 21,
           "w": 29,
           "h": 34,
-          "rotate": 0
+          "rotate": 90
         }
       ],
       "eating": [
@@ -96,20 +95,27 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
           "y": 5,
           "w": 30,
           "h": 35,
-          "rotate": 0
+          "rotate": 90
         },
         {
           "x": 69,
           "y": 21,
           "w": 29,
           "h": 34,
-          "rotate": 0
+          "rotate": 90
         }
       ],
       "sleeping": [
         {
           "x": 80,
           "y": 126,
+          "w": 35,
+          "h": 21,
+          "rotate": 0
+        },
+        {
+          "x": 119,
+          "y": 148,
           "w": 35,
           "h": 21,
           "rotate": 0
@@ -128,7 +134,7 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
           "y": 5,
           "w": 30,
           "h": 35,
-          "rotate": 0
+          "rotate": 90
         },
         {
           "x": 62,
@@ -153,7 +159,14 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
           "y": 21,
           "w": 29,
           "h": 34,
-          "rotate": 0
+          "rotate": 90
+        },
+        {
+          "x": 32,
+          "y": 43,
+          "w": 29,
+          "h": 34,
+          "rotate": 90
         }
       ]
     }
@@ -165,11 +178,14 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
     "frames": {
       "standing": [
         {
-          "x": 2,
-          "y": 133,
-          "w": 40,
-          "h": 32,
-          "rotate": 0
+          "x": 131,
+          "y": 79,
+          "w": 35,
+          "h": 29,
+          "rotate": 0,
+          "sheetPath": "/assets/aistudio/Copy_of_Punimon_68b4fcb1.png",
+          "sheetWidth": 214,
+          "sheetHeight": 214
         },
         {
           "x": 44,
@@ -211,10 +227,10 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
       ],
       "happy": [
         {
-          "x": 2,
-          "y": 167,
-          "w": 42,
-          "h": 32,
+          "x": 88,
+          "y": 176,
+          "w": 40,
+          "h": 35,
           "rotate": 0
         },
         {
@@ -228,26 +244,49 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
       "eating": [
         {
           "x": 2,
-          "y": 133,
-          "w": 40,
-          "h": 32,
-          "rotate": 0
+          "y": 168,
+          "w": 42,
+          "h": 31,
+          "rotate": 0,
+          "sheetPath": "/assets/aistudio/Copy_of_Punimon_68b4fcb1.png",
+          "sheetWidth": 214,
+          "sheetHeight": 214
         },
         {
-          "x": 44,
+          "x": 131,
+          "y": 79,
+          "w": 35,
+          "h": 29,
+          "rotate": 0,
+          "sheetPath": "/assets/aistudio/Copy_of_Punimon_68b4fcb1.png",
+          "sheetWidth": 214,
+          "sheetHeight": 214
+        },
+        {
+          "x": 2,
           "y": 133,
           "w": 40,
           "h": 32,
-          "rotate": 0
+          "rotate": 0,
+          "sheetPath": "/assets/aistudio/Copy_of_Punimon_68b4fcb1.png",
+          "sheetWidth": 214,
+          "sheetHeight": 214
         }
       ],
       "sleeping": [
         {
-          "x": 130,
-          "y": 78,
-          "w": 36,
-          "h": 30,
-          "rotate": 0
+          "x": 35,
+          "y": 87,
+          "w": 26,
+          "h": 43,
+          "rotate": 90
+        },
+        {
+          "x": 66,
+          "y": 48,
+          "w": 26,
+          "h": 41,
+          "rotate": 90
         }
       ],
       "training": [
@@ -268,20 +307,40 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
       ],
       "sick": [
         {
-          "x": 130,
-          "y": 78,
-          "w": 36,
+          "x": 168,
+          "y": 111,
+          "w": 39,
           "h": 30,
+          "rotate": 0
+        },
+        {
+          "x": 169,
+          "y": 179,
+          "w": 39,
+          "h": 32,
           "rotate": 0
         }
       ],
       "sitting": [
         {
-          "x": 2,
-          "y": 133,
+          "x": 131,
+          "y": 79,
+          "w": 35,
+          "h": 29,
+          "rotate": 0,
+          "sheetPath": "/assets/aistudio/Copy_of_Punimon_68b4fcb1.png",
+          "sheetWidth": 214,
+          "sheetHeight": 214
+        },
+        {
+          "x": 44,
+          "y": 135,
           "w": 40,
-          "h": 32,
-          "rotate": 0
+          "h": 30,
+          "rotate": 0,
+          "sheetPath": "/assets/aistudio/Copy_of_Punimon_68b4fcb1.png",
+          "sheetWidth": 214,
+          "sheetHeight": 214
         }
       ]
     }
@@ -421,42 +480,48 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
     "frames": {
       "standing": [
         {
-          "x": 15,
-          "y": 114,
-          "w": 42,
-          "h": 41
+          "x": 2,
+          "y": 31,
+          "w": 38,
+          "h": 40,
+          "rotate": 0
         },
         {
-          "x": 55,
-          "y": 115,
-          "w": 42,
-          "h": 42
+          "x": 42,
+          "y": 31,
+          "w": 38,
+          "h": 39,
+          "rotate": 0
         }
       ],
       "walking": [
         {
-          "x": 15,
-          "y": 114,
-          "w": 42,
-          "h": 41
+          "x": 2,
+          "y": 31,
+          "w": 38,
+          "h": 40,
+          "rotate": 0
         },
         {
-          "x": 55,
-          "y": 115,
-          "w": 42,
-          "h": 42
+          "x": 42,
+          "y": 31,
+          "w": 38,
+          "h": 39,
+          "rotate": 0
         },
         {
-          "x": 95,
-          "y": 165,
-          "w": 42,
-          "h": 42
+          "x": 82,
+          "y": 28,
+          "w": 29,
+          "h": 42,
+          "rotate": 0
         },
         {
-          "x": 139,
-          "y": 164,
-          "w": 42,
-          "h": 43
+          "x": 42,
+          "y": 31,
+          "w": 38,
+          "h": 39,
+          "rotate": 0
         }
       ],
       "happy": [
@@ -489,10 +554,11 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
       ],
       "sleeping": [
         {
-          "x": 15,
-          "y": 155,
+          "x": 151,
+          "y": 90,
           "w": 40,
-          "h": 44
+          "h": 35,
+          "rotate": 0
         }
       ],
       "training": [
@@ -511,24 +577,20 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
       ],
       "sick": [
         {
-          "x": 15,
-          "y": 155,
+          "x": 151,
+          "y": 90,
           "w": 40,
-          "h": 44
+          "h": 35,
+          "rotate": 0
         }
       ],
       "sitting": [
         {
-          "x": 15,
-          "y": 114,
-          "w": 42,
-          "h": 41
-        },
-        {
-          "x": 55,
-          "y": 115,
-          "w": 42,
-          "h": 42
+          "x": 2,
+          "y": 31,
+          "w": 38,
+          "h": 40,
+          "rotate": 0
         }
       ]
     }
@@ -557,16 +619,30 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
       "walking": [
         {
           "x": 2,
-          "y": 117,
-          "w": 35,
-          "h": 41,
+          "y": 202,
+          "w": 39,
+          "h": 39,
           "rotate": 0
         },
         {
-          "x": 83,
-          "y": 116,
-          "w": 28,
-          "h": 39,
+          "x": 43,
+          "y": 203,
+          "w": 36,
+          "h": 38,
+          "rotate": 0
+        },
+        {
+          "x": 81,
+          "y": 217,
+          "w": 36,
+          "h": 37,
+          "rotate": 0
+        },
+        {
+          "x": 119,
+          "y": 219,
+          "w": 38,
+          "h": 35,
           "rotate": 0
         }
       ],
@@ -604,10 +680,10 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
       ],
       "sleeping": [
         {
-          "x": 113,
-          "y": 105,
-          "w": 37,
-          "h": 21,
+          "x": 101,
+          "y": 77,
+          "w": 33,
+          "h": 26,
           "rotate": 0
         }
       ],
@@ -636,10 +712,10 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
       ],
       "sick": [
         {
-          "x": 113,
-          "y": 105,
-          "w": 37,
-          "h": 21,
+          "x": 101,
+          "y": 77,
+          "w": 33,
+          "h": 26,
           "rotate": 0
         }
       ],
@@ -661,42 +737,48 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
     "frames": {
       "standing": [
         {
-          "x": 1,
-          "y": 155,
-          "w": 40,
-          "h": 42
+          "x": 77,
+          "y": 33,
+          "w": 36,
+          "h": 35,
+          "rotate": 0
         },
         {
-          "x": 41,
-          "y": 157,
-          "w": 42,
-          "h": 40
+          "x": 115,
+          "y": 33,
+          "w": 36,
+          "h": 35,
+          "rotate": 0
         }
       ],
       "walking": [
         {
-          "x": 1,
-          "y": 155,
-          "w": 40,
-          "h": 42
+          "x": 2,
+          "y": 33,
+          "w": 35,
+          "h": 38,
+          "rotate": 0
         },
         {
-          "x": 41,
-          "y": 157,
-          "w": 42,
-          "h": 40
+          "x": 39,
+          "y": 33,
+          "w": 36,
+          "h": 36,
+          "rotate": 0
         },
         {
-          "x": 80,
-          "y": 173,
-          "w": 41,
-          "h": 38
+          "x": 77,
+          "y": 33,
+          "w": 36,
+          "h": 35,
+          "rotate": 0
         },
         {
-          "x": 41,
-          "y": 157,
-          "w": 42,
-          "h": 40
+          "x": 115,
+          "y": 33,
+          "w": 36,
+          "h": 35,
+          "rotate": 0
         }
       ],
       "happy": [
@@ -729,10 +811,11 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
       ],
       "sleeping": [
         {
-          "x": 1,
-          "y": 7,
-          "w": 40,
-          "h": 25
+          "x": 153,
+          "y": 67,
+          "w": 32,
+          "h": 33,
+          "rotate": 0
         }
       ],
       "training": [
@@ -751,24 +834,20 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
       ],
       "sick": [
         {
-          "x": 1,
-          "y": 7,
-          "w": 40,
-          "h": 25
+          "x": 153,
+          "y": 67,
+          "w": 32,
+          "h": 33,
+          "rotate": 0
         }
       ],
       "sitting": [
         {
-          "x": 1,
-          "y": 155,
-          "w": 40,
-          "h": 42
-        },
-        {
-          "x": 41,
-          "y": 157,
-          "w": 42,
-          "h": 40
+          "x": 77,
+          "y": 33,
+          "w": 36,
+          "h": 35,
+          "rotate": 0
         }
       ]
     }
@@ -915,10 +994,10 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
           "rotate": 0
         },
         {
-          "x": 49,
-          "y": 2,
-          "w": 40,
-          "h": 41,
+          "x": 129,
+          "y": 86,
+          "w": 43,
+          "h": 33,
           "rotate": 0
         },
         {
@@ -926,15 +1005,15 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
           "y": 6,
           "w": 35,
           "h": 40,
-          "rotate": 0
+          "rotate": 90
         }
       ],
       "walking": [
         {
-          "x": 2,
-          "y": 41,
-          "w": 40,
-          "h": 46,
+          "x": 43,
+          "y": 127,
+          "w": 47,
+          "h": 34,
           "rotate": 0
         },
         {
@@ -952,9 +1031,9 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
           "rotate": 0
         },
         {
-          "x": 129,
+          "x": 128,
           "y": 51,
-          "w": 40,
+          "w": 41,
           "h": 34,
           "rotate": 0
         }
@@ -989,6 +1068,13 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
           "w": 45,
           "h": 37,
           "rotate": 0
+        },
+        {
+          "x": 42,
+          "y": 128,
+          "w": 49,
+          "h": 34,
+          "rotate": 0
         }
       ],
       "sleeping": [
@@ -998,6 +1084,13 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
           "w": 41,
           "h": 29,
           "rotate": 0
+        },
+        {
+          "x": 192,
+          "y": 185,
+          "w": 36,
+          "h": 44,
+          "rotate": 90
         }
       ],
       "training": [
@@ -1016,10 +1109,17 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
           "rotate": 0
         },
         {
-          "x": 2,
-          "y": 89,
-          "w": 38,
-          "h": 49,
+          "x": 96,
+          "y": 201,
+          "w": 48,
+          "h": 42,
+          "rotate": 0
+        },
+        {
+          "x": 43,
+          "y": 201,
+          "w": 51,
+          "h": 41,
           "rotate": 0
         }
       ],
@@ -1034,10 +1134,24 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
       ],
       "sitting": [
         {
-          "x": 2,
-          "y": 2,
-          "w": 45,
+          "x": 128,
+          "y": 49,
+          "w": 42,
           "h": 37,
+          "rotate": 0
+        },
+        {
+          "x": 129,
+          "y": 85,
+          "w": 43,
+          "h": 35,
+          "rotate": 0
+        },
+        {
+          "x": 173,
+          "y": 82,
+          "w": 42,
+          "h": 35,
           "rotate": 0
         }
       ]
@@ -1185,42 +1299,48 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
     "frames": {
       "standing": [
         {
-          "x": 217,
-          "y": 18,
-          "w": 40,
-          "h": 45
+          "x": 177,
+          "y": 17,
+          "w": 38,
+          "h": 39,
+          "rotate": 0
         },
         {
-          "x": 91,
-          "y": 39,
-          "w": 42,
-          "h": 46
+          "x": 217,
+          "y": 19,
+          "w": 39,
+          "h": 39,
+          "rotate": 0
         }
       ],
       "walking": [
         {
-          "x": 217,
-          "y": 18,
+          "x": 75,
+          "y": 135,
           "w": 40,
-          "h": 45
+          "h": 36,
+          "rotate": 0
         },
         {
-          "x": 91,
-          "y": 39,
-          "w": 42,
-          "h": 46
+          "x": 135,
+          "y": 129,
+          "w": 41,
+          "h": 39,
+          "rotate": 0
         },
         {
-          "x": 85,
-          "y": 83,
-          "w": 40,
-          "h": 48
+          "x": 178,
+          "y": 141,
+          "w": 44,
+          "h": 39,
+          "rotate": 0
         },
         {
-          "x": 74,
-          "y": 131,
-          "w": 42,
-          "h": 41
+          "x": 224,
+          "y": 145,
+          "w": 41,
+          "h": 40,
+          "rotate": 0
         }
       ],
       "happy": [
@@ -1253,10 +1373,11 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
       ],
       "sleeping": [
         {
-          "x": 51,
-          "y": 85,
-          "w": 32,
-          "h": 45
+          "x": 111,
+          "y": 229,
+          "w": 62,
+          "h": 23,
+          "rotate": 0
         }
       ],
       "training": [
@@ -1275,24 +1396,20 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
       ],
       "sick": [
         {
-          "x": 51,
-          "y": 85,
-          "w": 32,
-          "h": 45
+          "x": 111,
+          "y": 229,
+          "w": 62,
+          "h": 23,
+          "rotate": 0
         }
       ],
       "sitting": [
         {
-          "x": 217,
-          "y": 18,
-          "w": 40,
-          "h": 45
-        },
-        {
-          "x": 91,
-          "y": 39,
-          "w": 42,
-          "h": 46
+          "x": 177,
+          "y": 17,
+          "w": 38,
+          "h": 39,
+          "rotate": 0
         }
       ]
     }
@@ -1304,40 +1421,47 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
     "frames": {
       "standing": [
         {
-          "x": 120,
-          "y": 84,
-          "w": 40,
-          "h": 36,
+          "x": 124,
+          "y": 194,
+          "w": 39,
+          "h": 39,
           "rotate": 0
         },
         {
-          "x": 162,
-          "y": 80,
-          "w": 40,
-          "h": 36,
-          "rotate": 0
-        },
-        {
-          "x": 204,
-          "y": 77,
-          "w": 40,
-          "h": 36,
+          "x": 205,
+          "y": 194,
+          "w": 38,
+          "h": 38,
           "rotate": 0
         }
       ],
       "walking": [
         {
           "x": 2,
-          "y": 101,
-          "w": 38,
-          "h": 44,
+          "y": 194,
+          "w": 43,
+          "h": 39,
           "rotate": 0
         },
         {
-          "x": 42,
-          "y": 109,
+          "x": 84,
+          "y": 194,
+          "w": 38,
+          "h": 40,
+          "rotate": 0
+        },
+        {
+          "x": 124,
+          "y": 194,
           "w": 39,
-          "h": 41,
+          "h": 39,
+          "rotate": 0
+        },
+        {
+          "x": 165,
+          "y": 194,
+          "w": 38,
+          "h": 39,
           "rotate": 0
         }
       ],
@@ -1376,7 +1500,7 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
       "sleeping": [
         {
           "x": 41,
-          "y": 48,
+          "y": 56,
           "w": 46,
           "h": 22,
           "rotate": 0
@@ -1408,7 +1532,7 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
       "sick": [
         {
           "x": 41,
-          "y": 48,
+          "y": 56,
           "w": 46,
           "h": 22,
           "rotate": 0
@@ -1416,10 +1540,10 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
       ],
       "sitting": [
         {
-          "x": 120,
-          "y": 84,
-          "w": 40,
-          "h": 36,
+          "x": 124,
+          "y": 194,
+          "w": 39,
+          "h": 39,
           "rotate": 0
         }
       ]
@@ -1432,42 +1556,48 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
     "frames": {
       "standing": [
         {
-          "x": 1,
-          "y": 94,
-          "w": 56,
-          "h": 65
+          "x": 128,
+          "y": 3,
+          "w": 60,
+          "h": 48,
+          "rotate": 0
         },
         {
-          "x": 57,
-          "y": 103,
-          "w": 56,
-          "h": 58
+          "x": 190,
+          "y": 7,
+          "w": 49,
+          "h": 49,
+          "rotate": 0
         }
       ],
       "walking": [
         {
-          "x": 1,
-          "y": 32,
-          "w": 58,
-          "h": 61
+          "x": 2,
+          "y": 232,
+          "w": 52,
+          "h": 69,
+          "rotate": 0
         },
         {
-          "x": 59,
-          "y": 45,
-          "w": 56,
-          "h": 58
+          "x": 56,
+          "y": 240,
+          "w": 55,
+          "h": 61,
+          "rotate": 0
         },
         {
-          "x": 1,
-          "y": 94,
+          "x": 113,
+          "y": 243,
           "w": 56,
-          "h": 65
+          "h": 58,
+          "rotate": 0
         },
         {
-          "x": 57,
-          "y": 103,
-          "w": 56,
-          "h": 58
+          "x": 171,
+          "y": 243,
+          "w": 55,
+          "h": 58,
+          "rotate": 0
         }
       ],
       "happy": [
@@ -1500,10 +1630,11 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
       ],
       "sleeping": [
         {
-          "x": 1,
-          "y": 2,
-          "w": 61,
-          "h": 30
+          "x": 2,
+          "y": 3,
+          "w": 59,
+          "h": 28,
+          "rotate": 0
         }
       ],
       "training": [
@@ -1522,24 +1653,20 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
       ],
       "sick": [
         {
-          "x": 1,
-          "y": 2,
-          "w": 61,
-          "h": 30
+          "x": 2,
+          "y": 3,
+          "w": 59,
+          "h": 28,
+          "rotate": 0
         }
       ],
       "sitting": [
         {
-          "x": 1,
-          "y": 94,
-          "w": 56,
-          "h": 65
-        },
-        {
-          "x": 57,
-          "y": 103,
-          "w": 56,
-          "h": 58
+          "x": 128,
+          "y": 3,
+          "w": 60,
+          "h": 48,
+          "rotate": 0
         }
       ]
     }
@@ -1551,42 +1678,48 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
     "frames": {
       "standing": [
         {
-          "x": 5,
-          "y": 52,
-          "w": 44,
-          "h": 41
+          "x": 110,
+          "y": 4,
+          "w": 40,
+          "h": 35,
+          "rotate": 0
         },
         {
-          "x": 51,
-          "y": 57,
-          "w": 47,
-          "h": 42
+          "x": 193,
+          "y": 4,
+          "w": 38,
+          "h": 39,
+          "rotate": 0
         }
       ],
       "walking": [
         {
-          "x": 5,
-          "y": 52,
-          "w": 44,
-          "h": 41
-        },
-        {
-          "x": 51,
-          "y": 57,
+          "x": 2,
+          "y": 87,
           "w": 47,
-          "h": 42
+          "h": 35,
+          "rotate": 0
         },
         {
-          "x": 192,
-          "y": 51,
+          "x": 53,
+          "y": 87,
+          "w": 48,
+          "h": 34,
+          "rotate": 0
+        },
+        {
+          "x": 103,
+          "y": 87,
+          "w": 44,
+          "h": 40,
+          "rotate": 0
+        },
+        {
+          "x": 149,
+          "y": 87,
           "w": 42,
-          "h": 42
-        },
-        {
-          "x": 52,
-          "y": 107,
-          "w": 46,
-          "h": 42
+          "h": 39,
+          "rotate": 0
         }
       ],
       "happy": [
@@ -1619,10 +1752,11 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
       ],
       "sleeping": [
         {
-          "x": 141,
-          "y": 43,
-          "w": 47,
-          "h": 32
+          "x": 87,
+          "y": 217,
+          "w": 66,
+          "h": 33,
+          "rotate": 0
         }
       ],
       "training": [
@@ -1641,24 +1775,20 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
       ],
       "sick": [
         {
-          "x": 141,
-          "y": 43,
-          "w": 47,
-          "h": 32
+          "x": 87,
+          "y": 217,
+          "w": 66,
+          "h": 33,
+          "rotate": 0
         }
       ],
       "sitting": [
         {
-          "x": 5,
-          "y": 52,
-          "w": 44,
-          "h": 41
-        },
-        {
-          "x": 51,
-          "y": 57,
-          "w": 47,
-          "h": 42
+          "x": 110,
+          "y": 4,
+          "w": 40,
+          "h": 35,
+          "rotate": 0
         }
       ]
     }
@@ -1798,85 +1928,140 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
     "frames": {
       "standing": [
         {
-          "x": 167,
+          "x": 166,
           "y": 30,
-          "w": 47,
-          "h": 44,
-          "rotate": 0
+          "w": 49,
+          "h": 43,
+          "rotate": 90
         },
         {
-          "x": 222,
-          "y": 41,
-          "w": 37,
-          "h": 38,
-          "rotate": 0
+          "x": 171,
+          "y": 124,
+          "w": 43,
+          "h": 49,
+          "rotate": 0,
+          "sheetPath": "/assets/aistudio/Copy_of_Agumon_Adventure_04d0832a.png",
+          "sheetWidth": 324,
+          "sheetHeight": 324
         }
       ],
       "walking": [
         {
-          "x": 2,
-          "y": 21,
-          "w": 40,
+          "x": 71,
+          "y": 90,
+          "w": 49,
           "h": 62,
+          "rotate": 90
+        },
+        {
+          "x": 113,
+          "y": 160,
+          "w": 48,
+          "h": 61,
+          "rotate": 90
+        },
+        {
+          "x": 162,
+          "y": 174,
+          "w": 46,
+          "h": 59,
+          "rotate": 90
+        },
+        {
+          "x": 113,
+          "y": 160,
+          "w": 48,
+          "h": 61,
+          "rotate": 90
+        },
+        {
+          "x": 71,
+          "y": 90,
+          "w": 49,
+          "h": 62,
+          "rotate": 90
+        },
+        {
+          "x": 210,
+          "y": 227,
+          "w": 61,
+          "h": 46,
           "rotate": 0
         },
         {
-          "x": 44,
-          "y": 21,
-          "w": 47,
-          "h": 59,
+          "x": 149,
+          "y": 233,
+          "w": 61,
+          "h": 42,
+          "rotate": 0
+        },
+        {
+          "x": 210,
+          "y": 227,
+          "w": 61,
+          "h": 46,
           "rotate": 0
         }
       ],
       "happy": [
         {
-          "x": 119,
-          "y": 29,
-          "w": 46,
-          "h": 60,
+          "x": 171,
+          "y": 74,
+          "w": 43,
+          "h": 49,
           "rotate": 0
         },
         {
-          "x": 167,
+          "x": 166,
           "y": 30,
-          "w": 47,
+          "w": 48,
           "h": 44,
+          "rotate": 90
+        },
+        {
+          "x": 216,
+          "y": 84,
+          "w": 42,
+          "h": 48,
           "rotate": 0
         }
       ],
       "eating": [
         {
           "x": 172,
-          "y": 76,
+          "y": 75,
           "w": 43,
-          "h": 47,
+          "h": 49,
           "rotate": 0
         },
         {
-          "x": 167,
-          "y": 30,
-          "w": 47,
-          "h": 44,
-          "rotate": 0
+          "x": 261,
+          "y": 133,
+          "w": 52,
+          "h": 48,
+          "rotate": 0,
+          "sheetPath": "/assets/aistudio/Copy_of_Agumon_Adventure_04d0832a.png",
+          "sheetWidth": 324,
+          "sheetHeight": 324
         }
       ],
       "sleeping": [
         {
-          "x": 113,
-          "y": 284,
-          "w": 33,
-          "h": 25,
-          "rotate": 0
+          "x": 46,
+          "y": 80,
+          "w": 26,
+          "h": 72,
+          "rotate": 90
+        },
+        {
+          "x": 93,
+          "y": 17,
+          "w": 26,
+          "h": 72,
+          "rotate": 90
         }
       ],
       "training": [
-        {
-          "x": 119,
-          "y": 29,
-          "w": 46,
-          "h": 60,
-          "rotate": 0
-        },
         {
           "x": 172,
           "y": 76,
@@ -1890,23 +2075,44 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
           "w": 41,
           "h": 67,
           "rotate": 0
+        },
+        {
+          "x": 42,
+          "y": 20,
+          "w": 51,
+          "h": 60,
+          "rotate": 90
         }
       ],
       "sick": [
         {
-          "x": 113,
-          "y": 284,
-          "w": 33,
-          "h": 25,
+          "x": 207,
+          "y": 181,
+          "w": 58,
+          "h": 45,
           "rotate": 0
+        },
+        {
+          "x": 44,
+          "y": 81,
+          "w": 28,
+          "h": 73,
+          "rotate": 90
         }
       ],
       "sitting": [
         {
-          "x": 167,
-          "y": 30,
-          "w": 47,
+          "x": 166,
+          "y": 29,
+          "w": 49,
           "h": 44,
+          "rotate": 90
+        },
+        {
+          "x": 168,
+          "y": 124,
+          "w": 48,
+          "h": 49,
           "rotate": 0
         }
       ]
@@ -2180,9 +2386,23 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
       "walking": [
         {
           "x": 46,
+          "y": 2,
+          "w": 46,
+          "h": 46,
+          "rotate": 0
+        },
+        {
+          "x": 46,
           "y": 50,
           "w": 48,
           "h": 45,
+          "rotate": 0
+        },
+        {
+          "x": 94,
+          "y": 4,
+          "w": 47,
+          "h": 44,
           "rotate": 0
         },
         {
@@ -2227,9 +2447,9 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
       ],
       "sleeping": [
         {
-          "x": 281,
+          "x": 280,
           "y": 239,
-          "w": 22,
+          "w": 24,
           "h": 15,
           "rotate": 0
         }
@@ -2259,9 +2479,9 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
       ],
       "sick": [
         {
-          "x": 281,
+          "x": 280,
           "y": 239,
-          "w": 22,
+          "w": 24,
           "h": 15,
           "rotate": 0
         }
@@ -2284,42 +2504,48 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
     "frames": {
       "standing": [
         {
-          "x": 51,
-          "y": 51,
-          "w": 38,
-          "h": 49
+          "x": 54,
+          "y": 5,
+          "w": 42,
+          "h": 46,
+          "rotate": 0
         },
         {
-          "x": 89,
-          "y": 51,
-          "w": 38,
-          "h": 49
+          "x": 98,
+          "y": 5,
+          "w": 43,
+          "h": 46,
+          "rotate": 0
         }
       ],
       "walking": [
         {
-          "x": 51,
+          "x": 2,
           "y": 51,
-          "w": 38,
-          "h": 49
+          "w": 48,
+          "h": 48,
+          "rotate": 0
         },
         {
-          "x": 89,
+          "x": 52,
           "y": 51,
-          "w": 38,
-          "h": 49
+          "w": 36,
+          "h": 48,
+          "rotate": 0
         },
         {
-          "x": 162,
+          "x": 90,
           "y": 51,
-          "w": 39,
-          "h": 52
+          "w": 36,
+          "h": 48,
+          "rotate": 0
         },
         {
-          "x": 255,
-          "y": 58,
-          "w": 34,
-          "h": 52
+          "x": 161,
+          "y": 51,
+          "w": 41,
+          "h": 50,
+          "rotate": 0
         }
       ],
       "happy": [
@@ -2352,10 +2578,11 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
       ],
       "sleeping": [
         {
-          "x": 185,
-          "y": 7,
-          "w": 41,
-          "h": 47
+          "x": 218,
+          "y": 278,
+          "w": 32,
+          "h": 20,
+          "rotate": 0
         }
       ],
       "training": [
@@ -2374,24 +2601,20 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
       ],
       "sick": [
         {
-          "x": 185,
-          "y": 7,
-          "w": 41,
-          "h": 47
+          "x": 218,
+          "y": 278,
+          "w": 32,
+          "h": 20,
+          "rotate": 0
         }
       ],
       "sitting": [
         {
-          "x": 51,
-          "y": 51,
-          "w": 38,
-          "h": 49
-        },
-        {
-          "x": 89,
-          "y": 51,
-          "w": 38,
-          "h": 49
+          "x": 54,
+          "y": 5,
+          "w": 42,
+          "h": 46,
+          "rotate": 0
         }
       ]
     }
@@ -2419,31 +2642,31 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
       ],
       "walking": [
         {
-          "x": 120,
-          "y": 13,
+          "x": 70,
+          "y": 157,
+          "w": 65,
+          "h": 47,
+          "rotate": 0
+        },
+        {
+          "x": 137,
+          "y": 150,
+          "w": 60,
+          "h": 44,
+          "rotate": 0
+        },
+        {
+          "x": 203,
+          "y": 158,
           "w": 57,
           "h": 40,
           "rotate": 0
         },
         {
-          "x": 179,
-          "y": 2,
-          "w": 37,
-          "h": 48,
-          "rotate": 0
-        },
-        {
-          "x": 218,
-          "y": 11,
-          "w": 50,
+          "x": 262,
+          "y": 157,
+          "w": 57,
           "h": 39,
-          "rotate": 0
-        },
-        {
-          "x": 273,
-          "y": 23,
-          "w": 24,
-          "h": 31,
           "rotate": 0
         }
       ],
@@ -2481,10 +2704,10 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
       ],
       "sleeping": [
         {
-          "x": 200,
-          "y": 254,
-          "w": 68,
-          "h": 27,
+          "x": 71,
+          "y": 206,
+          "w": 70,
+          "h": 32,
           "rotate": 0
         }
       ],
@@ -2513,10 +2736,10 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
       ],
       "sick": [
         {
-          "x": 200,
-          "y": 254,
-          "w": 68,
-          "h": 27,
+          "x": 71,
+          "y": 206,
+          "w": 70,
+          "h": 32,
           "rotate": 0
         }
       ],
@@ -2550,28 +2773,35 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
           "w": 51,
           "h": 47,
           "rotate": 0
-        },
-        {
-          "x": 194,
-          "y": 20,
-          "w": 43,
-          "h": 48,
-          "rotate": 0
         }
       ],
       "walking": [
         {
-          "x": 2,
-          "y": 45,
-          "w": 47,
-          "h": 59,
+          "x": 85,
+          "y": 21,
+          "w": 54,
+          "h": 47,
           "rotate": 0
         },
         {
-          "x": 51,
-          "y": 36,
-          "w": 32,
-          "h": 69,
+          "x": 85,
+          "y": 70,
+          "w": 50,
+          "h": 54,
+          "rotate": 0
+        },
+        {
+          "x": 141,
+          "y": 21,
+          "w": 51,
+          "h": 47,
+          "rotate": 0
+        },
+        {
+          "x": 137,
+          "y": 70,
+          "w": 47,
+          "h": 53,
           "rotate": 0
         }
       ],
@@ -2609,10 +2839,10 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
       ],
       "sleeping": [
         {
-          "x": 239,
-          "y": 3,
-          "w": 48,
-          "h": 42,
+          "x": 131,
+          "y": 235,
+          "w": 77,
+          "h": 11,
           "rotate": 0
         }
       ],
@@ -2641,10 +2871,10 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
       ],
       "sick": [
         {
-          "x": 239,
-          "y": 3,
-          "w": 48,
-          "h": 42,
+          "x": 131,
+          "y": 235,
+          "w": 77,
+          "h": 11,
           "rotate": 0
         }
       ],
@@ -2670,38 +2900,59 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
           "y": 26,
           "w": 56,
           "h": 52,
-          "rotate": 0
+          "rotate": 90
         },
         {
           "x": 220,
           "y": 26,
           "w": 56,
           "h": 54,
-          "rotate": 0
+          "rotate": 90
         }
       ],
       "walking": [
         {
-          "x": 278,
-          "y": 32,
+          "x": 220,
+          "y": 81,
+          "w": 55,
+          "h": 59,
+          "rotate": 90
+        },
+        {
+          "x": 284,
+          "y": 151,
           "w": 54,
           "h": 56,
           "rotate": 0
         },
         {
-          "x": 334,
-          "y": 31,
+          "x": 220,
+          "y": 81,
+          "w": 55,
+          "h": 59,
+          "rotate": 90
+        },
+        {
+          "x": 231,
+          "y": 137,
           "w": 52,
-          "h": 57,
+          "h": 59,
+          "rotate": 0
+        },
+        {
+          "x": 282,
+          "y": 89,
+          "w": 58,
+          "h": 59,
           "rotate": 0
         }
       ],
       "happy": [
         {
-          "x": 2,
-          "y": 34,
+          "x": 176,
+          "y": 138,
           "w": 52,
-          "h": 63,
+          "h": 59,
           "rotate": 0
         },
         {
@@ -2709,23 +2960,29 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
           "y": 26,
           "w": 56,
           "h": 52,
-          "rotate": 0
+          "rotate": 90
         }
       ],
       "eating": [
         {
-          "x": 56,
-          "y": 36,
-          "w": 50,
-          "h": 61,
-          "rotate": 0
+          "x": 117,
+          "y": 141,
+          "w": 58,
+          "h": 55,
+          "rotate": 0,
+          "sheetPath": "/assets/aistudio/Copy_of_Greymon_dcbe93f9.png",
+          "sheetWidth": 389,
+          "sheetHeight": 389
         },
         {
-          "x": 162,
-          "y": 26,
+          "x": 176,
+          "y": 141,
           "w": 56,
-          "h": 52,
-          "rotate": 0
+          "h": 55,
+          "rotate": 0,
+          "sheetPath": "/assets/aistudio/Copy_of_Greymon_dcbe93f9.png",
+          "sheetWidth": 389,
+          "sheetHeight": 389
         }
       ],
       "sleeping": [
@@ -2771,11 +3028,24 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
       ],
       "sitting": [
         {
-          "x": 162,
+          "x": 220,
           "y": 26,
           "w": 56,
-          "h": 52,
-          "rotate": 0
+          "h": 54,
+          "rotate": 90,
+          "sheetPath": "/assets/aistudio/Copy_of_Greymon_dcbe93f9.png",
+          "sheetWidth": 389,
+          "sheetHeight": 389
+        },
+        {
+          "x": 108,
+          "y": 41,
+          "w": 52,
+          "h": 60,
+          "rotate": 0,
+          "sheetPath": "/assets/aistudio/Copy_of_Greymon_dcbe93f9.png",
+          "sheetWidth": 389,
+          "sheetHeight": 389
         }
       ]
     }
@@ -3035,42 +3305,48 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
     "frames": {
       "standing": [
         {
-          "x": 3,
-          "y": 75,
-          "w": 74,
-          "h": 76
+          "x": 2,
+          "y": 40,
+          "w": 71,
+          "h": 74,
+          "rotate": 0
         },
         {
-          "x": 82,
-          "y": 309,
-          "w": 71,
-          "h": 76
+          "x": 75,
+          "y": 44,
+          "w": 76,
+          "h": 69,
+          "rotate": 0
         }
       ],
       "walking": [
         {
-          "x": 82,
-          "y": 309,
-          "w": 71,
-          "h": 76
+          "x": 83,
+          "y": 295,
+          "w": 74,
+          "h": 73,
+          "rotate": 0
         },
         {
-          "x": 173,
-          "y": 307,
-          "w": 66,
-          "h": 76
+          "x": 174,
+          "y": 295,
+          "w": 69,
+          "h": 75,
+          "rotate": 0
         },
         {
-          "x": 241,
-          "y": 309,
-          "w": 70,
-          "h": 76
+          "x": 245,
+          "y": 295,
+          "w": 68,
+          "h": 74,
+          "rotate": 0
         },
         {
-          "x": 311,
-          "y": 309,
-          "w": 70,
-          "h": 76
+          "x": 315,
+          "y": 295,
+          "w": 68,
+          "h": 74,
+          "rotate": 0
         }
       ],
       "happy": [
@@ -3103,10 +3379,11 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
       ],
       "sleeping": [
         {
-          "x": 3,
-          "y": 17,
-          "w": 73,
-          "h": 22
+          "x": 266,
+          "y": 445,
+          "w": 112,
+          "h": 18,
+          "rotate": 0
         }
       ],
       "training": [
@@ -3131,24 +3408,20 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
       ],
       "sick": [
         {
-          "x": 3,
-          "y": 17,
-          "w": 73,
-          "h": 22
+          "x": 266,
+          "y": 445,
+          "w": 112,
+          "h": 18,
+          "rotate": 0
         }
       ],
       "sitting": [
         {
-          "x": 3,
-          "y": 75,
-          "w": 74,
-          "h": 76
-        },
-        {
-          "x": 82,
-          "y": 309,
+          "x": 2,
+          "y": 40,
           "w": 71,
-          "h": 76
+          "h": 74,
+          "rotate": 0
         }
       ]
     }
@@ -3172,28 +3445,35 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
           "w": 55,
           "h": 51,
           "rotate": 0
-        },
-        {
-          "x": 116,
-          "y": 2,
-          "w": 41,
-          "h": 51,
-          "rotate": 0
         }
       ],
       "walking": [
         {
-          "x": 2,
-          "y": 55,
-          "w": 56,
-          "h": 56,
+          "x": 150,
+          "y": 302,
+          "w": 59,
+          "h": 55,
           "rotate": 0
         },
         {
-          "x": 73,
-          "y": 55,
-          "w": 46,
-          "h": 53,
+          "x": 211,
+          "y": 302,
+          "w": 57,
+          "h": 55,
+          "rotate": 0
+        },
+        {
+          "x": 270,
+          "y": 302,
+          "w": 55,
+          "h": 55,
+          "rotate": 0
+        },
+        {
+          "x": 211,
+          "y": 302,
+          "w": 57,
+          "h": 55,
           "rotate": 0
         }
       ],
@@ -3231,10 +3511,10 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
       ],
       "sleeping": [
         {
-          "x": 43,
-          "y": 248,
-          "w": 20,
-          "h": 11,
+          "x": 207,
+          "y": 113,
+          "w": 40,
+          "h": 48,
           "rotate": 0
         }
       ],
@@ -3263,10 +3543,10 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
       ],
       "sick": [
         {
-          "x": 43,
-          "y": 248,
-          "w": 20,
-          "h": 11,
+          "x": 207,
+          "y": 113,
+          "w": 40,
+          "h": 48,
           "rotate": 0
         }
       ],
@@ -3288,42 +3568,48 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
     "frames": {
       "standing": [
         {
-          "x": 218,
-          "y": 228,
-          "w": 61,
-          "h": 57
+          "x": 2,
+          "y": 3,
+          "w": 58,
+          "h": 62,
+          "rotate": 0
         },
         {
-          "x": 289,
-          "y": 231,
-          "w": 60,
-          "h": 56
+          "x": 62,
+          "y": 2,
+          "w": 57,
+          "h": 60,
+          "rotate": 0
         }
       ],
       "walking": [
         {
-          "x": 218,
-          "y": 167,
+          "x": 2,
+          "y": 67,
           "w": 60,
-          "h": 58
+          "h": 65,
+          "rotate": 0
         },
         {
-          "x": 277,
-          "y": 171,
-          "w": 60,
-          "h": 58
+          "x": 64,
+          "y": 64,
+          "w": 48,
+          "h": 65,
+          "rotate": 0
         },
         {
-          "x": 218,
-          "y": 228,
-          "w": 61,
-          "h": 57
+          "x": 114,
+          "y": 87,
+          "w": 57,
+          "h": 62,
+          "rotate": 0
         },
         {
-          "x": 289,
-          "y": 231,
-          "w": 60,
-          "h": 56
+          "x": 173,
+          "y": 95,
+          "w": 56,
+          "h": 62,
+          "rotate": 0
         }
       ],
       "happy": [
@@ -3356,10 +3642,11 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
       ],
       "sleeping": [
         {
-          "x": 289,
-          "y": 54,
-          "w": 58,
-          "h": 56
+          "x": 163,
+          "y": 324,
+          "w": 42,
+          "h": 25,
+          "rotate": 0
         }
       ],
       "training": [
@@ -3378,24 +3665,20 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
       ],
       "sick": [
         {
-          "x": 289,
-          "y": 54,
-          "w": 58,
-          "h": 56
+          "x": 163,
+          "y": 324,
+          "w": 42,
+          "h": 25,
+          "rotate": 0
         }
       ],
       "sitting": [
         {
-          "x": 218,
-          "y": 228,
-          "w": 61,
-          "h": 57
-        },
-        {
-          "x": 289,
-          "y": 231,
-          "w": 60,
-          "h": 56
+          "x": 2,
+          "y": 3,
+          "w": 58,
+          "h": 62,
+          "rotate": 0
         }
       ]
     }
@@ -3407,42 +3690,48 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
     "frames": {
       "standing": [
         {
-          "x": 43,
-          "y": 160,
-          "w": 60,
-          "h": 67
+          "x": 238,
+          "y": 11,
+          "w": 46,
+          "h": 50,
+          "rotate": 0
         },
         {
-          "x": 250,
-          "y": 160,
-          "w": 53,
-          "h": 54
+          "x": 286,
+          "y": 12,
+          "w": 47,
+          "h": 49,
+          "rotate": 0
         }
       ],
       "walking": [
         {
-          "x": 43,
-          "y": 160,
-          "w": 60,
-          "h": 67
+          "x": 42,
+          "y": 273,
+          "w": 54,
+          "h": 60,
+          "rotate": 0
         },
         {
-          "x": 179,
-          "y": 160,
-          "w": 66,
-          "h": 54
+          "x": 146,
+          "y": 275,
+          "w": 52,
+          "h": 58,
+          "rotate": 0
         },
         {
-          "x": 250,
-          "y": 160,
-          "w": 53,
-          "h": 54
+          "x": 200,
+          "y": 276,
+          "w": 56,
+          "h": 57,
+          "rotate": 0
         },
         {
-          "x": 103,
-          "y": 161,
-          "w": 72,
-          "h": 54
+          "x": 258,
+          "y": 277,
+          "w": 55,
+          "h": 56,
+          "rotate": 0
         }
       ],
       "happy": [
@@ -3475,10 +3764,11 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
       ],
       "sleeping": [
         {
-          "x": 120,
-          "y": 9,
-          "w": 65,
-          "h": 25
+          "x": 121,
+          "y": 10,
+          "w": 63,
+          "h": 19,
+          "rotate": 0
         }
       ],
       "training": [
@@ -3497,24 +3787,20 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
       ],
       "sick": [
         {
-          "x": 120,
-          "y": 9,
-          "w": 65,
-          "h": 25
+          "x": 121,
+          "y": 10,
+          "w": 63,
+          "h": 19,
+          "rotate": 0
         }
       ],
       "sitting": [
         {
-          "x": 43,
-          "y": 160,
-          "w": 60,
-          "h": 67
-        },
-        {
-          "x": 250,
-          "y": 160,
-          "w": 53,
-          "h": 54
+          "x": 238,
+          "y": 11,
+          "w": 46,
+          "h": 50,
+          "rotate": 0
         }
       ]
     }
@@ -3526,48 +3812,56 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
     "frames": {
       "standing": [
         {
-          "x": 2,
-          "y": 58,
-          "w": 99,
-          "h": 87,
-          "rotate": 0
+          "x": 270,
+          "y": 53,
+          "w": 78,
+          "h": 92,
+          "rotate": 90,
+          "sheetPath": "/assets/aistudio/Copy_of_MetalGreymon_2_7f134d73.png",
+          "sheetWidth": 474,
+          "sheetHeight": 494
         },
         {
-          "x": 103,
+          "x": 350,
+          "y": 81,
+          "w": 90,
+          "h": 79,
+          "rotate": 0,
+          "sheetPath": "/assets/aistudio/Copy_of_MetalGreymon_2_7f134d73.png",
+          "sheetWidth": 474,
+          "sheetHeight": 494
+        }
+      ],
+      "walking": [
+        {
+          "x": 190,
           "y": 49,
-          "w": 85,
+          "w": 78,
           "h": 96,
-          "rotate": 0
+          "rotate": 90,
+          "sheetPath": "/assets/aistudio/Copy_of_MetalGreymon_2_7f134d73.png",
+          "sheetWidth": 474,
+          "sheetHeight": 494
+        },
+        {
+          "x": 350,
+          "y": 254,
+          "w": 92,
+          "h": 77,
+          "rotate": 0,
+          "sheetPath": "/assets/aistudio/Copy_of_MetalGreymon_2_7f134d73.png",
+          "sheetWidth": 474,
+          "sheetHeight": 494
         },
         {
           "x": 190,
           "y": 49,
           "w": 78,
           "h": 96,
-          "rotate": 0
-        }
-      ],
-      "walking": [
-        {
-          "x": 2,
-          "y": 147,
-          "w": 109,
-          "h": 81,
-          "rotate": 0
-        },
-        {
-          "x": 113,
-          "y": 147,
-          "w": 92,
-          "h": 81,
-          "rotate": 0
-        },
-        {
-          "x": 207,
-          "y": 147,
-          "w": 93,
-          "h": 81,
-          "rotate": 0
+          "rotate": 90,
+          "sheetPath": "/assets/aistudio/Copy_of_MetalGreymon_2_7f134d73.png",
+          "sheetWidth": 474,
+          "sheetHeight": 494
         }
       ],
       "happy": [
@@ -3576,14 +3870,20 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
           "y": 53,
           "w": 78,
           "h": 92,
-          "rotate": 0
+          "rotate": 90,
+          "sheetPath": "/assets/aistudio/Copy_of_MetalGreymon_2_7f134d73.png",
+          "sheetWidth": 474,
+          "sheetHeight": 494
         },
         {
-          "x": 2,
-          "y": 58,
-          "w": 99,
-          "h": 87,
-          "rotate": 0
+          "x": 350,
+          "y": 81,
+          "w": 90,
+          "h": 79,
+          "rotate": 0,
+          "sheetPath": "/assets/aistudio/Copy_of_MetalGreymon_2_7f134d73.png",
+          "sheetWidth": 474,
+          "sheetHeight": 494
         }
       ],
       "eating": [
@@ -3596,10 +3896,13 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
         },
         {
           "x": 2,
-          "y": 58,
-          "w": 99,
-          "h": 87,
-          "rotate": 0
+          "y": 147,
+          "w": 109,
+          "h": 81,
+          "rotate": 0,
+          "sheetPath": "/assets/aistudio/Copy_of_MetalGreymon_2_7f134d73.png",
+          "sheetWidth": 474,
+          "sheetHeight": 494
         }
       ],
       "sleeping": [
@@ -3608,17 +3911,23 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
           "y": 2,
           "w": 90,
           "h": 77,
-          "rotate": 0
+          "rotate": 90,
+          "sheetPath": "/assets/aistudio/Copy_of_MetalGreymon_2_7f134d73.png",
+          "sheetWidth": 474,
+          "sheetHeight": 494
+        },
+        {
+          "x": 352,
+          "y": 2,
+          "w": 90,
+          "h": 77,
+          "rotate": 90,
+          "sheetPath": "/assets/aistudio/Copy_of_MetalGreymon_2_7f134d73.png",
+          "sheetWidth": 474,
+          "sheetHeight": 494
         }
       ],
       "training": [
-        {
-          "x": 270,
-          "y": 53,
-          "w": 78,
-          "h": 92,
-          "rotate": 0
-        },
         {
           "x": 350,
           "y": 81,
@@ -3632,6 +3941,27 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
           "w": 77,
           "h": 90,
           "rotate": 0
+        },
+        {
+          "x": 233,
+          "y": 410,
+          "w": 109,
+          "h": 82,
+          "rotate": 0
+        },
+        {
+          "x": 119,
+          "y": 407,
+          "w": 112,
+          "h": 85,
+          "rotate": 0
+        },
+        {
+          "x": 3,
+          "y": 230,
+          "w": 111,
+          "h": 85,
+          "rotate": 0
         }
       ],
       "sick": [
@@ -3640,16 +3970,42 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
           "y": 2,
           "w": 90,
           "h": 77,
-          "rotate": 0
+          "rotate": 90,
+          "sheetPath": "/assets/aistudio/Copy_of_MetalGreymon_2_7f134d73.png",
+          "sheetWidth": 474,
+          "sheetHeight": 494
+        },
+        {
+          "x": 352,
+          "y": 2,
+          "w": 90,
+          "h": 77,
+          "rotate": 90,
+          "sheetPath": "/assets/aistudio/Copy_of_MetalGreymon_2_7f134d73.png",
+          "sheetWidth": 474,
+          "sheetHeight": 494
         }
       ],
       "sitting": [
         {
-          "x": 2,
-          "y": 58,
-          "w": 99,
-          "h": 87,
-          "rotate": 0
+          "x": 232,
+          "y": 324,
+          "w": 103,
+          "h": 85,
+          "rotate": 0,
+          "sheetPath": "/assets/aistudio/Copy_of_MetalGreymon_2_7f134d73.png",
+          "sheetWidth": 474,
+          "sheetHeight": 494
+        },
+        {
+          "x": 270,
+          "y": 53,
+          "w": 78,
+          "h": 92,
+          "rotate": 90,
+          "sheetPath": "/assets/aistudio/Copy_of_MetalGreymon_2_7f134d73.png",
+          "sheetWidth": 474,
+          "sheetHeight": 494
         }
       ]
     }
@@ -3899,42 +4255,48 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
     "frames": {
       "standing": [
         {
-          "x": 85,
-          "y": 395,
-          "w": 94,
-          "h": 114
+          "x": 323,
+          "y": 2,
+          "w": 86,
+          "h": 102,
+          "rotate": 0
         },
         {
-          "x": 3,
-          "y": 395,
-          "w": 82,
-          "h": 114
+          "x": 411,
+          "y": 2,
+          "w": 86,
+          "h": 102,
+          "rotate": 0
         }
       ],
       "walking": [
         {
-          "x": 85,
-          "y": 395,
-          "w": 94,
-          "h": 114
+          "x": 323,
+          "y": 2,
+          "w": 86,
+          "h": 102,
+          "rotate": 0
         },
         {
-          "x": 182,
-          "y": 395,
-          "w": 93,
-          "h": 114
+          "x": 308,
+          "y": 110,
+          "w": 87,
+          "h": 111,
+          "rotate": 0
         },
         {
-          "x": 283,
-          "y": 395,
-          "w": 96,
-          "h": 114
+          "x": 411,
+          "y": 2,
+          "w": 86,
+          "h": 102,
+          "rotate": 0
         },
         {
-          "x": 387,
-          "y": 395,
-          "w": 106,
-          "h": 114
+          "x": 397,
+          "y": 106,
+          "w": 87,
+          "h": 110,
+          "rotate": 0
         }
       ],
       "happy": [
@@ -3967,10 +4329,11 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
       ],
       "sleeping": [
         {
-          "x": 77,
-          "y": 1,
-          "w": 100,
-          "h": 26
+          "x": 78,
+          "y": 7,
+          "w": 98,
+          "h": 24,
+          "rotate": 0
         }
       ],
       "training": [
@@ -3989,24 +4352,20 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
       ],
       "sick": [
         {
-          "x": 77,
-          "y": 1,
-          "w": 100,
-          "h": 26
+          "x": 78,
+          "y": 7,
+          "w": 98,
+          "h": 24,
+          "rotate": 0
         }
       ],
       "sitting": [
         {
-          "x": 85,
-          "y": 395,
-          "w": 94,
-          "h": 114
-        },
-        {
-          "x": 3,
-          "y": 395,
-          "w": 82,
-          "h": 114
+          "x": 323,
+          "y": 2,
+          "w": 86,
+          "h": 102,
+          "rotate": 0
         }
       ]
     }
@@ -4017,13 +4376,6 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
     "sheetHeight": 297,
     "frames": {
       "standing": [
-        {
-          "x": 2,
-          "y": 17,
-          "w": 41,
-          "h": 53,
-          "rotate": 0
-        },
         {
           "x": 45,
           "y": 16,
@@ -4042,6 +4394,13 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
       "walking": [
         {
           "x": 2,
+          "y": 17,
+          "w": 41,
+          "h": 53,
+          "rotate": 0
+        },
+        {
+          "x": 2,
           "y": 72,
           "w": 46,
           "h": 54,
@@ -4051,6 +4410,13 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
           "x": 92,
           "y": 71,
           "w": 37,
+          "h": 56,
+          "rotate": 0
+        },
+        {
+          "x": 131,
+          "y": 71,
+          "w": 36,
           "h": 56,
           "rotate": 0
         }
@@ -4089,10 +4455,10 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
       ],
       "sleeping": [
         {
-          "x": 186,
-          "y": 13,
+          "x": 185,
+          "y": 45,
           "w": 37,
-          "h": 27,
+          "h": 33,
           "rotate": 0
         }
       ],
@@ -4121,19 +4487,19 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
       ],
       "sick": [
         {
-          "x": 186,
-          "y": 13,
+          "x": 185,
+          "y": 45,
           "w": 37,
-          "h": 27,
+          "h": 33,
           "rotate": 0
         }
       ],
       "sitting": [
         {
-          "x": 2,
-          "y": 17,
-          "w": 41,
-          "h": 53,
+          "x": 45,
+          "y": 16,
+          "w": 35,
+          "h": 54,
           "rotate": 0
         }
       ]
@@ -4146,42 +4512,48 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
     "frames": {
       "standing": [
         {
-          "x": 3,
-          "y": 134,
-          "w": 122,
-          "h": 110
+          "x": 2,
+          "y": 31,
+          "w": 126,
+          "h": 153,
+          "rotate": 0
         },
         {
-          "x": 249,
-          "y": 134,
-          "w": 122,
-          "h": 110
+          "x": 130,
+          "y": 31,
+          "w": 125,
+          "h": 153,
+          "rotate": 0
         }
       ],
       "walking": [
         {
-          "x": 3,
-          "y": 134,
-          "w": 122,
-          "h": 110
+          "x": 2,
+          "y": 31,
+          "w": 126,
+          "h": 153,
+          "rotate": 0
         },
         {
-          "x": 125,
-          "y": 134,
-          "w": 112,
-          "h": 110
+          "x": 9,
+          "y": 356,
+          "w": 123,
+          "h": 147,
+          "rotate": 0
         },
         {
-          "x": 249,
-          "y": 134,
-          "w": 122,
-          "h": 110
+          "x": 130,
+          "y": 31,
+          "w": 125,
+          "h": 153,
+          "rotate": 0
         },
         {
-          "x": 373,
-          "y": 134,
-          "w": 106,
-          "h": 110
+          "x": 154,
+          "y": 362,
+          "w": 116,
+          "h": 142,
+          "rotate": 0
         }
       ],
       "happy": [
@@ -4214,10 +4586,11 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
       ],
       "sleeping": [
         {
-          "x": 48,
-          "y": 10,
-          "w": 166,
-          "h": 59
+          "x": 268,
+          "y": 33,
+          "w": 100,
+          "h": 102,
+          "rotate": 0
         }
       ],
       "training": [
@@ -4236,24 +4609,20 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
       ],
       "sick": [
         {
-          "x": 48,
-          "y": 10,
-          "w": 166,
-          "h": 59
+          "x": 268,
+          "y": 33,
+          "w": 100,
+          "h": 102,
+          "rotate": 0
         }
       ],
       "sitting": [
         {
-          "x": 3,
-          "y": 134,
-          "w": 122,
-          "h": 110
-        },
-        {
-          "x": 249,
-          "y": 134,
-          "w": 122,
-          "h": 110
+          "x": 2,
+          "y": 31,
+          "w": 126,
+          "h": 153,
+          "rotate": 0
         }
       ]
     }
@@ -4272,13 +4641,6 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
           "rotate": 0
         },
         {
-          "x": 78,
-          "y": 16,
-          "w": 64,
-          "h": 99,
-          "rotate": 0
-        },
-        {
           "x": 144,
           "y": 23,
           "w": 73,
@@ -4292,6 +4654,20 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
           "y": 122,
           "w": 75,
           "h": 94,
+          "rotate": 0
+        },
+        {
+          "x": 79,
+          "y": 117,
+          "w": 59,
+          "h": 99,
+          "rotate": 0
+        },
+        {
+          "x": 140,
+          "y": 117,
+          "w": 74,
+          "h": 93,
           "rotate": 0
         },
         {
@@ -4336,10 +4712,10 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
       ],
       "sleeping": [
         {
-          "x": 296,
-          "y": 33,
-          "w": 103,
-          "h": 40,
+          "x": 429,
+          "y": 300,
+          "w": 65,
+          "h": 25,
           "rotate": 0
         }
       ],
@@ -4368,10 +4744,10 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
       ],
       "sick": [
         {
-          "x": 296,
-          "y": 33,
-          "w": 103,
-          "h": 40,
+          "x": 429,
+          "y": 300,
+          "w": 65,
+          "h": 25,
           "rotate": 0
         }
       ],
@@ -4416,57 +4792,108 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
       ],
       "walking": [
         {
-          "x": 62,
-          "y": 121,
-          "w": 96,
-          "h": 97,
-          "rotate": 0
+          "x": 83,
+          "y": 17,
+          "w": 72,
+          "h": 76,
+          "rotate": 0,
+          "sheetPath": "/assets/aistudio/Copy_of_WarGreymon_2_721b4ff0.png",
+          "sheetWidth": 240,
+          "sheetHeight": 240
         },
         {
-          "x": 258,
-          "y": 126,
+          "x": 84,
+          "y": 93,
           "w": 73,
-          "h": 92,
-          "rotate": 0
+          "h": 73,
+          "rotate": 0,
+          "sheetPath": "/assets/aistudio/Copy_of_WarGreymon_2_721b4ff0.png",
+          "sheetWidth": 240,
+          "sheetHeight": 240
         },
         {
-          "x": 333,
-          "y": 131,
-          "w": 71,
-          "h": 88,
-          "rotate": 0
+          "x": 158,
+          "y": 93,
+          "w": 73,
+          "h": 73,
+          "rotate": 0,
+          "sheetPath": "/assets/aistudio/Copy_of_WarGreymon_2_721b4ff0.png",
+          "sheetWidth": 240,
+          "sheetHeight": 240
+        },
+        {
+          "x": 84,
+          "y": 166,
+          "w": 78,
+          "h": 72,
+          "rotate": 0,
+          "sheetPath": "/assets/aistudio/Copy_of_WarGreymon_2_721b4ff0.png",
+          "sheetWidth": 240,
+          "sheetHeight": 240
+        },
+        {
+          "x": 163,
+          "y": 166,
+          "w": 76,
+          "h": 72,
+          "rotate": 0,
+          "sheetPath": "/assets/aistudio/Copy_of_WarGreymon_2_721b4ff0.png",
+          "sheetWidth": 240,
+          "sheetHeight": 240
         }
       ],
       "happy": [
         {
-          "x": 406,
-          "y": 85,
-          "w": 80,
-          "h": 77,
-          "rotate": 0
-        },
-        {
-          "x": 257,
+          "x": 256,
           "y": 2,
           "w": 78,
           "h": 81,
-          "rotate": 0
+          "rotate": 0,
+          "sheetPath": "/assets/aistudio/Copy_of_WarGreymon_9adf0908.png",
+          "sheetWidth": 512,
+          "sheetHeight": 512
+        },
+        {
+          "x": 335,
+          "y": 2,
+          "w": 79,
+          "h": 81,
+          "rotate": 0,
+          "sheetPath": "/assets/aistudio/Copy_of_WarGreymon_9adf0908.png",
+          "sheetWidth": 512,
+          "sheetHeight": 512
+        },
+        {
+          "x": 415,
+          "y": 3,
+          "w": 78,
+          "h": 80,
+          "rotate": 0,
+          "sheetPath": "/assets/aistudio/Copy_of_WarGreymon_9adf0908.png",
+          "sheetWidth": 512,
+          "sheetHeight": 512
         }
       ],
       "eating": [
         {
           "x": 406,
-          "y": 164,
-          "w": 76,
-          "h": 82,
-          "rotate": 0
+          "y": 85,
+          "w": 80,
+          "h": 77,
+          "rotate": 0,
+          "sheetPath": "/assets/aistudio/Copy_of_WarGreymon_9adf0908.png",
+          "sheetWidth": 512,
+          "sheetHeight": 512
         },
         {
           "x": 257,
           "y": 2,
-          "w": 78,
+          "w": 81,
           "h": 81,
-          "rotate": 0
+          "rotate": 0,
+          "sheetPath": "/assets/aistudio/Copy_of_WarGreymon_9adf0908.png",
+          "sheetWidth": 512,
+          "sheetHeight": 512
         }
       ],
       "sleeping": [
@@ -4476,29 +4903,58 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
           "w": 92,
           "h": 28,
           "rotate": 0
+        },
+        {
+          "x": 358,
+          "y": 417,
+          "w": 92,
+          "h": 28,
+          "rotate": 0,
+          "sheetPath": "/assets/aistudio/Copy_of_WarGreymon_9adf0908.png",
+          "sheetWidth": 512,
+          "sheetHeight": 512
         }
       ],
       "training": [
         {
-          "x": 406,
-          "y": 85,
-          "w": 80,
-          "h": 77,
-          "rotate": 0
+          "x": 315,
+          "y": 218,
+          "w": 73,
+          "h": 92,
+          "rotate": 0,
+          "sheetPath": "/assets/aistudio/Copy_of_WarGreymon_9adf0908.png",
+          "sheetWidth": 512,
+          "sheetHeight": 512
         },
         {
-          "x": 406,
-          "y": 164,
-          "w": 76,
-          "h": 82,
-          "rotate": 0
+          "x": 258,
+          "y": 126,
+          "w": 73,
+          "h": 92,
+          "rotate": 0,
+          "sheetPath": "/assets/aistudio/Copy_of_WarGreymon_9adf0908.png",
+          "sheetWidth": 512,
+          "sheetHeight": 512
         },
         {
-          "x": 52,
-          "y": 220,
-          "w": 76,
-          "h": 57,
-          "rotate": 0
+          "x": 259,
+          "y": 311,
+          "w": 98,
+          "h": 100,
+          "rotate": 0,
+          "sheetPath": "/assets/aistudio/Copy_of_WarGreymon_9adf0908.png",
+          "sheetWidth": 512,
+          "sheetHeight": 512
+        },
+        {
+          "x": 333,
+          "y": 131,
+          "w": 71,
+          "h": 88,
+          "rotate": 0,
+          "sheetPath": "/assets/aistudio/Copy_of_WarGreymon_9adf0908.png",
+          "sheetWidth": 512,
+          "sheetHeight": 512
         }
       ],
       "sick": [
@@ -4508,15 +4964,38 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
           "w": 92,
           "h": 28,
           "rotate": 0
+        },
+        {
+          "x": 358,
+          "y": 417,
+          "w": 92,
+          "h": 28,
+          "rotate": 0,
+          "sheetPath": "/assets/aistudio/Copy_of_WarGreymon_9adf0908.png",
+          "sheetWidth": 512,
+          "sheetHeight": 512
         }
       ],
       "sitting": [
         {
-          "x": 257,
-          "y": 2,
-          "w": 78,
-          "h": 81,
-          "rotate": 0
+          "x": 52,
+          "y": 220,
+          "w": 76,
+          "h": 57,
+          "rotate": 0,
+          "sheetPath": "/assets/aistudio/Copy_of_WarGreymon_9adf0908.png",
+          "sheetWidth": 512,
+          "sheetHeight": 512
+        },
+        {
+          "x": 52,
+          "y": 219,
+          "w": 76,
+          "h": 57,
+          "rotate": 0,
+          "sheetPath": "/assets/aistudio/Copy_of_WarGreymon_9adf0908.png",
+          "sheetWidth": 512,
+          "sheetHeight": 512
         }
       ]
     }
@@ -4635,10 +5114,10 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
     "frames": {
       "standing": [
         {
-          "x": 2,
-          "y": 136,
+          "x": 99,
+          "y": 68,
           "w": 96,
-          "h": 91,
+          "h": 71,
           "rotate": 0
         },
         {
@@ -4651,32 +5130,54 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
       ],
       "walking": [
         {
-          "x": 100,
-          "y": 142,
-          "w": 95,
-          "h": 85,
-          "rotate": 0
+          "x": 1,
+          "y": 0,
+          "w": 122,
+          "h": 70,
+          "rotate": 0,
+          "sheetPath": "/assets/aistudio/Copy_of_Phoenixmon_3_3516c5a0.png",
+          "sheetWidth": 512,
+          "sheetHeight": 512
         },
         {
-          "x": 256,
-          "y": 145,
-          "w": 95,
-          "h": 80,
-          "rotate": 0
+          "x": 123,
+          "y": 0,
+          "w": 115,
+          "h": 70,
+          "rotate": 0,
+          "sheetPath": "/assets/aistudio/Copy_of_Phoenixmon_3_3516c5a0.png",
+          "sheetWidth": 512,
+          "sheetHeight": 512
         },
         {
-          "x": 266,
-          "y": 225,
-          "w": 97,
-          "h": 80,
-          "rotate": 0
+          "x": 289,
+          "y": 34,
+          "w": 122,
+          "h": 90,
+          "rotate": 0,
+          "sheetPath": "/assets/aistudio/Copy_of_Phoenixmon_3_3516c5a0.png",
+          "sheetWidth": 512,
+          "sheetHeight": 512
         },
         {
-          "x": 266,
-          "y": 307,
-          "w": 85,
-          "h": 95,
-          "rotate": 0
+          "x": 294,
+          "y": 208,
+          "w": 120,
+          "h": 83,
+          "rotate": 0,
+          "sheetPath": "/assets/aistudio/Copy_of_Phoenixmon_3_3516c5a0.png",
+          "sheetWidth": 512,
+          "sheetHeight": 512
+        },
+        {
+          "x": 412,
+          "y": 76,
+          "w": 98,
+          "h": 105,
+          "rotate": 90,
+          "sheetPath": "/assets/aistudio/Copy_of_Phoenixmon_3_3516c5a0.png",
+          "sheetWidth": 512,
+          "sheetHeight": 512
         }
       ],
       "happy": [
@@ -4704,36 +5205,68 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
           "rotate": 0
         },
         {
-          "x": 266,
-          "y": 405,
-          "w": 96,
-          "h": 91,
-          "rotate": 0
+          "x": 362,
+          "y": 402,
+          "w": 94,
+          "h": 92,
+          "rotate": 0,
+          "sheetPath": "/assets/aistudio/Copy_of_Phoenixmon_5_f4ad8760.png",
+          "sheetWidth": 498,
+          "sheetHeight": 498
         }
       ],
       "sleeping": [
         {
-          "x": 97,
-          "y": 10,
-          "w": 98,
-          "h": 57,
-          "rotate": 0
+          "x": 195,
+          "y": 2,
+          "w": 55,
+          "h": 113,
+          "rotate": 90,
+          "sheetPath": "/assets/aistudio/Copy_of_Phoenixmon_5_f4ad8760.png",
+          "sheetWidth": 498,
+          "sheetHeight": 498
+        },
+        {
+          "x": 249,
+          "y": 1,
+          "w": 55,
+          "h": 113,
+          "rotate": 90,
+          "sheetPath": "/assets/aistudio/Copy_of_Phoenixmon_5_f4ad8760.png",
+          "sheetWidth": 498,
+          "sheetHeight": 498
         }
       ],
       "training": [
         {
-          "x": 256,
-          "y": 145,
-          "w": 95,
-          "h": 80,
-          "rotate": 0
+          "x": 5,
+          "y": 13,
+          "w": 226,
+          "h": 224,
+          "rotate": 0,
+          "sheetPath": "/assets/aistudio/Copy_of_Phoenixmon_4_5b0ea9a1.png",
+          "sheetWidth": 512,
+          "sheetHeight": 512
         },
         {
-          "x": 266,
-          "y": 225,
-          "w": 97,
-          "h": 80,
-          "rotate": 0
+          "x": 73,
+          "y": 304,
+          "w": 110,
+          "h": 100,
+          "rotate": 0,
+          "sheetPath": "/assets/aistudio/Copy_of_Phoenixmon_5_f4ad8760.png",
+          "sheetWidth": 498,
+          "sheetHeight": 498
+        },
+        {
+          "x": 174,
+          "y": 104,
+          "w": 110,
+          "h": 100,
+          "rotate": 0,
+          "sheetPath": "/assets/aistudio/Copy_of_Phoenixmon_3_3516c5a0.png",
+          "sheetWidth": 512,
+          "sheetHeight": 512
         }
       ],
       "sick": [
@@ -4747,11 +5280,24 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
       ],
       "sitting": [
         {
-          "x": 266,
-          "y": 405,
+          "x": 99,
+          "y": 68,
           "w": 96,
-          "h": 91,
-          "rotate": 0
+          "h": 74,
+          "rotate": 0,
+          "sheetPath": "/assets/aistudio/Copy_of_Phoenixmon_5_f4ad8760.png",
+          "sheetWidth": 498,
+          "sheetHeight": 498
+        },
+        {
+          "x": 386,
+          "y": 129,
+          "w": 96,
+          "h": 97,
+          "rotate": 0,
+          "sheetPath": "/assets/aistudio/Copy_of_Phoenixmon_4_5b0ea9a1.png",
+          "sheetWidth": 512,
+          "sheetHeight": 512
         }
       ]
     }
@@ -4772,7 +5318,7 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
         {
           "x": 86,
           "y": 23,
-          "w": 78,
+          "w": 79,
           "h": 109,
           "rotate": 0
         }
@@ -4786,10 +5332,24 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
           "rotate": 0
         },
         {
+          "x": 2,
+          "y": 18,
+          "w": 82,
+          "h": 114,
+          "rotate": 0
+        },
+        {
           "x": 249,
           "y": 31,
           "w": 76,
           "h": 111,
+          "rotate": 0
+        },
+        {
+          "x": 86,
+          "y": 23,
+          "w": 79,
+          "h": 109,
           "rotate": 0
         }
       ],
@@ -4827,10 +5387,10 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
       ],
       "sleeping": [
         {
-          "x": 453,
-          "y": 121,
-          "w": 47,
-          "h": 41,
+          "x": 169,
+          "y": 18,
+          "w": 44,
+          "h": 25,
           "rotate": 0
         }
       ],
@@ -4859,10 +5419,10 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
       ],
       "sick": [
         {
-          "x": 453,
-          "y": 121,
-          "w": 47,
-          "h": 41,
+          "x": 169,
+          "y": 18,
+          "w": 44,
+          "h": 25,
           "rotate": 0
         }
       ],
@@ -4896,28 +5456,35 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
           "w": 73,
           "h": 75,
           "rotate": 0
-        },
-        {
-          "x": 221,
-          "y": 2,
-          "w": 63,
-          "h": 76,
-          "rotate": 0
         }
       ],
       "walking": [
         {
-          "x": 223,
-          "y": 250,
-          "w": 63,
-          "h": 78,
+          "x": 2,
+          "y": 2,
+          "w": 73,
+          "h": 75,
           "rotate": 0
         },
         {
-          "x": 290,
-          "y": 242,
-          "w": 93,
-          "h": 82,
+          "x": 15,
+          "y": 110,
+          "w": 69,
+          "h": 72,
+          "rotate": 0
+        },
+        {
+          "x": 77,
+          "y": 2,
+          "w": 73,
+          "h": 75,
+          "rotate": 0
+        },
+        {
+          "x": 134,
+          "y": 109,
+          "w": 77,
+          "h": 71,
           "rotate": 0
         }
       ],
@@ -4955,10 +5522,10 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
       ],
       "sleeping": [
         {
-          "x": 463,
-          "y": 352,
-          "w": 47,
-          "h": 33,
+          "x": 225,
+          "y": 125,
+          "w": 80,
+          "h": 52,
           "rotate": 0
         }
       ],
@@ -4987,10 +5554,10 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
       ],
       "sick": [
         {
-          "x": 463,
-          "y": 352,
-          "w": 47,
-          "h": 33,
+          "x": 225,
+          "y": 125,
+          "w": 80,
+          "h": 52,
           "rotate": 0
         }
       ],
@@ -5024,13 +5591,6 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
           "w": 109,
           "h": 129,
           "rotate": 0
-        },
-        {
-          "x": 224,
-          "y": 2,
-          "w": 105,
-          "h": 129,
-          "rotate": 0
         }
       ],
       "walking": [
@@ -5052,6 +5612,13 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
           "x": 225,
           "y": 133,
           "w": 111,
+          "h": 128,
+          "rotate": 0
+        },
+        {
+          "x": 118,
+          "y": 264,
+          "w": 109,
           "h": 128,
           "rotate": 0
         }
@@ -5090,10 +5657,10 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
       ],
       "sleeping": [
         {
-          "x": 278,
-          "y": 362,
-          "w": 16,
-          "h": 16,
+          "x": 2,
+          "y": 394,
+          "w": 134,
+          "h": 116,
           "rotate": 0
         }
       ],
@@ -5122,10 +5689,10 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
       ],
       "sick": [
         {
-          "x": 278,
-          "y": 362,
-          "w": 16,
-          "h": 16,
+          "x": 2,
+          "y": 394,
+          "w": 134,
+          "h": 116,
           "rotate": 0
         }
       ],
@@ -5147,227 +5714,279 @@ export const NEW_DIGIMON_SPRITES: Record<string, DigimonSpriteConfig> = {
     "frames": {
       "standing": [
         {
-          "x": 1,
-          "y": 394,
-          "w": 102,
-          "h": 92
+          "x": 370,
+          "y": 2,
+          "w": 103,
+          "h": 97,
+          "rotate": 0
         },
         {
-          "x": 103,
-          "y": 397,
-          "w": 102,
-          "h": 90
+          "x": 2,
+          "y": 403,
+          "w": 100,
+          "h": 107,
+          "rotate": 0
         }
       ],
       "walking": [
         {
-          "x": 1,
-          "y": 394,
+          "x": 2,
+          "y": 403,
+          "w": 100,
+          "h": 107,
+          "rotate": 0
+        },
+        {
+          "x": 104,
+          "y": 407,
           "w": 102,
-          "h": 92
+          "h": 103,
+          "rotate": 0
         },
         {
-          "x": 103,
-          "y": 397,
-          "w": 102,
-          "h": 90
+          "x": 208,
+          "y": 415,
+          "w": 106,
+          "h": 95,
+          "rotate": 0
         },
         {
-          "x": 91,
-          "y": 68,
-          "w": 104,
-          "h": 98
-        },
-        {
-          "x": 362,
-          "y": 1,
-          "w": 101,
-          "h": 102
+          "x": 316,
+          "y": 416,
+          "w": 107,
+          "h": 94,
+          "rotate": 0
         }
       ],
       "happy": [
         {
-          "x": 1,
-          "y": 394,
-          "w": 102,
-          "h": 92
+          "x": 370,
+          "y": 2,
+          "w": 103,
+          "h": 97,
+          "rotate": 0
         },
         {
-          "x": 362,
-          "y": 1,
-          "w": 101,
-          "h": 102
+          "x": 280,
+          "y": 6,
+          "w": 78,
+          "h": 63,
+          "rotate": 0
         }
       ],
       "eating": [
         {
-          "x": 1,
-          "y": 394,
-          "w": 102,
-          "h": 92
+          "x": 370,
+          "y": 2,
+          "w": 103,
+          "h": 97,
+          "rotate": 0
         },
         {
-          "x": 362,
-          "y": 1,
-          "w": 101,
-          "h": 102
+          "x": 280,
+          "y": 6,
+          "w": 78,
+          "h": 63,
+          "rotate": 0
         }
       ],
       "sleeping": [
         {
-          "x": 1,
-          "y": 10,
-          "w": 104,
-          "h": 44
+          "x": 2,
+          "y": 11,
+          "w": 107,
+          "h": 56,
+          "rotate": 0
         }
       ],
       "training": [
         {
-          "x": 91,
-          "y": 68,
-          "w": 104,
-          "h": 98
+          "x": 2,
+          "y": 403,
+          "w": 100,
+          "h": 107,
+          "rotate": 0
         },
         {
-          "x": 267,
-          "y": 81,
-          "w": 97,
-          "h": 105
+          "x": 337,
+          "y": 307,
+          "w": 88,
+          "h": 107,
+          "rotate": 0
+        },
+        {
+          "x": 427,
+          "y": 345,
+          "w": 80,
+          "h": 106,
+          "rotate": 0
+        },
+        {
+          "x": 426,
+          "y": 454,
+          "w": 47,
+          "h": 55,
+          "rotate": 0
         }
       ],
       "sick": [
         {
-          "x": 1,
-          "y": 10,
-          "w": 104,
-          "h": 44
+          "x": 2,
+          "y": 11,
+          "w": 107,
+          "h": 56,
+          "rotate": 0
         }
       ],
       "sitting": [
         {
-          "x": 1,
-          "y": 394,
-          "w": 102,
-          "h": 92
-        },
-        {
-          "x": 103,
-          "y": 397,
-          "w": 102,
-          "h": 90
+          "x": 2,
+          "y": 11,
+          "w": 107,
+          "h": 56,
+          "rotate": 0
         }
       ]
     }
   },
   "yukimibotamon": {
-    "sheetPath": "/assets/aistudio/Copy_of_Yukimibotamon_425de778.png",
-    "sheetWidth": 180,
-    "sheetHeight": 180,
+    "sheetPath": "/assets/yukimibotamon_transparent.png",
+    "sheetWidth": 144,
+    "sheetHeight": 192,
     "frames": {
       "standing": [
         {
-          "x": 30,
-          "y": 5,
-          "w": 35,
-          "h": 27
+          "x": 0,
+          "y": 0,
+          "w": 48,
+          "h": 48,
+          "rotate": 0
         },
         {
-          "x": 31,
-          "y": 34,
-          "w": 35,
-          "h": 29
+          "x": 48,
+          "y": 0,
+          "w": 48,
+          "h": 48,
+          "rotate": 0
+        },
+        {
+          "x": 96,
+          "y": 0,
+          "w": 48,
+          "h": 48,
+          "rotate": 0
         }
       ],
       "walking": [
         {
-          "x": 2,
-          "y": 82,
-          "w": 36,
-          "h": 30
+          "x": 0,
+          "y": 48,
+          "w": 48,
+          "h": 48,
+          "rotate": 0
         },
         {
-          "x": 70,
-          "y": 85,
-          "w": 34,
-          "h": 31
+          "x": 48,
+          "y": 48,
+          "w": 48,
+          "h": 48,
+          "rotate": 0
         },
         {
-          "x": 106,
-          "y": 84,
-          "w": 35,
-          "h": 29
+          "x": 96,
+          "y": 48,
+          "w": 48,
+          "h": 48,
+          "rotate": 0
         },
         {
-          "x": 143,
-          "y": 70,
-          "w": 35,
-          "h": 29
+          "x": 48,
+          "y": 48,
+          "w": 48,
+          "h": 48,
+          "rotate": 0
         }
       ],
       "happy": [
         {
-          "x": 101,
-          "y": 24,
-          "w": 35,
-          "h": 28
+          "x": 48,
+          "y": 0,
+          "w": 48,
+          "h": 48,
+          "rotate": 0
         },
         {
-          "x": 139,
-          "y": 40,
-          "w": 35,
-          "h": 28
+          "x": 96,
+          "y": 0,
+          "w": 48,
+          "h": 48,
+          "rotate": 0
         }
       ],
       "eating": [
         {
-          "x": 80,
-          "y": 148,
-          "w": 38,
-          "h": 30
+          "x": 0,
+          "y": 0,
+          "w": 48,
+          "h": 48,
+          "rotate": 0
         },
         {
-          "x": 120,
-          "y": 148,
-          "w": 37,
-          "h": 30
+          "x": 48,
+          "y": 48,
+          "w": 48,
+          "h": 48,
+          "rotate": 0
         }
       ],
       "sleeping": [
         {
-          "x": 80,
-          "y": 118,
-          "w": 39,
-          "h": 28
+          "x": 0,
+          "y": 144,
+          "w": 48,
+          "h": 48,
+          "rotate": 0
         }
       ],
       "training": [
         {
-          "x": 101,
-          "y": 54,
-          "w": 36,
-          "h": 28
+          "x": 0,
+          "y": 48,
+          "w": 48,
+          "h": 48,
+          "rotate": 0
         },
         {
-          "x": 2,
-          "y": 114,
-          "w": 37,
-          "h": 31
+          "x": 96,
+          "y": 48,
+          "w": 48,
+          "h": 48,
+          "rotate": 0
+        },
+        {
+          "x": 96,
+          "y": 0,
+          "w": 48,
+          "h": 48,
+          "rotate": 0
         }
       ],
       "sick": [
         {
-          "x": 42,
-          "y": 146,
-          "w": 36,
-          "h": 32
+          "x": 48,
+          "y": 144,
+          "w": 48,
+          "h": 48,
+          "rotate": 0
         }
       ],
       "sitting": [
         {
-          "x": 30,
-          "y": 5,
-          "w": 35,
-          "h": 27
+          "x": 0,
+          "y": 0,
+          "w": 48,
+          "h": 48,
+          "rotate": 0
         }
       ]
     }

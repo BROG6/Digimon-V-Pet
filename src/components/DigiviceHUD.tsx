@@ -407,10 +407,10 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
 
         {/* Master Brick Casing with Chamfered Corners */}
         <div 
-          className={`relative w-[360px] sm:w-[430px] h-[255px] sm:h-[265px] ${currentShell.bg} border-4 ${currentShell.border} p-3 sm:p-4 shadow-[0_25px_50px_rgba(0,0,0,0.85),inset_0_2px_4px_rgba(255,255,255,0.35),inset_0_-3px_6px_rgba(0,0,0,0.6)] flex items-center justify-between`}
+          className={`relative w-full max-w-[370px] sm:max-w-[430px] h-[245px] sm:h-[265px] ${currentShell.bg} border-4 ${currentShell.border} p-2 sm:p-4 shadow-[0_25px_50px_rgba(0,0,0,0.85),inset_0_2px_4px_rgba(255,255,255,0.35),inset_0_-3px_6px_rgba(0,0,0,0.6)] flex items-center justify-between mx-auto`}
           style={{
             // Authentic 45-degree chamfered beveled corners
-            clipPath: 'polygon(20px 0, calc(100% - 20px) 0, 100% 20px, 100% calc(100% - 20px), calc(100% - 20px) 100%, 20px 100%, 0 calc(100% - 20px), 0 20px)',
+            clipPath: 'polygon(16px 0, calc(100% - 16px) 0, 100% 16px, 100% calc(100% - 16px), calc(100% - 16px) 100%, 16px 100%, 0 calc(100% - 16px), 0 16px)',
           }}
         >
           {/* EMBOSSED BRICK WALL GROOVE PATTERN (MATCHING REFERENCE PHOTO) */}
@@ -437,7 +437,7 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
           </div>
 
           {/* LEFT CHASSIS: BRUSHED METAL SCREEN CAGE & LCD SCREEN */}
-          <div className="relative z-10 w-[240px] sm:w-[285px] h-[215px] sm:h-[225px] flex items-center justify-center">
+          <div className="relative z-10 w-[228px] sm:w-[285px] h-[210px] sm:h-[225px] flex items-center justify-center shrink-0">
             
             {/* THE BRUSHED METAL CAGE (FRAMING THE LCD SCREEN) */}
             {/* Top Rail with Claws */}
@@ -476,7 +476,7 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
 
             {/* THE LCD SCREEN WINDOW (FULL-COLOR DIGITAL WORLD LANDSCAPE) */}
             <div 
-              className={`relative w-[215px] sm:w-[255px] h-[180px] sm:h-[190px] rounded-lg border-2 border-[#090d16] p-1.5 overflow-hidden flex flex-col justify-between shadow-[inset_0_4px_10px_rgba(0,0,0,0.8)] z-20 ${
+              className={`relative w-[202px] sm:w-[255px] h-[175px] sm:h-[190px] rounded-lg border-2 border-[#090d16] p-1 sm:p-1.5 overflow-hidden flex flex-col justify-between shadow-[inset_0_4px_10px_rgba(0,0,0,0.8)] z-20 ${
                 isLightsOff ? 'bg-[#081813]' : 'bg-gradient-to-b from-[#38bdf8] via-[#7dd3fc] 55% to-[#16a34a]'
               }`}
             >

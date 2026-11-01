@@ -33,7 +33,7 @@ import {
   stopNativeFloatingOverlay, 
   isNativeOverlayActive 
 } from './utils/nativeOverlay';
-import { sound } from './utils/audio';
+import { sound, triggerHaptic } from './utils/audio';
 import { 
   Sparkles, 
   Home, 
@@ -51,7 +51,11 @@ import {
   Heart,
   Activity,
   ShoppingBag,
-  Smartphone
+  Smartphone,
+  Menu,
+  X,
+  ChevronUp,
+  Utensils
 } from 'lucide-react';
 
 const STORAGE_KEY = 'digipet_vpet_save_v1';
@@ -117,6 +121,8 @@ export default function App() {
   const [isChatOpen, setIsChatOpen] = useState<boolean>(false);
   const [isGalleryOpen, setIsGalleryOpen] = useState<boolean>(false);
   const [isGalleryHidden, setIsGalleryHidden] = useState<boolean>(() => getHideGalleryButtonPref());
+  const [isCareSheetOpen, setIsCareSheetOpen] = useState<boolean>(false);
+  const [isMoreSheetOpen, setIsMoreSheetOpen] = useState<boolean>(false);
 
   // Listen for hide gallery button preference changes
   useEffect(() => {
@@ -662,122 +668,74 @@ export default function App() {
       />
 
 
-      {/* TOP APP HEADER BAR */}
+      {/* TOP APP HEADER BAR (MOBILE-NATIVE & NOTCH SAFE) */}
       <header
-        className="relative z-40 border-b border-slate-800/80 bg-slate-900/95 backdrop-blur-md px-3 sm:px-4 flex items-center justify-between gap-2 overflow-x-auto no-scrollbar android-safe-top-bar pb-2.5 sm:pb-2.5"
+        className="sticky top-0 z-40 border-b border-slate-800/80 bg-slate-900/95 backdrop-blur-md px-3.5 py-2 flex items-center justify-between gap-2 android-safe-top-bar"
         style={extraTopPad > 0 ? { paddingTop: `calc(max(calc(env(safe-area-inset-top, 0px) + 0.5rem), 2.75rem) + ${extraTopPad}px)` } : undefined}
       >
-        <div className="flex items-center gap-2 sm:gap-3 min-w-0 shrink">
-          {/* DigiDestined Crest Badge */}
+        {/* Left: Crest Badge + Name + Stage + Quick Vitals */}
+        <div className="flex items-center gap-2.5 min-w-0">
           <div
-            className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl flex items-center justify-center font-bold text-xs shadow-md border border-white/20 shrink-0"
+            className="w-8 h-8 rounded-xl flex items-center justify-center font-bold text-xs shadow-md border border-white/20 shrink-0"
             style={{ backgroundColor: currentEgg.crestColor }}
             title={currentEgg.crestName}
           >
             📟
           </div>
           <div className="min-w-0">
-            <div className="flex items-center gap-1.5 sm:gap-2">
-              <h1 className="font-chakra font-bold text-xs sm:text-base tracking-wide text-white truncate">
-                DIGIPET
-                <span className="hidden sm:inline">: HELLOPET COMPANION</span>
+            <div className="flex items-center gap-1.5">
+              <h1 className="font-chakra font-bold text-sm tracking-wide text-white truncate">
+                {pet.nickname}
               </h1>
-              <span className="text-[9px] sm:text-[10px] font-pixel text-amber-400 px-1.5 sm:px-2 py-0.5 rounded-full bg-amber-950/60 border border-amber-900 shrink-0">
+              <span className="text-[8px] font-pixel text-amber-400 px-1.5 py-0.5 rounded-full bg-amber-950/60 border border-amber-900 shrink-0">
                 {currentSpecies?.stage.toUpperCase()}
               </span>
             </div>
-            <div className="text-[10px] sm:text-[11px] text-slate-400 flex items-center gap-1.5 truncate">
-              <span className="truncate">Tamer: {currentEgg.tamerName}</span>
+            <div className="text-[10px] text-slate-400 flex items-center gap-1.5 truncate">
+              <span className="text-amber-300 font-pixel text-[9px]">🪙 {pet.digiBits}</span>
               <span>•</span>
-              <span className="text-cyan-400 font-medium truncate">{pet.nickname}</span>
+              <span className="text-orange-300 font-pixel text-[9px]">🍖 {pet.bigMeatStock}</span>
+              <span>•</span>
+              <span className="text-purple-300 font-pixel text-[9px]">💊 {pet.vitaminStock}</span>
             </div>
           </div>
         </div>
 
-        {/* Top Control Tools */}
-        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-          {/* Meat & Vitamin Quick Stocks (Large Screens) */}
-          <div className="hidden lg:flex items-center gap-2 px-3 py-1 bg-slate-950 rounded-full border border-slate-800 text-xs">
-            <button
-              onClick={handleFeedMeat}
-              className="flex items-center gap-1 hover:text-amber-400 transition-colors"
-              title="Feed Big Meat"
-            >
-              <span>🍖</span>
-              <span className="font-pixel text-[10px]">{pet.bigMeatStock}</span>
-            </button>
-            <span className="text-slate-700">|</span>
-            <button
-              onClick={handleGiveVitamin}
-              className="flex items-center gap-1 hover:text-purple-400 transition-colors"
-              title="Give Vitamin"
-            >
-              <span>💊</span>
-              <span className="font-pixel text-[10px]">{pet.vitaminStock}</span>
-            </button>
-            <span className="text-slate-700">|</span>
-            <div className="flex items-center gap-1 text-amber-400" title="DigiBits">
-              <span>🪙</span>
-              <span className="font-pixel text-[10px]">{pet.digiBits}</span>
-            </div>
-          </div>
-
-          {/* Hellopet Overlay Mode Toggle Button */}
+        {/* Right: Quick Mobile Actions */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          {/* Float Pet Over Apps (Android System Alert / PiP) */}
           <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={handleLaunchOverlay}
-            className="bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-slate-950 px-2 sm:px-3 py-1.5 rounded-full font-pixel text-[10px] font-bold shadow-md shadow-cyan-500/30 flex items-center gap-1 cursor-pointer shrink-0"
-            title="Launch Screen Overlay Mode"
-          >
-            <Maximize2 className="w-3.5 h-3.5" />
-            <span className="hidden md:inline">SCREEN OVERLAY</span>
-            <span className="md:hidden hidden sm:inline">OVERLAY</span>
-          </motion.button>
-
-          {/* Native Floating Window / Overlay */}
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={handleLaunchFloatOverApps}
-            className="bg-gradient-to-r from-purple-500 to-indigo-500 hover:from-purple-400 hover:to-indigo-400 text-white px-2 sm:px-3 py-1.5 rounded-full font-pixel text-[10px] font-bold shadow-md shadow-purple-500/30 flex items-center gap-1 cursor-pointer shrink-0"
-            title="Float over YouTube, WhatsApp, and Android Home Screen"
+            whileTap={{ scale: 0.92 }}
+            onClick={() => {
+              triggerHaptic('medium');
+              handleLaunchFloatOverApps();
+            }}
+            className="bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white px-2.5 py-1.5 rounded-xl font-pixel text-[9px] font-bold shadow-md shadow-purple-500/25 flex items-center gap-1 cursor-pointer active:scale-95"
+            title="Float Digimon over other mobile apps"
           >
             <span>📱</span>
-            <span className="hidden md:inline">FLOAT OVER APPS</span>
-            <span className="md:hidden hidden sm:inline">FLOAT</span>
+            <span>FLOAT</span>
           </motion.button>
 
-          {/* Prominent Reset Button - ALWAYS clearly visible & accessible before volume button */}
+          {/* Reset / Hatch New Egg */}
           <button
             onClick={() => {
               sound.playButton();
               setIsEggModalOpen(true);
             }}
-            className="px-2.5 sm:px-3 py-1.5 rounded-xl bg-gradient-to-r from-amber-500/30 to-orange-500/30 hover:from-amber-500/50 hover:to-orange-500/50 border border-amber-400 text-amber-300 font-pixel text-[10px] font-bold shadow-md shadow-amber-500/20 flex items-center gap-1.5 shrink-0 cursor-pointer active:scale-95 transition-all"
-            title="Reset Digimon / Hatch New Egg"
+            className="p-1.5 rounded-xl bg-amber-950/60 border border-amber-500/50 text-amber-300 hover:bg-amber-900/60 transition-colors cursor-pointer"
+            title="Hatch New Egg / Reset"
           >
-            <RotateCcw className="w-3.5 h-3.5 text-amber-400" />
-            <span>RESET</span>
-          </button>
-
-          {/* Android Notch / Status Bar Spacing Adjuster */}
-          <button
-            onClick={toggleExtraTopPad}
-            className="p-1.5 sm:p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors shrink-0 cursor-pointer flex items-center gap-1 text-[10px] font-pixel border border-slate-700/60"
-            title={extraTopPad > 0 ? `Android Notch Offset: +${extraTopPad}px (Click to cycle)` : 'Adjust Android Status Bar / Notch Spacing'}
-          >
-            <span className="text-amber-400">📐</span>
-            <span className="hidden xl:inline">{extraTopPad > 0 ? `+${extraTopPad}px` : 'SAFE AREA'}</span>
+            <RotateCcw className="w-3.5 h-3.5" />
           </button>
 
           {/* Sound Toggle */}
           <button
             onClick={toggleSound}
-            className="p-1.5 sm:p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors shrink-0 cursor-pointer"
-            title={isMuted ? 'Unmute Sound' : 'Mute Sound'}
+            className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors cursor-pointer"
+            title={isMuted ? 'Unmute' : 'Mute'}
           >
-            {isMuted ? <VolumeX className="w-4 h-4 text-rose-400" /> : <Volume2 className="w-4 h-4 text-cyan-400" />}
+            {isMuted ? <VolumeX className="w-3.5 h-3.5 text-rose-400" /> : <Volume2 className="w-3.5 h-3.5 text-cyan-400" />}
           </button>
         </div>
       </header>
@@ -789,145 +747,79 @@ export default function App() {
             initial={{ y: -30, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: -30, opacity: 0 }}
-            className="fixed top-24 sm:top-16 left-1/2 -translate-x-1/2 z-50 bg-slate-900 border-2 border-cyan-400 text-cyan-200 font-pixel text-xs px-4 py-2.5 rounded-2xl shadow-2xl flex items-center gap-2 pointer-events-none"
+            className="fixed top-24 sm:top-16 left-1/2 -translate-x-1/2 z-50 bg-slate-900 border-2 border-cyan-400 text-cyan-200 font-pixel text-xs px-4 py-2.5 rounded-2xl shadow-2xl flex items-center gap-2 pointer-events-none max-w-[90vw] text-center"
           >
-            <Sparkles className="w-4 h-4 text-cyan-400 animate-spin" />
-            <span>{statusNotification}</span>
+            <Sparkles className="w-4 h-4 text-cyan-400 animate-spin shrink-0" />
+            <span className="truncate">{statusNotification}</span>
           </motion.div>
         )}
       </AnimatePresence>
 
-      {/* MAIN VIEWPORT: AUTHENTIC 1999 DIGIVICE + QUICK TABS */}
-      <main className="flex-1 flex flex-col items-center justify-center p-4 relative z-10">
+      {/* MAIN VIEWPORT: PURE MOBILE PORTRAIT LAYOUT */}
+      <main className="flex-1 flex flex-col items-center justify-start px-3 py-2 relative z-10 max-w-md mx-auto w-full pb-24">
         
-        {/* Navigation Quick Strip */}
-        <div className="flex flex-wrap items-center justify-center gap-2 mb-4">
-          <button
-            onClick={() => {
-              sound.playButton();
-              setIsShopOpen(true);
-            }}
-            className="px-3.5 py-1.5 rounded-full bg-gradient-to-r from-amber-950/80 to-slate-900 border border-amber-500/50 text-amber-300 text-xs font-chakra font-bold flex items-center gap-1.5 transition-all shadow-md active:scale-95 cursor-pointer hover:border-amber-400"
-          >
-            <ShoppingBag className="w-3.5 h-3.5 text-amber-400" />
-            <span>FILE CITY SHOP</span>
-          </button>
-
-          <button
-            onClick={() => {
-              sound.playButton();
-              setIsPwaModalOpen(true);
-            }}
-            className="px-3.5 py-1.5 rounded-full bg-gradient-to-r from-emerald-950/80 to-slate-900 border border-emerald-500/50 text-emerald-300 text-xs font-chakra font-bold flex items-center gap-1.5 transition-all shadow-md active:scale-95 cursor-pointer hover:border-emerald-400"
-          >
-            <Smartphone className="w-3.5 h-3.5 text-emerald-400" />
-            <span>INSTALL APK (WEBAPK)</span>
-          </button>
-
-          <button
-            onClick={() => {
-              sound.playButton();
-              setIsStatsOpen(true);
-            }}
-            className="px-3 py-1.5 rounded-full bg-slate-900/80 hover:bg-amber-950/60 border border-amber-500/40 text-amber-300 text-xs font-chakra font-bold flex items-center gap-1.5 transition-all shadow-md active:scale-95 cursor-pointer"
-          >
-            <Activity className="w-3.5 h-3.5" />
-            <span>DIGIMON STATS</span>
-          </button>
-
-          <button
-            onClick={() => {
-              sound.playButton();
-              setIsRoomOpen(true);
-            }}
-            className="px-3 py-1.5 rounded-full bg-slate-900/80 hover:bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 text-xs font-chakra font-bold flex items-center gap-1.5 transition-all shadow-md cursor-pointer"
-          >
-            <Home className="w-3.5 h-3.5" />
-            <span>MY ROOM (DECOR)</span>
-          </button>
-
-          <button
-            onClick={() => {
-              sound.playButton();
-              setIsTrainingOpen(true);
-            }}
-            className="px-3 py-1.5 rounded-full bg-slate-900/80 hover:bg-cyan-950/60 border border-cyan-500/40 text-cyan-300 text-xs font-chakra font-bold flex items-center gap-1.5 transition-all shadow-md cursor-pointer"
-          >
-            <Dumbbell className="w-3.5 h-3.5" />
-            <span>TRAINING DOJO</span>
-          </button>
-
-          <button
-            onClick={() => {
-              sound.playButton();
-              setIsFoodGameOpen(true);
-            }}
-            className="px-3 py-1.5 rounded-full bg-slate-900/80 hover:bg-amber-950/60 border border-amber-500/40 text-amber-300 text-xs font-chakra font-bold flex items-center gap-1.5 transition-all shadow-md cursor-pointer"
-          >
-            <span>🍖</span>
-            <span>MEAT CATCH MINI-GAME</span>
-          </button>
-
-          <button
-            onClick={() => {
-              sound.playButton();
-              setIsColosseumOpen(true);
-            }}
-            className="px-3 py-1.5 rounded-full bg-slate-900/80 hover:bg-indigo-950/60 border border-indigo-500/40 text-indigo-300 text-xs font-chakra font-bold flex items-center gap-1.5 transition-all shadow-md cursor-pointer"
-          >
-            <Swords className="w-3.5 h-3.5" />
-            <span>ONLINE COLOSSEUM</span>
-          </button>
-
-          <button
-            onClick={() => {
-              sound.playButton();
-              setIsDigidexOpen(true);
-            }}
-            className="px-3 py-1.5 rounded-full bg-slate-900/80 hover:bg-sky-950/60 border border-sky-500/40 text-sky-300 text-xs font-chakra font-bold flex items-center gap-1.5 transition-all shadow-md cursor-pointer"
-          >
-            <BookOpen className="w-3.5 h-3.5" />
-            <span>DIGIDEX EVOLUTION</span>
-          </button>
-
-          {!isGalleryHidden && (
-            <button
-              onClick={() => {
-                sound.playButton();
-                setIsGalleryOpen(true);
-              }}
-              className="px-3.5 py-1.5 rounded-full bg-gradient-to-r from-cyan-950/90 to-slate-900 border border-cyan-400/60 text-cyan-300 text-xs font-chakra font-bold flex items-center gap-1.5 transition-all shadow-md active:scale-95 cursor-pointer hover:border-cyan-300 hover:text-white"
-              title="Browse all animation frames & verify sprite orientation"
-            >
-              <Layers className="w-3.5 h-3.5 text-cyan-400" />
-              <span>SPRITE GALLERY</span>
-            </button>
-          )}
-
-          <button
-            onClick={() => {
-              sound.playButton();
-              setIsChatOpen(true);
-            }}
-            className="px-3 py-1.5 rounded-full bg-slate-900/80 hover:bg-pink-950/60 border border-pink-500/40 text-pink-300 text-xs font-chakra font-bold flex items-center gap-1.5 transition-all shadow-md cursor-pointer"
-          >
-            <MessageSquare className="w-3.5 h-3.5" />
-            <span>TAMER LOUNGE</span>
-          </button>
-        </div>
-
         {/* Prominent Evolution Ready Callout Banner */}
         {evolutionCheck.can && (
           <motion.button
-            animate={{ scale: [1, 1.04, 1] }}
+            animate={{ scale: [1, 1.03, 1] }}
             transition={{ repeat: Infinity, duration: 0.8 }}
-            onClick={() => triggerEvolution()}
-            className="mb-4 bg-gradient-to-r from-amber-400 via-orange-400 to-amber-300 text-slate-950 px-6 py-2.5 rounded-2xl font-pixel text-xs font-bold shadow-xl shadow-amber-500/30 border-2 border-amber-300 hover:from-amber-300 hover:to-orange-300 cursor-pointer flex items-center gap-2 active:scale-95 transition-transform"
+            onClick={() => {
+              triggerHaptic('success');
+              triggerEvolution();
+            }}
+            className="w-full mb-2.5 bg-gradient-to-r from-amber-400 via-orange-400 to-amber-300 text-slate-950 py-2.5 px-4 rounded-2xl font-pixel text-xs font-bold shadow-xl shadow-amber-500/30 border-2 border-amber-300 cursor-pointer flex items-center justify-center gap-2 active:scale-95 transition-transform"
           >
             <Sparkles className="w-4 h-4 text-slate-950 animate-spin" />
-            <span>⚡ DIGIVOLUTION READY! (CLICK TO EVOLVE) ⚡</span>
+            <span>⚡ DIGIVOLUTION READY! (TAP TO EVOLVE) ⚡</span>
           </motion.button>
         )}
+
+        {/* Mobile Vitals Dashboard Bar */}
+        <div className="w-full grid grid-cols-4 gap-1.5 mb-2.5 text-[9px] font-pixel">
+          {/* Hunger */}
+          <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-1.5 flex flex-col items-center">
+            <div className="flex items-center gap-1 text-amber-300">
+              <span>🍖</span>
+              <span>{pet.hunger}%</span>
+            </div>
+            <div className="w-full bg-slate-800 rounded-full h-1 mt-1 overflow-hidden">
+              <div className="bg-amber-400 h-full rounded-full transition-all" style={{ width: `${pet.hunger}%` }} />
+            </div>
+          </div>
+
+          {/* Energy */}
+          <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-1.5 flex flex-col items-center">
+            <div className="flex items-center gap-1 text-cyan-300">
+              <span>⚡</span>
+              <span>{pet.energy}%</span>
+            </div>
+            <div className="w-full bg-slate-800 rounded-full h-1 mt-1 overflow-hidden">
+              <div className="bg-cyan-400 h-full rounded-full transition-all" style={{ width: `${pet.energy}%` }} />
+            </div>
+          </div>
+
+          {/* Happiness */}
+          <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-1.5 flex flex-col items-center">
+            <div className="flex items-center gap-1 text-rose-300">
+              <span>💖</span>
+              <span>{pet.happiness}%</span>
+            </div>
+            <div className="w-full bg-slate-800 rounded-full h-1 mt-1 overflow-hidden">
+              <div className="bg-rose-400 h-full rounded-full transition-all" style={{ width: `${pet.happiness}%` }} />
+            </div>
+          </div>
+
+          {/* DP / Battles */}
+          <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-1.5 flex flex-col items-center">
+            <div className="flex items-center gap-1 text-purple-300">
+              <span>⚔️</span>
+              <span>{pet.dpPoints} DP</span>
+            </div>
+            <div className="w-full bg-slate-800 rounded-full h-1 mt-1 overflow-hidden">
+              <div className="bg-purple-400 h-full rounded-full transition-all" style={{ width: `${Math.min(100, pet.dpPoints * 2)}%` }} />
+            </div>
+          </div>
+        </div>
 
         {/* 1997 Digivice Hardware Shell */}
         <DigiviceHUD
@@ -950,66 +842,413 @@ export default function App() {
           canEvolve={evolutionCheck.can}
         />
 
-        {/* Quick Care Actions Ribbon below device */}
-        <div className="flex flex-wrap items-center justify-center gap-2.5 mt-4">
+        {/* Quick Care Actions Ribbon */}
+        <div className="w-full grid grid-cols-2 gap-2 mt-3">
           <button
-            onClick={handleFeedMeat}
-            className="px-4 py-2 bg-slate-900 hover:bg-slate-800 border border-amber-500/40 rounded-2xl flex items-center gap-2 font-pixel text-xs text-amber-300 shadow-md active:scale-95 transition-all"
+            onClick={() => {
+              handleFeedMeat();
+              triggerHaptic('heavy');
+            }}
+            className="py-2.5 px-3 bg-slate-900/90 hover:bg-slate-800 border border-amber-500/40 rounded-2xl flex items-center justify-center gap-2 font-pixel text-[11px] text-amber-300 shadow-md active:scale-95 transition-all cursor-pointer"
           >
             <span className="text-base">🍖</span>
-            <span>FEED BIG MEAT ({pet.bigMeatStock})</span>
+            <span>FEED MEAT ({pet.bigMeatStock})</span>
           </button>
 
           <button
-            onClick={handleGiveVitamin}
-            className="px-4 py-2 bg-slate-900 hover:bg-slate-800 border border-purple-500/40 rounded-2xl flex items-center gap-2 font-pixel text-xs text-purple-300 shadow-md active:scale-95 transition-all"
+            onClick={() => {
+              handleGiveVitamin();
+              triggerHaptic('heavy');
+            }}
+            className="py-2.5 px-3 bg-slate-900/90 hover:bg-slate-800 border border-purple-500/40 rounded-2xl flex items-center justify-center gap-2 font-pixel text-[11px] text-purple-300 shadow-md active:scale-95 transition-all cursor-pointer"
           >
             <span className="text-base">💊</span>
-            <span>GIVE VITAMIN ({pet.vitaminStock})</span>
-          </button>
-
-          <button
-            onClick={() => setIsShopOpen(true)}
-            className="px-4 py-2 bg-slate-900 hover:bg-slate-800 border border-emerald-500/40 rounded-2xl flex items-center gap-2 font-pixel text-xs text-emerald-300 shadow-md active:scale-95 transition-all"
-          >
-            <ShoppingBag className="w-4 h-4 text-emerald-400" />
-            <span>BUY SUPPLIES 🛒</span>
-          </button>
-
-          <button
-            onClick={handlePetDigimon}
-            className="px-4 py-2 bg-slate-900 hover:bg-slate-800 border border-rose-500/40 rounded-2xl flex items-center gap-2 font-pixel text-xs text-rose-300 shadow-md active:scale-95 transition-all"
-          >
-            <Heart className="w-4 h-4 text-rose-400 fill-rose-400" />
-            <span>PET & PRAISE</span>
+            <span>VITAMIN ({pet.vitaminStock})</span>
           </button>
         </div>
+
+        {/* Poop cleaning / Sickness urgent alerts */}
+        {(pet.poopCount > 0 || pet.isSick) && (
+          <div className="w-full flex gap-2 mt-2">
+            {pet.poopCount > 0 && (
+              <button
+                onClick={() => {
+                  handleCleanPoop();
+                  triggerHaptic('medium');
+                }}
+                className="flex-1 py-2 px-3 bg-amber-950/70 border border-amber-500 rounded-xl flex items-center justify-center gap-1.5 font-pixel text-[10px] text-amber-200 animate-pulse active:scale-95 cursor-pointer"
+              >
+                <span>💩</span>
+                <span>FLUSH {pet.poopCount} POOP(S)</span>
+              </button>
+            )}
+            {pet.isSick && (
+              <button
+                onClick={() => {
+                  handleCureSick();
+                  triggerHaptic('heavy');
+                }}
+                className="flex-1 py-2 px-3 bg-rose-950/70 border border-rose-500 rounded-xl flex items-center justify-center gap-1.5 font-pixel text-[10px] text-rose-200 animate-bounce active:scale-95 cursor-pointer"
+              >
+                <span>💉</span>
+                <span>INJECT MEDICINE</span>
+              </button>
+            )}
+          </div>
+        )}
       </main>
 
-      {/* FOOTER */}
-      <footer className="relative z-40 border-t border-slate-800/80 bg-slate-900/60 backdrop-blur-md px-4 py-2 flex flex-col sm:flex-row items-center justify-between text-[10px] text-slate-500 font-pixel gap-2">
-        <div className="flex items-center gap-3 flex-wrap">
-          <span>DIGIPET VIRTUAL COMPANION • BANDAI 1997 DIGIVICE TOY SIMULATOR</span>
+      {/* SLIDE-UP CARE ACTION SHEET */}
+      <AnimatePresence>
+        {isCareSheetOpen && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsCareSheetOpen(false)}
+              className="fixed inset-0 bg-black/60 backdrop-blur-xs z-40"
+            />
+            <motion.div
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 250 }}
+              className="fixed bottom-14 left-0 right-0 z-50 max-w-md mx-auto bg-slate-900 border-t-2 border-amber-500 rounded-t-3xl p-4 shadow-2xl"
+            >
+              <div className="w-12 h-1 bg-slate-700 rounded-full mx-auto mb-3" />
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-pixel text-xs text-amber-300 flex items-center gap-1.5">
+                  <span>🍖</span>
+                  <span>DIGIPET CARE CENTER</span>
+                </h3>
+                <button
+                  onClick={() => setIsCareSheetOpen(false)}
+                  className="p-1 rounded-lg bg-slate-800 text-slate-400 hover:text-white cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 text-xs font-pixel">
+                <button
+                  onClick={() => {
+                    handleFeedMeat();
+                    triggerHaptic('heavy');
+                  }}
+                  className="p-3 bg-slate-800 hover:bg-amber-950/60 border border-amber-500/40 rounded-2xl flex flex-col items-center gap-1 text-amber-300 active:scale-95 transition-all cursor-pointer"
+                >
+                  <span className="text-2xl">🍖</span>
+                  <span>FEED MEAT</span>
+                  <span className="text-[9px] text-slate-400">Stock: {pet.bigMeatStock}</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    handleGiveVitamin();
+                    triggerHaptic('heavy');
+                  }}
+                  className="p-3 bg-slate-800 hover:bg-purple-950/60 border border-purple-500/40 rounded-2xl flex flex-col items-center gap-1 text-purple-300 active:scale-95 transition-all cursor-pointer"
+                >
+                  <span className="text-2xl">💊</span>
+                  <span>GIVE VITAMIN</span>
+                  <span className="text-[9px] text-slate-400">Stock: {pet.vitaminStock}</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    handleCleanPoop();
+                    triggerHaptic('medium');
+                  }}
+                  className="p-3 bg-slate-800 hover:bg-slate-700 border border-amber-500/40 rounded-2xl flex flex-col items-center gap-1 text-amber-300 active:scale-95 transition-all cursor-pointer"
+                >
+                  <span className="text-2xl">💩</span>
+                  <span>FLUSH POOP</span>
+                  <span className="text-[9px] text-slate-400">{pet.poopCount > 0 ? `${pet.poopCount} on screen` : 'Clean!'}</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    handlePetDigimon();
+                    triggerHaptic('medium');
+                  }}
+                  className="p-3 bg-slate-800 hover:bg-rose-950/60 border border-rose-500/40 rounded-2xl flex flex-col items-center gap-1 text-rose-300 active:scale-95 transition-all cursor-pointer"
+                >
+                  <span className="text-2xl">💖</span>
+                  <span>PET & PRAISE</span>
+                  <span className="text-[9px] text-slate-400">Happiness: {pet.happiness}%</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    handleCureSick();
+                    triggerHaptic('heavy');
+                  }}
+                  className="p-3 bg-slate-800 hover:bg-teal-950/60 border border-teal-500/40 rounded-2xl flex flex-col items-center gap-1 text-teal-300 active:scale-95 transition-all cursor-pointer"
+                >
+                  <span className="text-2xl">💉</span>
+                  <span>MEDICINE</span>
+                  <span className="text-[9px] text-slate-400">{pet.isSick ? 'SICK!' : 'Healthy'}</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    handleToggleLights();
+                    triggerHaptic('light');
+                  }}
+                  className="p-3 bg-slate-800 hover:bg-indigo-950/60 border border-indigo-500/40 rounded-2xl flex flex-col items-center gap-1 text-indigo-300 active:scale-95 transition-all cursor-pointer"
+                >
+                  <span className="text-2xl">{pet.lightsOff ? '☀️' : '🌙'}</span>
+                  <span>{pet.lightsOff ? 'LIGHTS ON' : 'SLEEP / OFF'}</span>
+                  <span className="text-[9px] text-slate-400">{pet.isSleeping ? 'Sleeping zzz' : 'Awake'}</span>
+                </button>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* SLIDE-UP MORE MENU SHEET */}
+      <AnimatePresence>
+        {isMoreSheetOpen && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsMoreSheetOpen(false)}
+              className="fixed inset-0 bg-black/60 backdrop-blur-xs z-40"
+            />
+            <motion.div
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 250 }}
+              className="fixed bottom-14 left-0 right-0 z-50 max-w-md mx-auto bg-slate-900 border-t-2 border-cyan-500 rounded-t-3xl p-4 shadow-2xl"
+            >
+              <div className="w-12 h-1 bg-slate-700 rounded-full mx-auto mb-3" />
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="font-pixel text-xs text-cyan-300 flex items-center gap-1.5">
+                  <span>📱</span>
+                  <span>MORE MOBILE FEATURES</span>
+                </h3>
+                <button
+                  onClick={() => setIsMoreSheetOpen(false)}
+                  className="p-1 rounded-lg bg-slate-800 text-slate-400 hover:text-white cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 text-xs font-chakra font-bold">
+                <button
+                  onClick={() => {
+                    sound.playButton();
+                    setIsMoreSheetOpen(false);
+                    setIsDigidexOpen(true);
+                  }}
+                  className="p-3 bg-slate-800 hover:bg-sky-950/60 border border-sky-500/40 rounded-2xl flex items-center gap-2.5 text-sky-300 cursor-pointer"
+                >
+                  <BookOpen className="w-5 h-5 text-sky-400 shrink-0" />
+                  <span className="truncate">DIGIDEX GUIDE</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    sound.playButton();
+                    setIsMoreSheetOpen(false);
+                    setIsStatsOpen(true);
+                  }}
+                  className="p-3 bg-slate-800 hover:bg-amber-950/60 border border-amber-500/40 rounded-2xl flex items-center gap-2.5 text-amber-300 cursor-pointer"
+                >
+                  <Activity className="w-5 h-5 text-amber-400 shrink-0" />
+                  <span className="truncate">RADAR STATS</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    sound.playButton();
+                    setIsMoreSheetOpen(false);
+                    setIsFoodGameOpen(true);
+                  }}
+                  className="p-3 bg-slate-800 hover:bg-amber-950/60 border border-amber-500/40 rounded-2xl flex items-center gap-2.5 text-amber-300 cursor-pointer"
+                >
+                  <span className="text-xl shrink-0">🍖</span>
+                  <span className="truncate">MEAT CATCH GAME</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    sound.playButton();
+                    setIsMoreSheetOpen(false);
+                    setIsChatOpen(true);
+                  }}
+                  className="p-3 bg-slate-800 hover:bg-pink-950/60 border border-pink-500/40 rounded-2xl flex items-center gap-2.5 text-pink-300 cursor-pointer"
+                >
+                  <MessageSquare className="w-5 h-5 text-pink-400 shrink-0" />
+                  <span className="truncate">TAMER LOUNGE</span>
+                </button>
+
+                {!isGalleryHidden && (
+                  <button
+                    onClick={() => {
+                      sound.playButton();
+                      setIsMoreSheetOpen(false);
+                      setIsGalleryOpen(true);
+                    }}
+                    className="p-3 bg-slate-800 hover:bg-cyan-950/60 border border-cyan-500/40 rounded-2xl flex items-center gap-2.5 text-cyan-300 cursor-pointer"
+                  >
+                    <Layers className="w-5 h-5 text-cyan-400 shrink-0" />
+                    <span className="truncate">SPRITE STUDIO</span>
+                  </button>
+                )}
+
+                <button
+                  onClick={() => {
+                    sound.playButton();
+                    setIsMoreSheetOpen(false);
+                    setIsPwaModalOpen(true);
+                  }}
+                  className="p-3 bg-slate-800 hover:bg-emerald-950/60 border border-emerald-500/40 rounded-2xl flex items-center gap-2.5 text-emerald-300 cursor-pointer"
+                >
+                  <Smartphone className="w-5 h-5 text-emerald-400 shrink-0" />
+                  <span className="truncate">INSTALL APK</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    toggleExtraTopPad();
+                  }}
+                  className="p-3 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-2xl flex items-center gap-2.5 text-slate-300 cursor-pointer"
+                >
+                  <span className="text-amber-400 font-pixel text-xs">📐</span>
+                  <span className="truncate text-xs">NOTCH: +{extraTopPad}px</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    sound.playButton();
+                    setIsMoreSheetOpen(false);
+                    setIsEggModalOpen(true);
+                  }}
+                  className="p-3 bg-slate-800 hover:bg-red-950/60 border border-red-500/40 rounded-2xl flex items-center gap-2.5 text-rose-300 cursor-pointer"
+                >
+                  <RotateCcw className="w-5 h-5 text-rose-400 shrink-0" />
+                  <span className="truncate">RESET / HATCH</span>
+                </button>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* NATIVE MOBILE FIXED BOTTOM DOCK */}
+      <nav className="fixed bottom-0 left-0 right-0 z-40 bg-slate-900/95 backdrop-blur-md border-t border-slate-800 pb-[max(calc(env(safe-area-inset-bottom,0px)+0.4rem),0.6rem)] pt-1.5 px-2">
+        <div className="max-w-md mx-auto grid grid-cols-7 gap-1 items-center text-center">
+          
+          {/* 1. DIGIVICE */}
           <button
             onClick={() => {
               sound.playButton();
-              setIsGalleryOpen(true);
+              triggerHaptic('light');
+              setIsCareSheetOpen(false);
+              setIsMoreSheetOpen(false);
             }}
-            className="text-cyan-400 hover:text-cyan-300 flex items-center gap-1 cursor-pointer transition-colors"
-            title="Open Sprite Studio & Calibrator (Shortcut: Press G)"
+            className="flex flex-col items-center justify-center py-1 rounded-xl hover:bg-slate-800 active:scale-90 transition-transform cursor-pointer text-cyan-400"
           >
-            <Layers className="w-3 h-3" />
-            <span>SPRITE STUDIO {isGalleryHidden && '(HIDDEN)'}</span>
+            <span className="text-lg">📟</span>
+            <span className="font-pixel text-[8px] mt-0.5">DEVICE</span>
           </button>
+
+          {/* 2. CARE SHEET */}
+          <button
+            onClick={() => {
+              sound.playButton();
+              triggerHaptic('medium');
+              setIsCareSheetOpen((prev) => !prev);
+              setIsMoreSheetOpen(false);
+            }}
+            className={`flex flex-col items-center justify-center py-1 rounded-xl active:scale-90 transition-transform cursor-pointer relative ${
+              isCareSheetOpen ? 'bg-amber-950/80 text-amber-300 ring-1 ring-amber-400' : 'text-amber-400 hover:bg-slate-800'
+            }`}
+          >
+            <span className="text-lg">🍖</span>
+            <span className="font-pixel text-[8px] mt-0.5">CARE</span>
+            {(pet.poopCount > 0 || pet.isSick) && (
+              <span className="absolute top-0 right-1 w-2 h-2 rounded-full bg-rose-500 animate-ping" />
+            )}
+          </button>
+
+          {/* 3. BATTLE */}
+          <button
+            onClick={() => {
+              sound.playButton();
+              triggerHaptic('light');
+              setIsColosseumOpen(true);
+            }}
+            className="flex flex-col items-center justify-center py-1 rounded-xl hover:bg-slate-800 active:scale-90 transition-transform cursor-pointer text-indigo-400"
+          >
+            <Swords className="w-4.5 h-4.5 text-indigo-400" />
+            <span className="font-pixel text-[8px] mt-0.5">BATTLE</span>
+          </button>
+
+          {/* 4. DOJO */}
+          <button
+            onClick={() => {
+              sound.playButton();
+              triggerHaptic('light');
+              setIsTrainingOpen(true);
+            }}
+            className="flex flex-col items-center justify-center py-1 rounded-xl hover:bg-slate-800 active:scale-90 transition-transform cursor-pointer text-emerald-400"
+          >
+            <Dumbbell className="w-4.5 h-4.5 text-emerald-400" />
+            <span className="font-pixel text-[8px] mt-0.5">DOJO</span>
+          </button>
+
+          {/* 5. ROOM */}
+          <button
+            onClick={() => {
+              sound.playButton();
+              triggerHaptic('light');
+              setIsRoomOpen(true);
+            }}
+            className="flex flex-col items-center justify-center py-1 rounded-xl hover:bg-slate-800 active:scale-90 transition-transform cursor-pointer text-teal-400"
+          >
+            <Home className="w-4.5 h-4.5 text-teal-400" />
+            <span className="font-pixel text-[8px] mt-0.5">ROOM</span>
+          </button>
+
+          {/* 6. SHOP */}
+          <button
+            onClick={() => {
+              sound.playButton();
+              triggerHaptic('light');
+              setIsShopOpen(true);
+            }}
+            className="flex flex-col items-center justify-center py-1 rounded-xl hover:bg-slate-800 active:scale-90 transition-transform cursor-pointer text-amber-300"
+          >
+            <ShoppingBag className="w-4.5 h-4.5 text-amber-300" />
+            <span className="font-pixel text-[8px] mt-0.5">SHOP</span>
+          </button>
+
+          {/* 7. MORE */}
+          <button
+            onClick={() => {
+              sound.playButton();
+              triggerHaptic('light');
+              setIsMoreSheetOpen((prev) => !prev);
+              setIsCareSheetOpen(false);
+            }}
+            className={`flex flex-col items-center justify-center py-1 rounded-xl active:scale-90 transition-transform cursor-pointer ${
+              isMoreSheetOpen ? 'bg-slate-800 text-white ring-1 ring-cyan-400' : 'text-slate-400 hover:bg-slate-800'
+            }`}
+          >
+            <Menu className="w-4.5 h-4.5 text-slate-300" />
+            <span className="font-pixel text-[8px] mt-0.5">MORE</span>
+          </button>
+
         </div>
-        <button
-          onClick={() => setIsPwaModalOpen(true)}
-          className="text-emerald-400 hover:text-emerald-300 flex items-center gap-1 cursor-pointer"
-        >
-          <Smartphone className="w-3.5 h-3.5" />
-          <span>INSTALL NATIVE ANDROID APK (WEBAPK) »</span>
-        </button>
-      </footer>
+      </nav>
 
       {/* MODALS */}
       <EggSelectionModal

@@ -2,24 +2,31 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <script type="module">
+      import RefreshRuntime from "/@react-refresh";
+      RefreshRuntime.injectIntoGlobalHook(window);
+      window.$RefreshReg$ = () => {};
+      window.$RefreshSig$ = () => (type) => type;
+      window.__vite_plugin_react_preamble_installed__ = true;
+    </script>
     <script>
-      // Fast Refresh preamble initialization so React Fast Refresh never throws detect preamble error
+      // Fallback preamble initialization
       window.__vite_plugin_react_preamble_installed__ = true;
       window.$RefreshReg$ = window.$RefreshReg$ || function() {};
       window.$RefreshSig$ = window.$RefreshSig$ || function() { return function(type) { return type; }; };
 
-      // Suppress Vite HMR WebSocket connection errors and preamble errors in iframe preview environment
+      // Suppress Vite HMR WebSocket connection errors in iframe preview environment
       window.addEventListener('unhandledrejection', function(event) {
         var reason = event && (event.reason || event.detail);
         var msg = (reason && (reason.message || reason.stack || String(reason))) || '';
-        if (msg.indexOf('WebSocket') !== -1 || msg.indexOf('vite-hmr') !== -1 || msg.indexOf('closed without opened') !== -1 || msg.indexOf('preamble') !== -1) {
+        if (msg.indexOf('WebSocket') !== -1 || msg.indexOf('vite-hmr') !== -1 || msg.indexOf('closed without opened') !== -1) {
           event.preventDefault();
           event.stopImmediatePropagation();
         }
       });
       window.addEventListener('error', function(event) {
         var msg = (event && (event.message || (event.error && event.error.message))) || '';
-        if (msg.indexOf('WebSocket') !== -1 || msg.indexOf('vite-hmr') !== -1 || msg.indexOf('closed without opened') !== -1 || msg.indexOf('preamble') !== -1) {
+        if (msg.indexOf('WebSocket') !== -1 || msg.indexOf('vite-hmr') !== -1 || msg.indexOf('closed without opened') !== -1) {
           event.preventDefault();
           event.stopImmediatePropagation();
         }

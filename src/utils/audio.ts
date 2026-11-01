@@ -33,8 +33,9 @@ class SoundEngine {
     return this.isMuted;
   }
 
-  // Classic Digivice button blip
+  // Classic Digivice button blip with mobile haptic feedback
   public playButton() {
+    triggerHaptic('light');
     const ctx = this.getContext();
     if (!ctx) return;
     const osc = ctx.createOscillator();
@@ -253,3 +254,26 @@ class SoundEngine {
 }
 
 export const sound = new SoundEngine();
+
+export function triggerHaptic(type: 'light' | 'medium' | 'heavy' | 'success' | 'alert' = 'light') {
+  if (typeof navigator === 'undefined' || !navigator.vibrate) return;
+  try {
+    switch (type) {
+      case 'light':
+        navigator.vibrate(15);
+        break;
+      case 'medium':
+        navigator.vibrate(35);
+        break;
+      case 'heavy':
+        navigator.vibrate(60);
+        break;
+      case 'success':
+        navigator.vibrate([40, 60, 40]);
+        break;
+      case 'alert':
+        navigator.vibrate([70, 50, 70, 50, 70]);
+        break;
+    }
+  } catch {}
+}

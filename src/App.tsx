@@ -204,9 +204,10 @@ export default function App() {
       if (Capacitor.isNativePlatform()) {
         const hasPerm = await checkOverlayPermission();
         if (!hasPerm) {
-          setStatusNotification('Android: Please switch ON "Allow display over other apps" in Settings');
+          setStatusNotification('Android: Opening "Allow display over other apps" Settings...');
           setTimeout(() => setStatusNotification(null), 5000);
           await requestOverlayPermission();
+          setIsNativePipOpen(true);
           return;
         }
 
@@ -233,21 +234,17 @@ export default function App() {
         if (ok) {
           setStatusNotification(`✓ ${currentSpecies?.name || 'Digimon'} is now floating over all apps! Drag to move.`);
         } else {
-          // If native overlay isn't supported, fall back to in-app overlay
-          setIsOverlayMode(true);
-          setStatusNotification('Floating companion active on screen! Drag to move.');
+          setIsNativePipOpen(true);
         }
         setTimeout(() => setStatusNotification(null), 4000);
         return;
       }
 
-      // In web browser: Launch Hellopet Screen Overlay Mode
-      setIsOverlayMode(true);
+      // In web browser: Launch permission / overlay modal
+      setIsNativePipOpen(true);
     } catch (err: any) {
       console.warn('handleLaunchOverlay non-fatal error:', err);
-      setIsOverlayMode(true);
-      setStatusNotification('Floating companion active on screen! Drag to move.');
-      setTimeout(() => setStatusNotification(null), 3000);
+      setIsNativePipOpen(true);
     }
   };
 
@@ -261,16 +258,21 @@ export default function App() {
       }
 
       if (Capacitor.isNativePlatform()) {
-        await handleLaunchOverlay();
-        return;
+        const hasPerm = await checkOverlayPermission();
+        if (!hasPerm) {
+          // Immediately prompt Android's system overlay permission setting AND open modal!
+          await requestOverlayPermission();
+          setIsNativePipOpen(true);
+          showNotification('Android: Opening "Allow display over other apps" Settings...');
+          return;
+        }
       }
 
-      // In browser / PWA / preview: toggle floating screen overlay
-      setIsOverlayMode(true);
-      showNotification(`✨ ${currentSpecies?.name || 'Digimon'} is now floating on screen! Drag to move or tap for actions.`);
+      // Always pop up the Display Over Other Apps Permission & Controller modal
+      setIsNativePipOpen(true);
     } catch (err: any) {
       console.error('handleLaunchFloatOverApps error:', err);
-      setIsOverlayMode(true);
+      setIsNativePipOpen(true);
     }
   };
 
@@ -1368,6 +1370,10 @@ export default function App() {
         species={currentSpecies}
         isOpen={isNativePipOpen}
         onClose={() => setIsNativePipOpen(false)}
+        onStartInAppOverlay={() => {
+          setIsOverlayMode(true);
+          showNotification(`✨ ${currentSpecies?.name || 'Digimon'} is now roaming on screen! Drag to move.`);
+        }}
       />
 
       <DigiChat

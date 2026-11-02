@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { PetState, DigimonSpecies } from '../types/digimon';
 import { sound } from '../utils/audio';
-import { ExternalLink, Sparkles, AlertCircle, Smartphone, Zap, X } from 'lucide-react';
+import { ExternalLink, Sparkles, AlertCircle, Smartphone, Zap, X, ShieldCheck, CheckCircle2, Play } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 import { 
   checkOverlayPermission, 
@@ -18,6 +18,7 @@ interface NativePipOverlayProps {
   species?: DigimonSpecies;
   isOpen: boolean;
   onClose: () => void;
+  onStartInAppOverlay?: () => void;
 }
 
 export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
@@ -25,12 +26,14 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
   species,
   isOpen,
   onClose,
+  onStartInAppOverlay,
 }) => {
   const [isPipActive, setIsPipActive] = useState<boolean>(false);
   const [wakeLockActive, setWakeLockActive] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isImgLoaded, setIsImgLoaded] = useState<boolean>(false);
   const [hasAndroidPermission, setHasAndroidPermission] = useState<boolean | null>(null);
+  const [isCheckingPerm, setIsCheckingPerm] = useState<boolean>(false);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -107,29 +110,53 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
     };
   }, []);
 
-  // Check Android overlay permission when modal opens
+  // Check Android overlay permission and status
+  const checkPermStatus = async () => {
+    setIsCheckingPerm(true);
+    try {
+      if (Capacitor.isNativePlatform()) {
+        const granted = await checkOverlayPermission();
+        setHasAndroidPermission(granted);
+        const isAct = await isNativeOverlayActive();
+        setIsPipActive(isAct);
+        return granted;
+      } else {
+        // In web preview / browser
+        setHasAndroidPermission(false);
+        return false;
+      }
+    } catch (err) {
+      console.warn('checkPerm error:', err);
+      return false;
+    } finally {
+      setIsCheckingPerm(false);
+    }
+  };
+
   useEffect(() => {
     let active = true;
-    const checkPerm = async () => {
-      try {
-        if (Capacitor.isNativePlatform()) {
-          const granted = await checkOverlayPermission();
-          if (active) setHasAndroidPermission(granted);
-          const isAct = await isNativeOverlayActive();
-          if (active) setIsPipActive(isAct);
-          return;
-        }
-        if (active) setHasAndroidPermission(true);
-      } catch (err) {
-        console.warn('checkPerm error:', err);
-      }
-    };
     if (isOpen) {
-      checkPerm();
+      checkPermStatus().then((granted) => {
+        if (!active) return;
+        // If on native platform and permission is not granted, trigger permission prompt immediately
+        if (Capacitor.isNativePlatform() && !granted) {
+          requestOverlayPermission().catch(() => {});
+        }
+      });
     }
     return () => {
       active = false;
     };
+  }, [isOpen]);
+
+  // Re-check permission when window regains focus (e.g. user returned from Android Settings)
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleFocus = () => {
+      checkPermStatus();
+    };
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
   }, [isOpen]);
 
   // Canvas drawing loop for Video PiP fallback
@@ -305,7 +332,7 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
       try {
         const granted = await checkOverlayPermission();
         if (!granted) {
-          setErrorMsg('Opening Android Settings: Please enable "Allow display over other apps"');
+          setErrorMsg('Please switch ON "Allow display over other apps" in Android Settings.');
           await requestOverlayPermission();
           return;
         }
@@ -435,6 +462,7 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
 
   const handleOpenAndroidSettings = async () => {
     sound.playButton();
+    setErrorMsg(null);
     try {
       if (Capacitor.isNativePlatform()) {
         await requestOverlayPermission();
@@ -451,7 +479,7 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
     }
 
     setErrorMsg(
-      'In Android Chrome, Picture-in-Picture is pre-enabled! Tap "POP OUT FLOATING OVERLAY" below, then tap Home or switch apps to see your Digimon float over your screen.'
+      'In Android Chrome / Web App, Picture-in-Picture is built-in! Tap "POP OUT FLOATING OVERLAY (PIP)" below, then swipe to Home or switch to any app to see your Digimon float over your screen.'
     );
   };
 
@@ -461,14 +489,14 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
         {/* Header */}
         <div className="flex items-center justify-between pb-3 border-b border-slate-800">
           <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-xl text-cyan-400">
-              <ExternalLink className="w-5 h-5" />
+            <div className="w-10 h-10 rounded-xl bg-purple-500/20 border border-purple-500/40 flex items-center justify-center text-xl text-purple-400">
+              <Smartphone className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="font-chakra font-bold text-white text-lg">
-                NATIVE SYSTEM SCREEN OVERLAY
+              <h3 className="font-chakra font-bold text-white text-base sm:text-lg">
+                DISPLAY OVER OTHER APPS
               </h3>
-              <p className="text-slate-400 text-xs">Float over other apps & home screen on Android</p>
+              <p className="text-slate-400 text-xs">Float pet over WhatsApp, YouTube & Home Screen</p>
             </div>
           </div>
           <button
@@ -481,83 +509,61 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
 
         {/* Body Content */}
         <div className="py-4 space-y-4">
-          {/* Android Overlay Permission & Info Box */}
+
+          {/* Android Overlay Permission Action Box */}
           <div className="p-4 bg-gradient-to-r from-amber-950/40 via-slate-900 to-amber-950/20 border-2 border-amber-500/60 rounded-2xl space-y-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-amber-300 font-bold font-chakra text-sm">
-                <Smartphone className="w-4 h-4 text-amber-400" />
-                <span>ANDROID: FLOAT OVER HOME & APPS</span>
+                <ShieldCheck className="w-4 h-4 text-amber-400" />
+                <span>OVERLAY PERMISSION STATUS</span>
               </div>
-              {hasAndroidPermission !== null && (
-                <span className={`text-[10px] font-pixel px-2 py-0.5 rounded-full font-bold ${
-                  hasAndroidPermission ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-                }`}>
-                  {hasAndroidPermission ? '✓ PIP READY' : '⚠️ ACTION REQUIRED'}
-                </span>
-              )}
+              <span className={`text-[10px] font-pixel px-2 py-0.5 rounded-full font-bold ${
+                hasAndroidPermission ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' : 'bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse'
+              }`}>
+                {hasAndroidPermission ? '✓ GRANTED' : '⚠️ PERMISSION REQUIRED'}
+              </span>
             </div>
 
             <p className="text-slate-300 text-xs leading-relaxed">
-              Using Android's native <strong className="text-amber-300">Picture-in-Picture (PiP)</strong> & system overlay engine, your real animated Digimon floats freely in a resizable, draggable window on top of WhatsApp, TikTok, Discord, YouTube, or your Android launcher!
+              Android requires <strong className="text-amber-300">"Allow display over other apps"</strong> permission so your Digimon can float freely on top of WhatsApp, YouTube, TikTok, Discord, and your phone launcher.
             </p>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {/* Direct Permission Action Button */}
+            <div className="space-y-2 pt-1">
               <button
                 onClick={handleOpenAndroidSettings}
-                className="py-2 px-3 bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/40 font-pixel text-[10px] rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                className="w-full py-3 px-3.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-pixel text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-amber-500/20 cursor-pointer active:scale-98"
               >
-                <Smartphone className="w-3.5 h-3.5" />
-                <span>CHECK ANDROID PERMISSION</span>
+                <Smartphone className="w-4 h-4 text-slate-950" />
+                <span>ALLOW DISPLAY OVER OTHER APPS (OPEN SETTINGS)</span>
               </button>
 
-              <button
-                onClick={toggleWakeLock}
-                className={`py-2 px-3 font-pixel text-[10px] rounded-xl transition-all flex items-center justify-center gap-1.5 border cursor-pointer ${
-                  wakeLockActive
-                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50'
-                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
-                }`}
-              >
-                <Zap className={`w-3.5 h-3.5 ${wakeLockActive ? 'text-emerald-400 fill-emerald-400' : 'text-slate-400'}`} />
-                <span>{wakeLockActive ? 'SCREEN AWAKE: ON' : 'KEEP SCREEN AWAKE'}</span>
-              </button>
-            </div>
-          </div>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  onClick={checkPermStatus}
+                  disabled={isCheckingPerm}
+                  className="py-2 px-3 bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/40 font-pixel text-[10px] rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>{isCheckingPerm ? 'CHECKING...' : 'RE-CHECK PERMISSION'}</span>
+                </button>
 
-          {/* Picture-in-Picture Live Preview Window */}
-          <div className="p-3.5 bg-slate-950 border border-slate-800 rounded-2xl text-xs space-y-2">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2 text-cyan-400 font-bold font-chakra text-sm">
-                <Sparkles className="w-4 h-4" />
-                <span>Live Companion Stream</span>
+                <button
+                  onClick={toggleWakeLock}
+                  className={`py-2 px-3 font-pixel text-[10px] rounded-xl transition-all flex items-center justify-center gap-1.5 border cursor-pointer ${
+                    wakeLockActive
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50'
+                      : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
+                  }`}
+                >
+                  <Zap className={`w-3.5 h-3.5 ${wakeLockActive ? 'text-emerald-400 fill-emerald-400' : 'text-slate-400'}`} />
+                  <span>{wakeLockActive ? 'SCREEN AWAKE: ON' : 'KEEP SCREEN AWAKE'}</span>
+                </button>
               </div>
-              <span className="text-[10px] text-emerald-400 font-pixel bg-emerald-950/60 border border-emerald-500/30 px-2 py-0.5 rounded-full">
-                ● 30 FPS STREAM
-              </span>
             </div>
-            <p className="text-slate-300 leading-relaxed text-xs">
-              This preview window is streamed directly to Android's floating window manager with real animated sprites and feet grounded on the floor baseline.
-            </p>
           </div>
 
-          {/* Canvas Preview & Offscreen Video Stream Target */}
-          <div className="flex flex-col items-center justify-center py-1">
-            <canvas
-              ref={canvasRef}
-              width={240}
-              height={180}
-              className="rounded-2xl border-2 border-slate-700 shadow-2xl bg-black"
-            />
-            <video
-              ref={videoRef}
-              muted
-              playsInline
-              autoPlay
-              className="fixed -top-[9999px] left-0 w-1 h-1 opacity-0 pointer-events-none"
-            />
-          </div>
-
-          {/* Launch Button */}
+          {/* Primary Action 1: Launch Floating Window over all apps */}
           <button
             onClick={handleLaunchPip}
             className={`w-full py-3.5 px-4 rounded-2xl font-pixel text-xs font-bold transition-all shadow-lg flex items-center justify-center gap-2 active:scale-98 cursor-pointer ${
@@ -569,10 +575,25 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
             <ExternalLink className="w-4 h-4" />
             <span>
               {isPipActive
-                ? '✓ FLOATING OVERLAY ACTIVE! (TAP TO CLOSE)'
-                : 'POP OUT FLOATING OVERLAY (NATIVE PIP)'}
+                ? '✓ FLOATING OVERLAY RUNNING! (TAP TO CLOSE)'
+                : '🚀 POP OUT FLOATING COMPANION (OVER ALL APPS)'}
             </span>
           </button>
+
+          {/* Primary Action 2: Float directly on this screen (In-App Hellopet mode) */}
+          {onStartInAppOverlay && (
+            <button
+              onClick={() => {
+                sound.playButton();
+                onClose();
+                onStartInAppOverlay();
+              }}
+              className="w-full py-3 px-4 bg-gradient-to-r from-purple-700 to-indigo-700 hover:from-purple-600 hover:to-indigo-600 text-white rounded-2xl font-pixel text-xs font-bold transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer active:scale-98"
+            >
+              <Sparkles className="w-4 h-4 text-amber-300" />
+              <span>✨ FLOAT PET ON THIS SCREEN (IN-APP MODE)</span>
+            </button>
+          )}
 
           {errorMsg && (
             <div className="p-3 bg-amber-500/20 border border-amber-500/40 rounded-xl text-amber-200 text-xs flex items-center gap-2">
@@ -581,20 +602,49 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
             </div>
           )}
 
+          {/* Live Preview Window */}
+          <div className="p-3.5 bg-slate-950 border border-slate-800 rounded-2xl text-xs space-y-2">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-cyan-400 font-bold font-chakra text-sm">
+                <Sparkles className="w-4 h-4" />
+                <span>Live Companion Stream Preview</span>
+              </div>
+              <span className="text-[10px] text-emerald-400 font-pixel bg-emerald-950/60 border border-emerald-500/30 px-2 py-0.5 rounded-full">
+                ● 30 FPS STREAM
+              </span>
+            </div>
+            
+            <div className="flex flex-col items-center justify-center pt-2">
+              <canvas
+                ref={canvasRef}
+                width={240}
+                height={180}
+                className="rounded-2xl border-2 border-slate-700 shadow-2xl bg-black"
+              />
+              <video
+                ref={videoRef}
+                muted
+                playsInline
+                autoPlay
+                className="fixed -top-[9999px] left-0 w-1 h-1 opacity-0 pointer-events-none"
+              />
+            </div>
+          </div>
+
           {/* Android How-to Instructions */}
           <div className="text-[11px] text-slate-400 bg-black/40 p-3 rounded-xl border border-slate-800/80 space-y-1.5">
             <div className="font-bold text-cyan-300 flex items-center gap-1.5">
               <span>💡</span>
-              <span>Pro-tip for Android users:</span>
+              <span>How Display Over Other Apps Works:</span>
             </div>
             <div>
-              1. Tap <strong>"POP OUT FLOATING OVERLAY"</strong> above.
+              1. Tap <strong className="text-amber-300">"ALLOW DISPLAY OVER OTHER APPS"</strong> to toggle permission in Android Settings.
             </div>
             <div>
-              2. When the mini player opens, <strong>swipe up to go Home or switch to any other app</strong>.
+              2. Tap <strong className="text-cyan-300">"POP OUT FLOATING COMPANION"</strong> to launch the floating window.
             </div>
             <div>
-              3. The Digimon window stays on your screen! You can drag it anywhere or pinch to resize.
+              3. Swipe to Home or switch to any app (WhatsApp, YouTube, etc.) — your Digimon stays floating on top of your screen!
             </div>
           </div>
         </div>

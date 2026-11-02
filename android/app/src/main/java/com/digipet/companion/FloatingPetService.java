@@ -141,6 +141,10 @@ public class FloatingPetService extends Service {
             ? intent.getStringExtra("spriteUrl")
             : "file:///android_asset/public/assets/aistudio/Copy_of_Agumon_Adventure_04d0832a.png";
         
+        if (spriteUrl.startsWith("/")) {
+            spriteUrl = "file:///android_asset/public" + spriteUrl;
+        }
+        
         int frameX = intent != null ? intent.getIntExtra("frameX", 2) : 2;
         int frameY = intent != null ? intent.getIntExtra("frameY", 2) : 2;
         int frameW = intent != null ? intent.getIntExtra("frameW", 48) : 48;

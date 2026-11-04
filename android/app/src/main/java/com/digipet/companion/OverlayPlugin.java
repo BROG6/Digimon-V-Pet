@@ -75,18 +75,32 @@ public class OverlayPlugin extends Plugin {
 
         String speciesName = call.getString("speciesName", "Agumon");
         String spriteUrl = call.getString("spriteUrl", "file:///android_asset/public/assets/aistudio/Copy_of_Agumon_Adventure_04d0832a.png");
+        Integer sheetWidth = call.getInt("sheetWidth", 200);
+        Integer sheetHeight = call.getInt("sheetHeight", 200);
+        Integer groundOffset = call.getInt("groundOffset", 0);
+        String standingFramesJson = call.getString("standingFramesJson", "[]");
+        String walkingFramesJson = call.getString("walkingFramesJson", "[]");
+        String quotesJson = call.getString("quotesJson", "[]");
         Integer frameX = call.getInt("frameX", 2);
         Integer frameY = call.getInt("frameY", 2);
         Integer frameW = call.getInt("frameW", 48);
         Integer frameH = call.getInt("frameH", 48);
+        Integer frameRotate = call.getInt("frameRotate", 0);
 
         Intent serviceIntent = new Intent(ctx, FloatingPetService.class);
         serviceIntent.putExtra("speciesName", speciesName);
         serviceIntent.putExtra("spriteUrl", spriteUrl);
+        serviceIntent.putExtra("sheetWidth", sheetWidth);
+        serviceIntent.putExtra("sheetHeight", sheetHeight);
+        serviceIntent.putExtra("groundOffset", groundOffset);
+        serviceIntent.putExtra("standingFramesJson", standingFramesJson);
+        serviceIntent.putExtra("walkingFramesJson", walkingFramesJson);
+        serviceIntent.putExtra("quotesJson", quotesJson);
         serviceIntent.putExtra("frameX", frameX);
         serviceIntent.putExtra("frameY", frameY);
         serviceIntent.putExtra("frameW", frameW);
         serviceIntent.putExtra("frameH", frameH);
+        serviceIntent.putExtra("frameRotate", frameRotate);
 
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

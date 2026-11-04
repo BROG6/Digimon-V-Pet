@@ -12,6 +12,7 @@ import {
 } from '../utils/nativeOverlay';
 import { getEffectiveSpriteConfig } from '../utils/customSpriteManager';
 import { DigimonSpriteConfig, SpriteFrame } from '../utils/newDigimonSprites';
+import { HELLOPET_QUOTES } from '../data/digidex';
 
 interface NativePipOverlayProps {
   pet: PetState;
@@ -345,15 +346,24 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
         }
 
         const config = configRef.current;
-        const walkFrame0 = config?.frames?.walking?.[0] || config?.frames?.standing?.[0] || { x: 2, y: 2, w: 48, h: 48 };
+        const standingFrames = config?.frames?.standing || [];
+        const walkingFrames = config?.frames?.walking || standingFrames;
+        const activeFrame = walkingFrames[0] || standingFrames[0] || { x: 2, y: 2, w: 48, h: 48 };
 
         const ok = await startNativeFloatingOverlay({
           speciesName: species?.name || 'Digimon',
           spriteUrl: config?.sheetPath || '/assets/aistudio/Copy_of_Agumon_Adventure_04d0832a.png',
-          frameX: walkFrame0.x || 0,
-          frameY: walkFrame0.y || 0,
-          frameW: walkFrame0.w || 48,
-          frameH: walkFrame0.h || 48,
+          sheetWidth: config?.sheetWidth || 200,
+          sheetHeight: config?.sheetHeight || 200,
+          groundOffset: config?.groundOffset || 0,
+          frameX: activeFrame.x || 0,
+          frameY: activeFrame.y || 0,
+          frameW: activeFrame.w || 48,
+          frameH: activeFrame.h || 48,
+          frameRotate: activeFrame.rotate || 0,
+          standingFramesJson: JSON.stringify(standingFrames),
+          walkingFramesJson: JSON.stringify(walkingFrames),
+          quotesJson: JSON.stringify(HELLOPET_QUOTES),
         });
 
         if (ok) {

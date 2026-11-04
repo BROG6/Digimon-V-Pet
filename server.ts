@@ -17,6 +17,26 @@ async function startServer() {
   const httpServer = http.createServer(app);
   app.use(express.json({ limit: '50mb' }));
 
+  // API: Get current app version manifest for auto-updater
+  app.get('/api/app-version', (_req, res) => {
+    try {
+      const versionFile = path.join(__dirname, 'public', 'version.json');
+      if (fs.existsSync(versionFile)) {
+        const content = fs.readFileSync(versionFile, 'utf-8');
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        return res.json(JSON.parse(content));
+      }
+      return res.json({
+        versionName: '1.1.0',
+        versionCode: 2,
+        releaseDate: '2026-11-04',
+        changelog: ['Companion Roaming and Auto-Updater update']
+      });
+    } catch (err: any) {
+      return res.status(500).json({ error: err.message });
+    }
+  });
+
   // API: Get current saved sprite overrides from disk
   app.get('/api/sprite-overrides', (_req, res) => {
     try {

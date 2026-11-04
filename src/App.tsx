@@ -7,7 +7,7 @@ import {
   FurnitureItem, 
   DigimonStage 
 } from './types/digimon';
-import { DIGI_EGGS, DIGIMON_DATABASE, FURNITURE_SHOP, ROOM_THEMES } from './data/digidex';
+import { DIGI_EGGS, DIGIMON_DATABASE, FURNITURE_SHOP, ROOM_THEMES, HELLOPET_QUOTES } from './data/digidex';
 import { DigiviceHUD } from './components/DigiviceHUD';
 import { FloatingOverlay } from './components/FloatingOverlay';
 import { EggSelectionModal } from './components/EggSelectionModal';
@@ -23,6 +23,8 @@ import { PwaInstallModal } from './components/PwaInstallModal';
 import { NativePipOverlay } from './components/NativePipOverlay';
 import { DigiChat } from './components/DigiChat';
 import { DigimonGallery } from './components/DigimonGallery';
+import { AppUpdateModal } from './components/AppUpdateModal';
+import { checkForUpdate, UpdateManifest, getAutoCheckEnabled } from './utils/appUpdater';
 import { getHideGalleryButtonPref, syncOverridesToRepository, getEffectiveSpriteConfig } from './utils/customSpriteManager';
 import { NEW_DIGIMON_SPRITES } from './utils/newDigimonSprites';
 import { Capacitor } from '@capacitor/core';
@@ -56,7 +58,8 @@ import {
   X,
   ChevronUp,
   Utensils,
-  ExternalLink
+  ExternalLink,
+  Download
 } from 'lucide-react';
 
 const STORAGE_KEY = 'digipet_vpet_save_v1';
@@ -124,6 +127,25 @@ export default function App() {
   const [isGalleryHidden, setIsGalleryHidden] = useState<boolean>(() => getHideGalleryButtonPref());
   const [isCareSheetOpen, setIsCareSheetOpen] = useState<boolean>(false);
   const [isMoreSheetOpen, setIsMoreSheetOpen] = useState<boolean>(false);
+  const [isUpdateModalOpen, setIsUpdateModalOpen] = useState<boolean>(false);
+  const [updateManifest, setUpdateManifest] = useState<UpdateManifest | null>(null);
+  const [hasUpdateAvailable, setHasUpdateAvailable] = useState<boolean>(false);
+
+  // Background Auto-Updater check on startup
+  useEffect(() => {
+    if (!getAutoCheckEnabled()) return;
+    const timer = setTimeout(() => {
+      checkForUpdate()
+        .then((res) => {
+          if (res.updateAvailable && res.manifest) {
+            setUpdateManifest(res.manifest);
+            setHasUpdateAvailable(true);
+          }
+        })
+        .catch(() => {});
+    }, 2400);
+    return () => clearTimeout(timer);
+  }, []);
 
   // Listen for hide gallery button preference changes
   useEffect(() => {
@@ -220,15 +242,24 @@ export default function App() {
         }
 
         const currentSpeciesConf = getEffectiveSpriteConfig(pet.currentSpeciesId) || NEW_DIGIMON_SPRITES[pet.currentSpeciesId] || NEW_DIGIMON_SPRITES['agumon'];
-        const activeFrame = currentSpeciesConf?.frames?.walking?.[0] || currentSpeciesConf?.frames?.standing?.[0] || { x: 2, y: 2, w: 48, h: 48 };
+        const standingFrames = currentSpeciesConf?.frames?.standing || [];
+        const walkingFrames = currentSpeciesConf?.frames?.walking || standingFrames;
+        const activeFrame = walkingFrames[0] || standingFrames[0] || { x: 2, y: 2, w: 48, h: 48 };
 
         const ok = await startNativeFloatingOverlay({
           speciesName: currentSpecies?.name || 'Digimon',
           spriteUrl: currentSpeciesConf?.sheetPath || '/assets/aistudio/Copy_of_Agumon_Adventure_04d0832a.png',
+          sheetWidth: currentSpeciesConf?.sheetWidth || 200,
+          sheetHeight: currentSpeciesConf?.sheetHeight || 200,
+          groundOffset: currentSpeciesConf?.groundOffset || 0,
           frameX: activeFrame.x || 0,
           frameY: activeFrame.y || 0,
           frameW: activeFrame.w || 48,
           frameH: activeFrame.h || 48,
+          frameRotate: activeFrame.rotate || 0,
+          standingFramesJson: JSON.stringify(standingFrames),
+          walkingFramesJson: JSON.stringify(walkingFrames),
+          quotesJson: JSON.stringify(HELLOPET_QUOTES),
         });
 
         if (ok) {
@@ -758,6 +789,28 @@ export default function App() {
             <RotateCcw className="w-3.5 h-3.5" />
           </button>
 
+          {/* Native Auto Updater Action */}
+          <button
+            onClick={() => {
+              sound.playButton();
+              setIsUpdateModalOpen(true);
+            }}
+            className={`relative p-1.5 rounded-xl border transition-colors cursor-pointer ${
+              hasUpdateAvailable
+                ? 'bg-amber-950/80 border-amber-500/70 text-amber-300 shadow-md shadow-amber-500/30'
+                : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-300'
+            }`}
+            title="App Updates & Auto-Updater"
+          >
+            <Download className={`w-3.5 h-3.5 ${hasUpdateAvailable ? 'text-amber-400 animate-bounce' : 'text-cyan-400'}`} />
+            {hasUpdateAvailable && (
+              <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-amber-400 rounded-full animate-ping" />
+            )}
+            {hasUpdateAvailable && (
+              <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-amber-400 rounded-full border border-slate-950" />
+            )}
+          </button>
+
           {/* Sound Toggle */}
           <button
             onClick={toggleSound}
@@ -786,6 +839,28 @@ export default function App() {
 
       {/* MAIN VIEWPORT: PURE MOBILE PORTRAIT LAYOUT */}
       <main className="flex-1 flex flex-col items-center justify-start px-3 py-2 relative z-10 max-w-md mx-auto w-full pb-24">
+        
+        {/* Prominent Auto-Update Available Callout Banner */}
+        {hasUpdateAvailable && updateManifest && (
+          <motion.button
+            initial={{ scale: 0.95, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            whileTap={{ scale: 0.96 }}
+            onClick={() => {
+              sound.playButton();
+              setIsUpdateModalOpen(true);
+            }}
+            className="w-full mb-2 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-500 text-slate-950 py-2.5 px-3.5 rounded-2xl font-pixel text-xs font-bold shadow-lg shadow-amber-500/25 flex items-center justify-between cursor-pointer active:scale-98 border-2 border-amber-300"
+          >
+            <div className="flex items-center gap-2">
+              <Download className="w-4 h-4 text-slate-950 animate-bounce shrink-0" />
+              <span className="truncate">NEW UPDATE: v{updateManifest.versionName} AVAILABLE!</span>
+            </div>
+            <span className="bg-slate-950 text-amber-300 px-2.5 py-0.5 rounded-full text-[9px] shrink-0 font-bold border border-amber-400/50">
+              UPDATE NOW
+            </span>
+          </motion.button>
+        )}
         
         {/* Prominent Evolution Ready Callout Banner */}
         {evolutionCheck.can && (
@@ -1148,6 +1223,21 @@ export default function App() {
                   onClick={() => {
                     sound.playButton();
                     setIsMoreSheetOpen(false);
+                    setIsUpdateModalOpen(true);
+                  }}
+                  className="p-3 bg-slate-800 hover:bg-amber-950/60 border border-amber-500/40 rounded-2xl flex items-center gap-2.5 text-amber-300 cursor-pointer relative"
+                >
+                  <Download className="w-5 h-5 text-amber-400 shrink-0" />
+                  <span className="truncate">AUTO UPDATER</span>
+                  {hasUpdateAvailable && (
+                    <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+                  )}
+                </button>
+
+                <button
+                  onClick={() => {
+                    sound.playButton();
+                    setIsMoreSheetOpen(false);
                     setIsPwaModalOpen(true);
                   }}
                   className="p-3 bg-slate-800 hover:bg-emerald-950/60 border border-emerald-500/40 rounded-2xl flex items-center gap-2.5 text-emerald-300 cursor-pointer"
@@ -1394,6 +1484,13 @@ export default function App() {
         isOpen={isGalleryOpen}
         onClose={() => setIsGalleryOpen(false)}
         currentSpecies={currentSpecies}
+      />
+
+      <AppUpdateModal
+        isOpen={isUpdateModalOpen}
+        onClose={() => setIsUpdateModalOpen(false)}
+        initialManifest={updateManifest}
+        onUpdateDownloaded={() => setHasUpdateAvailable(false)}
       />
 
     </div>

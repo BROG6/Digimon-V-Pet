@@ -41,9 +41,11 @@
         </provider>
     </application>
 
-    <!-- Permissions for Screen Overlay above other apps and network sync -->
+    <!-- Permissions for Auto Updater, Screen Overlay, and network -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <uses-permission android:name="android.permission.DOWNLOAD_WITHOUT_NOTIFICATION" />
 </manifest>

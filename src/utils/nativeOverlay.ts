@@ -1,16 +1,25 @@
 import { registerPlugin, Capacitor } from '@capacitor/core';
 
+export interface OverlayLaunchParams {
+  speciesName: string;
+  spriteUrl: string;
+  sheetWidth?: number;
+  sheetHeight?: number;
+  groundOffset?: number;
+  frameX: number;
+  frameY: number;
+  frameW: number;
+  frameH: number;
+  frameRotate?: number;
+  standingFramesJson?: string;
+  walkingFramesJson?: string;
+  quotesJson?: string;
+}
+
 export interface OverlayPluginInterface {
   checkPermission(): Promise<{ granted: boolean }>;
   requestPermission(): Promise<{ success: boolean; prompted?: boolean }>;
-  startOverlay(options: {
-    speciesName: string;
-    spriteUrl: string;
-    frameX: number;
-    frameY: number;
-    frameW: number;
-    frameH: number;
-  }): Promise<{ success: boolean }>;
+  startOverlay(options: OverlayLaunchParams): Promise<{ success: boolean }>;
   stopOverlay(): Promise<{ success: boolean }>;
   isOverlayActive(): Promise<{ active: boolean }>;
   enterPip(): Promise<{ success: boolean }>;
@@ -40,14 +49,7 @@ export async function requestOverlayPermission(): Promise<boolean> {
   }
 }
 
-export async function startNativeFloatingOverlay(params: {
-  speciesName: string;
-  spriteUrl: string;
-  frameX: number;
-  frameY: number;
-  frameW: number;
-  frameH: number;
-}): Promise<boolean> {
+export async function startNativeFloatingOverlay(params: OverlayLaunchParams): Promise<boolean> {
   if (!Capacitor.isNativePlatform()) return false;
   try {
     // If permission is not granted, immediately ask for it

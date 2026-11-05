@@ -86,6 +86,8 @@ public class AppUpdatePlugin extends Plugin {
         ret.put("success", true);
         ret.put("prompted", prompted);
         call.resolve(ret);
+    }
+
     @PluginMethod
     public void fetchManifest(PluginCall call) {
         String manifestUrl = call.getString("url");

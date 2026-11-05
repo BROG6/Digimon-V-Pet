@@ -32,7 +32,6 @@ public class FloatingPetService extends Service {
     private View floatingView;
     private WindowManager.LayoutParams params;
     private WebView webView;
-    private TextView closeBtn;
 
     @Override
     public IBinder onBind(Intent intent) {
@@ -77,6 +76,9 @@ public class FloatingPetService extends Service {
                 NotificationManager.IMPORTANCE_LOW
             );
             channel.setDescription("Shows your floating Digimon pet on top of all apps");
+            channel.setSound(null, null); // Completely silent
+            channel.enableVibration(false);
+            channel.setShowBadge(false);
             NotificationManager manager = getSystemService(NotificationManager.class);
             if (manager != null) {
                 manager.createNotificationChannel(channel);
@@ -104,11 +106,14 @@ public class FloatingPetService extends Service {
         );
 
         NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("DigiPet Companion Active")
-            .setContentText("Your Digimon is floating on your screen! Tap to open.")
+            .setContentTitle("DigiPet Companion Roaming")
+            .setContentText("Pet is floating on screen. Tap 'Close Overlay' to dismiss.")
             .setSmallIcon(android.R.drawable.ic_menu_compass)
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setSound(null)
+            .setVibrate(new long[]{0})
             .setContentIntent(pendingOpen)
-            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Close Overlay", pendingStop)
+            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "✕ CLOSE OVERLAY", pendingStop)
             .setOngoing(true);
 
         return builder.build();
@@ -124,8 +129,9 @@ public class FloatingPetService extends Service {
             layoutType = WindowManager.LayoutParams.TYPE_PHONE;
         }
 
-        int viewW = dpToPx(190);
-        int viewH = dpToPx(160);
+        // 20% bigger viewport: spacious, upright, and seamless on mobile screens
+        int viewW = dpToPx(135);
+        int viewH = dpToPx(120);
         params = new WindowManager.LayoutParams(
             viewW,
             viewH,
@@ -139,20 +145,10 @@ public class FloatingPetService extends Service {
         params.x = dpToPx(40);
         params.y = dpToPx(160);
 
-        // Subclass FrameLayout to intercept all touches before the inner WebView consumes them
+        // FrameLayout intercepts drag touches cleanly (no close button clutter on screen)
         FrameLayout rootLayout = new FrameLayout(this) {
             @Override
             public boolean onInterceptTouchEvent(MotionEvent ev) {
-                if (closeBtn != null) {
-                    int[] loc = new int[2];
-                    closeBtn.getLocationOnScreen(loc);
-                    float x = ev.getRawX();
-                    float y = ev.getRawY();
-                    if (x >= loc[0] && x <= loc[0] + closeBtn.getWidth() &&
-                        y >= loc[1] && y <= loc[1] + closeBtn.getHeight()) {
-                        return false; // Let close button receive its click
-                    }
-                }
                 return true; // Intercept for smooth drag & pet tap
             }
         };
@@ -174,6 +170,11 @@ public class FloatingPetService extends Service {
         webSettings.setJavaScriptEnabled(true);
         webSettings.setDomStorageEnabled(true);
         webSettings.setAllowFileAccess(true);
+        webSettings.setAllowContentAccess(true);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
+            webSettings.setAllowFileAccessFromFileURLs(true);
+            webSettings.setAllowUniversalAccessFromFileURLs(true);
+        }
         webView.setVerticalScrollBarEnabled(false);
         webView.setHorizontalScrollBarEnabled(false);
 
@@ -183,26 +184,6 @@ public class FloatingPetService extends Service {
             FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.MATCH_PARENT
         ));
-
-        // Close button at top right
-        closeBtn = new TextView(this);
-        closeBtn.setText("✕");
-        closeBtn.setTextColor(Color.WHITE);
-        closeBtn.setTextSize(11);
-        closeBtn.setGravity(Gravity.CENTER);
-        closeBtn.setBackgroundColor(Color.argb(200, 220, 38, 38));
-        
-        FrameLayout.LayoutParams closeParams = new FrameLayout.LayoutParams(dpToPx(24), dpToPx(24));
-        closeParams.gravity = Gravity.TOP | Gravity.END;
-        closeParams.setMargins(0, dpToPx(4), dpToPx(4), 0);
-        closeBtn.setLayoutParams(closeParams);
-        closeBtn.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                stopSelf();
-            }
-        });
-        rootLayout.addView(closeBtn);
 
         // Dragging & Tapping Touch Listener
         rootLayout.setOnTouchListener(new View.OnTouchListener() {
@@ -271,13 +252,17 @@ public class FloatingPetService extends Service {
         String speciesName = intent != null && intent.getStringExtra("speciesName") != null
             ? intent.getStringExtra("speciesName")
             : "Digimon";
-        String spriteUrl = intent != null && intent.getStringExtra("spriteUrl") != null
+        String rawSpriteUrl = intent != null && intent.getStringExtra("spriteUrl") != null
             ? intent.getStringExtra("spriteUrl")
-            : "file:///android_asset/public/assets/aistudio/Copy_of_Agumon_Adventure_04d0832a.png";
+            : "assets/aistudio/Copy_of_Agumon_Adventure_04d0832a.png";
         
-        if (spriteUrl.startsWith("/")) {
-            spriteUrl = "file:///android_asset/public" + spriteUrl;
+        String relSpriteUrl = rawSpriteUrl;
+        if (relSpriteUrl.startsWith("file:///android_asset/public/")) {
+            relSpriteUrl = relSpriteUrl.substring("file:///android_asset/public/".length());
+        } else if (relSpriteUrl.startsWith("/")) {
+            relSpriteUrl = relSpriteUrl.substring(1);
         }
+        String absSpriteUrl = "file:///android_asset/public/" + relSpriteUrl;
 
         int sheetWidth = intent != null ? intent.getIntExtra("sheetWidth", 200) : 200;
         int sheetHeight = intent != null ? intent.getIntExtra("sheetHeight", 200) : 200;
@@ -301,36 +286,34 @@ public class FloatingPetService extends Service {
         String html = "<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width, initial-scale=1.0'>" +
             "<style>" +
             "html, body { margin:0; padding:0; background:transparent; overflow:hidden; width:100%; height:100%; user-select:none; -webkit-user-select:none; pointer-events:none; font-family:sans-serif; }" +
-            "#stage { position:relative; width:100%; height:100%; overflow:hidden; }" +
+            "#stage { position:relative; width:100%; height:100%; overflow:visible; }" +
             
-            // Speech Bubble with cartoon tail and animated scale/fade
-            "#bubble { position:absolute; top:6px; left:50%; transform:translateX(-50%) scale(0); opacity:0; max-width:140px; background:#ffffff; color:#0f172a; border:2px solid #0f172a; border-radius:12px; padding:3px 8px; font-size:10px; font-weight:bold; font-family:monospace; text-align:center; box-shadow:0 4px 12px rgba(0,0,0,0.45); transition:transform 0.22s cubic-bezier(0.175,0.885,0.32,1.275), opacity 0.2s ease; z-index:30; pointer-events:none; }" +
+            // Compact Speech Bubble with subtle tail and animated pop
+            "#bubble { position:absolute; top:2px; left:50%; transform:translateX(-50%) scale(0); opacity:0; max-width:110px; background:#ffffff; color:#0f172a; border:1.5px solid #0f172a; border-radius:9px; padding:2px 7px; font-size:8.5px; font-weight:bold; font-family:monospace; text-align:center; box-shadow:0 3px 8px rgba(0,0,0,0.4); transition:transform 0.2s cubic-bezier(0.175,0.885,0.32,1.275), opacity 0.18s ease; z-index:30; pointer-events:none; }" +
             "#bubble.show { transform:translateX(-50%) scale(1); opacity:1; }" +
-            "#bubble::after { content:''; position:absolute; bottom:-6px; left:50%; transform:translateX(-50%); width:0; height:0; border-left:6px solid transparent; border-right:6px solid transparent; border-top:6px solid #ffffff; }" +
-            "#bubble::before { content:''; position:absolute; bottom:-8px; left:50%; transform:translateX(-50%); width:0; height:0; border-left:7px solid transparent; border-right:7px solid transparent; border-top:7px solid #0f172a; z-index:-1; }" +
+            "#bubble::after { content:''; position:absolute; bottom:-5px; left:50%; transform:translateX(-50%); width:0; height:0; border-left:4px solid transparent; border-right:4px solid transparent; border-top:5px solid #ffffff; }" +
+            "#bubble::before { content:''; position:absolute; bottom:-7px; left:50%; transform:translateX(-50%); width:0; height:0; border-left:5px solid transparent; border-right:5px solid transparent; border-top:6px solid #0f172a; z-index:-1; }" +
 
-            // Pet wrap & upright sprite box
-            "#petWrap { position:absolute; bottom:16px; left:55px; display:flex; flex-direction:column; align-items:center; transition:none; }" +
+            // Pet wrap & 20% bigger upright sprite box (name tag completely removed)
+            "#petWrap { position:absolute; bottom:10px; left:45px; display:flex; flex-direction:column; align-items:center; transition:none; }" +
             "#spriteBox { position:relative; overflow:hidden; }" +
             "#innerBox { position:absolute; top:50%; left:50%; transform-origin:center center; overflow:hidden; }" +
             "#sheetImg { position:absolute; max-width:none; image-rendering:pixelated; }" +
-            "#shadow { width:34px; height:5px; background:rgba(0,0,0,0.38); border-radius:50%; margin-top:2px; }" +
-            "#badge { font-family:monospace; font-size:8.5px; font-weight:bold; color:#38bdf8; background:rgba(15,23,42,0.88); border:1px solid rgba(56,189,248,0.5); padding:1px 6px; border-radius:9999px; margin-top:3px; text-shadow:0 1px 2px #000; letter-spacing:0.5px; white-space:nowrap; }" +
+            "#shadow { width:22px; height:4px; background:rgba(0,0,0,0.35); border-radius:50%; margin-top:1px; }" +
 
-            // Jump / Hop animation on tap or cheerful talk
-            "@keyframes hopAnim { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-12px); } }" +
-            ".hopping { animation: hopAnim 0.35s ease-in-out; }" +
+            // Jump / Hop animation on tap or speech
+            "@keyframes hopAnim { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }" +
+            ".hopping { animation: hopAnim 0.3s ease-in-out; }" +
             "</style></head><body>" +
             "<div id='stage'>" +
             "  <div id='bubble'>Hello Tamer!</div>" +
             "  <div id='petWrap'>" +
             "    <div id='spriteBox'>" +
             "      <div id='innerBox'>" +
-            "        <img id='sheetImg' src='" + spriteUrl + "' />" +
+            "        <img id='sheetImg' src='" + relSpriteUrl + "' onerror=\"if(this.getAttribute('data-tried')!=='1'){this.setAttribute('data-tried','1');this.src='" + absSpriteUrl + "';}\" />" +
             "      </div>" +
             "    </div>" +
             "    <div id='shadow'></div>" +
-            "    <div id='badge'>" + speciesName.toUpperCase() + "</div>" +
             "  </div>" +
             "</div>" +
             "<script>" +
@@ -355,10 +338,11 @@ public class FloatingPetService extends Service {
             "var bubble = document.getElementById('bubble');" +
             "var stage = document.getElementById('stage');" +
 
-            "var scale = 1.85;" +
+            // 20% bigger sprite scale (1.11 vs 0.925)
+            "var scale = 1.11;" +
             "var facingRight = true;" +
-            "var posX = 55;" +
-            "var targetX = 55;" +
+            "var posX = 45;" +
+            "var targetX = 45;" +
             "var isWalking = false;" +
             "var walkFrameIdx = 0;" +
             "var standFrameIdx = 0;" +
@@ -367,6 +351,15 @@ public class FloatingPetService extends Service {
             // Upright sprite frame rendering: mirrors DigimonSprite.tsx!
             "function renderFrame(frame) {" +
             "  if (!frame) return;" +
+            "  if (frame.sheetPath) {" +
+            "    var sp = frame.sheetPath;" +
+            "    if (sp.indexOf('android_asset/public/') !== -1) sp = sp.substring(sp.indexOf('android_asset/public/') + 21);" +
+            "    if (sp.startsWith('/')) sp = sp.substring(1);" +
+            "    if (sheetImg.getAttribute('data-src') !== sp) {" +
+            "      sheetImg.setAttribute('data-src', sp);" +
+            "      sheetImg.src = sp;" +
+            "    }" +
+            "  }" +
             "  var rot = frame.rotate || 0;" +
             "  var isRot = (rot === 90 || rot === -90 || rot === 270);" +
             "  var dw = (isRot ? frame.h : frame.w) * scale;" +
@@ -378,8 +371,10 @@ public class FloatingPetService extends Service {
             "  innerBox.style.width = (frame.w * scale) + 'px';" +
             "  innerBox.style.height = (frame.h * scale) + 'px';" +
             "  innerBox.style.transform = 'translate(-50%, -50%) ' + (rot ? 'rotate(' + rot + 'deg)' : '');" +
-            "  sheetImg.style.width = (sheetW * scale) + 'px';" +
-            "  sheetImg.style.height = (sheetH * scale) + 'px';" +
+            "  var curSheetW = (frame.sheetWidth || sheetW) * scale;" +
+            "  var curSheetH = (frame.sheetHeight || sheetH) * scale;" +
+            "  sheetImg.style.width = curSheetW + 'px';" +
+            "  sheetImg.style.height = curSheetH + 'px';" +
             "  sheetImg.style.left = '-' + (frame.x * scale) + 'px';" +
             "  sheetImg.style.top = '-' + (frame.y * scale) + 'px';" +
             "}" +
@@ -392,10 +387,10 @@ public class FloatingPetService extends Service {
             "  if (bubbleTimeout) clearTimeout(bubbleTimeout);" +
             "  bubbleTimeout = setTimeout(function() {" +
             "    bubble.classList.remove('show');" +
-            "  }, 4200);" +
+            "  }, 3500);" +
             "}" +
 
-            // Tapped callback from native touch listener
+            // Tapped callback from native touch listener: hop and talk
             "window.onPetTapped = function() {" +
             "  showSpeech();" +
             "  petWrap.classList.remove('hopping');" +
@@ -403,11 +398,12 @@ public class FloatingPetService extends Service {
             "  petWrap.classList.add('hopping');" +
             "};" +
 
-            // Autonomous roaming
+            // Autonomous roaming across window bounds
             "function startWalk() {" +
             "  if (isWalking) return;" +
-            "  var minX = 15;" +
-            "  var maxX = Math.max(35, (stage.clientWidth || 190) - 75);" +
+            "  var minX = 8;" +
+            "  var stageW = stage.clientWidth || 135;" +
+            "  var maxX = Math.max(minX + 24, stageW - 45);" +
             "  targetX = minX + Math.random() * (maxX - minX);" +
             "  facingRight = (targetX > posX);" +
             "  isWalking = true;" +
@@ -417,12 +413,12 @@ public class FloatingPetService extends Service {
             "setInterval(function() {" +
             "  if (isWalking) {" +
             "    var dx = targetX - posX;" +
-            "    if (Math.abs(dx) < 2) {" +
+            "    if (Math.abs(dx) < 1.5) {" +
             "      posX = targetX;" +
             "      isWalking = false;" +
             "      renderFrame(standingFrames[0]);" +
             "    } else {" +
-            "      posX += dx > 0 ? 1.5 : -1.5;" +
+            "      posX += dx > 0 ? 1.0 : -1.0;" +
             "    }" +
             "    petWrap.style.left = posX + 'px';" +
             "  }" +
@@ -439,19 +435,19 @@ public class FloatingPetService extends Service {
             "  }" +
             "}, 140);" +
 
-            // AI Behavior Decision
+            // AI Behavior Decision: Roams frequently (every 2.0s, 75% chance to walk)
             "setInterval(function() {" +
             "  var r = Math.random();" +
-            "  if (r < 0.45) {" +
+            "  if (r < 0.75) {" +
             "    startWalk();" +
-            "  } else if (r < 0.72) {" +
+            "  } else if (r < 0.92) {" +
             "    showSpeech();" +
             "  }" +
-            "}, 5500);" +
+            "}, 2000);" +
 
             // Initial frame & greeting
             "renderFrame(standingFrames[0]);" +
-            "setTimeout(function() { showSpeech(); }, 700);" +
+            "setTimeout(function() { showSpeech(); }, 600);" +
             "</script></body></html>";
 
         webView.loadDataWithBaseURL("file:///android_asset/public/", html, "text/html", "utf-8", null);

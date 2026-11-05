@@ -98,27 +98,27 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
 
       // Random chance to wander, say something, sit, or stay idle
       const roll = Math.random();
-      if (roll < 0.4) {
+      if (roll < 0.75) {
         // Walk somewhere along the bottom screen boundary
-        const maxX = window.innerWidth - 140;
-        const targetX = Math.max(20, Math.min(maxX, posX + (Math.random() * 300 - 150)));
+        const maxX = window.innerWidth - 100;
+        const targetX = Math.max(15, Math.min(maxX, posX + (Math.random() * 240 - 120)));
         setFacing(targetX > posX ? 'right' : 'left');
         setCurrentAction('walk');
         setPosX(targetX);
 
         setTimeout(() => {
           if (!isDraggingRef.current) {
-            setCurrentAction(pet.isSick ? 'sick' : Math.random() < 0.4 ? 'sit' : 'idle');
+            setCurrentAction(pet.isSick ? 'sick' : Math.random() < 0.35 ? 'sit' : 'idle');
           }
-        }, 1400);
-      } else if (roll < 0.6) {
-        // Sit down relaxed
-        setCurrentAction(pet.isSick ? 'sick' : 'sit');
-      } else if (roll < 0.8) {
+        }, 1100);
+      } else if (roll < 0.88) {
         // Hellopet dialogue bubble
         triggerSpeech();
+      } else {
+        // Sit down relaxed
+        setCurrentAction(pet.isSick ? 'sick' : 'sit');
       }
-    }, 5500);
+    }, 2200);
 
     return () => clearInterval(wanderInterval);
   }, [isOverlayActive, posX, pet.isSleeping, pet.isSick]);
@@ -319,13 +319,13 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
           </motion.div>
         )}
 
-        {/* Digimon Sprite */}
+        {/* Digimon Sprite (20% bigger than previous compact size) */}
         <DigimonSprite
           species={species}
           egg={pet.stage === 'egg' ? egg : undefined}
           action={currentAction}
           facing={facing}
-          scale={1.15}
+          scale={0.72}
           onClick={handleSpriteClick}
         />
 

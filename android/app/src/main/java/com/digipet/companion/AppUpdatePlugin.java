@@ -111,6 +111,16 @@ public class AppUpdatePlugin extends Plugin {
             }
         }
 
+        // Failsafe: if apkUrl points to localhost/127.0.0.1, rewrite to official Cloud Run host
+        if (apkUrl.contains("localhost") || apkUrl.contains("127.0.0.1")) {
+            apkUrl = apkUrl.replace("https://localhost", "https://ais-pre-hwfiiqh77iufzd3mdqoptd-750449911930.asia-northeast1.run.app")
+                           .replace("http://localhost", "https://ais-pre-hwfiiqh77iufzd3mdqoptd-750449911930.asia-northeast1.run.app")
+                           .replace("https://127.0.0.1", "https://ais-pre-hwfiiqh77iufzd3mdqoptd-750449911930.asia-northeast1.run.app")
+                           .replace("http://127.0.0.1", "https://ais-pre-hwfiiqh77iufzd3mdqoptd-750449911930.asia-northeast1.run.app");
+        }
+
+        final String finalApkUrl = apkUrl;
+
         // Run background download
         new Thread(() -> {
             try {
@@ -127,7 +137,7 @@ public class AppUpdatePlugin extends Plugin {
                     destinationFile.delete();
                 }
 
-                URL url = new URL(apkUrl);
+                URL url = new URL(finalApkUrl);
                 HttpURLConnection conn = (HttpURLConnection) url.openConnection();
                 conn.setRequestMethod("GET");
                 conn.setConnectTimeout(25000);
@@ -147,6 +157,26 @@ public class AppUpdatePlugin extends Plugin {
                     conn.setConnectTimeout(25000);
                     conn.setReadTimeout(30000);
                     conn.connect();
+                    responseCode = conn.getResponseCode();
+                }
+
+                if (responseCode >= 400) {
+                    final int errCode = responseCode;
+                    final String errMsg = conn.getResponseMessage();
+                    conn.disconnect();
+                    new Handler(Looper.getMainLooper()).post(() -> {
+                        call.reject("Server returned HTTP " + errCode + " (" + errMsg + "). The APK binary was not found at this URL.");
+                    });
+                    return;
+                }
+
+                String contentType = conn.getContentType();
+                if (contentType != null && (contentType.contains("text/html") || contentType.contains("application/xhtml"))) {
+                    conn.disconnect();
+                    new Handler(Looper.getMainLooper()).post(() -> {
+                        call.reject("Server returned a webpage (HTML) instead of an APK binary. Please check the APK URL in updater settings.");
+                    });
+                    return;
                 }
 
                 InputStream is = conn.getInputStream();

@@ -12,9 +12,8 @@ import {
   ExternalLink, 
   Settings, 
   Layers,
-  FileCode,
-  ArrowRight,
-  HardDrive
+  Globe,
+  RotateCcw
 } from 'lucide-react';
 import { sound } from '../utils/audio';
 import { 
@@ -26,10 +25,15 @@ import {
   checkInstallPermission, 
   requestInstallPermission, 
   reloadLiveAssets, 
+  openExternalUrl,
+  resolveFullUrl,
+  DEFAULT_PRODUCTION_URL,
   getAutoCheckEnabled, 
   setAutoCheckEnabled, 
   getCustomUpdateUrl, 
-  setCustomUpdateUrl 
+  setCustomUpdateUrl,
+  getCustomApkUrl,
+  setCustomApkUrl
 } from '../utils/appUpdater';
 import { Capacitor } from '@capacitor/core';
 
@@ -61,7 +65,9 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [autoCheck, setAutoCheck] = useState<boolean>(true);
   const [showSettings, setShowSettings] = useState<boolean>(false);
-  const [customUrl, setCustomUrl] = useState<string>('');
+  const [customManifestUrl, setCustomManifestUrl] = useState<string>('');
+  const [customApkUrlState, setCustomApkUrlState] = useState<string>('');
+  const [currentResolvedUrl, setCurrentResolvedUrl] = useState<string>('');
 
   // Load app info and check install permission on mount / open
   useEffect(() => {
@@ -70,12 +76,12 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
     getLocalAppInfo().then((info) => setAppInfo(info));
     checkInstallPermission().then((perm) => setHasInstallPerm(perm));
     setAutoCheck(getAutoCheckEnabled());
-    setCustomUrl(getCustomUpdateUrl());
+    setCustomManifestUrl(getCustomUpdateUrl());
+    setCustomApkUrlState(getCustomApkUrl());
+    setCurrentResolvedUrl(resolveFullUrl('/api/download-apk'));
 
-    // If no manifest passed, perform check
-    if (!manifest) {
-      handleCheckUpdates(false);
-    }
+    // Perform fresh check if opened
+    handleCheckUpdates(false);
   }, [isOpen]);
 
   // When window gains focus (e.g. user returned from Android Settings)
@@ -95,17 +101,21 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
     setSuccessMsg(null);
 
     try {
-      const res = await checkForUpdate(customUrl || undefined);
+      const res = await checkForUpdate(customManifestUrl || undefined);
       setManifest(res.manifest);
       setAppInfo(res.currentInfo);
 
+      if (res.manifest?.apkDownloadUrl) {
+        setCurrentResolvedUrl(resolveFullUrl(res.manifest.apkDownloadUrl));
+      }
+
       if (res.error) {
-        setErrorMsg(`Check failed: ${res.error}`);
+        setErrorMsg(res.error);
       } else if (res.updateAvailable) {
         setSuccessMsg(`New version ${res.manifest?.versionName} is ready to install!`);
         if (playSfx) sound.playVictory();
       } else {
-        setSuccessMsg('You already have the newest version installed! 🛡️');
+        setSuccessMsg('You have the newest version installed! 🛡️');
       }
     } catch (e: any) {
       setErrorMsg(e.message || 'Error checking for updates');
@@ -129,12 +139,11 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
   };
 
   const handleStartDownload = async () => {
-    if (!manifest) return;
     sound.playButton();
     setErrorMsg(null);
     setSuccessMsg(null);
 
-    // If native Android, check if permission is granted first
+    // If native Android, check if unknown sources permission is granted first
     if (Capacitor.isNativePlatform()) {
       const perm = await checkInstallPermission();
       if (!perm) {
@@ -145,17 +154,19 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
     }
 
     setIsDownloading(true);
-    setDownloadStep('Connecting to Digi-Server...');
+    setDownloadStep('Connecting to Digi-Cloud Server...');
 
     try {
+      const targetApk = customApkUrlState || manifest?.apkDownloadUrl || '/api/download-apk';
+      const resolved = resolveFullUrl(targetApk);
+      setCurrentResolvedUrl(resolved);
+
       setTimeout(() => {
-        setDownloadStep('Downloading APK package (18.5 MB)...');
+        setDownloadStep('Downloading APK binary...');
       }, 700);
 
-      const downloadUrl = manifest.apkDownloadUrl || '/assets/apk/digipet-latest.apk';
-      const fileName = manifest.apkFileName || `digipet-v${manifest.versionName}.apk`;
-
-      const res = await downloadAndInstallApk(downloadUrl, fileName);
+      const fileName = manifest?.apkFileName || `digipet-v${manifest?.versionName || '1.1.0'}.apk`;
+      const res = await downloadAndInstallApk(targetApk, fileName);
 
       if (res.needsPermission) {
         setIsDownloading(false);
@@ -165,7 +176,7 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
       }
 
       if (res.success) {
-        setDownloadStep('Package downloaded! Opening Android Package Installer...');
+        setDownloadStep('Opening Android Package Installer...');
         setSuccessMsg('Opening Android Installer... Tap "Install" or "Update" on your phone!');
         onUpdateDownloaded?.();
       } else {
@@ -176,6 +187,13 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
     } finally {
       setIsDownloading(false);
     }
+  };
+
+  const handleOpenInBrowser = async () => {
+    sound.playButton();
+    const targetApk = customApkUrlState || manifest?.apkDownloadUrl || '/api/download-apk';
+    const fullUrl = resolveFullUrl(targetApk);
+    await openExternalUrl(fullUrl);
   };
 
   const handleReloadLiveCode = async () => {
@@ -195,11 +213,26 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
     setAutoCheckEnabled(next);
   };
 
-  const handleSaveCustomUrl = () => {
+  const handleSaveSettings = () => {
     sound.playButton();
-    setCustomUpdateUrl(customUrl);
-    setSuccessMsg('Saved custom update endpoint URL.');
+    setCustomUpdateUrl(customManifestUrl);
+    setCustomApkUrl(customApkUrlState);
+    setCurrentResolvedUrl(resolveFullUrl(customApkUrlState || '/api/download-apk'));
+    setSuccessMsg('Saved custom update settings!');
     setTimeout(() => setSuccessMsg(null), 3000);
+    handleCheckUpdates(false);
+  };
+
+  const handleResetToCloud = () => {
+    sound.playButton();
+    setCustomManifestUrl('');
+    setCustomApkUrlState('');
+    setCustomUpdateUrl('');
+    setCustomApkUrl('');
+    setCurrentResolvedUrl(resolveFullUrl('/api/download-apk'));
+    setSuccessMsg('Reset to official Digi-Cloud server!');
+    setTimeout(() => setSuccessMsg(null), 3000);
+    handleCheckUpdates(false);
   };
 
   if (!isOpen) return null;
@@ -339,16 +372,37 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
                 <div className="bg-gradient-to-r from-cyan-500 via-teal-400 to-emerald-400 h-full rounded-full animate-pulse w-3/4" />
               </div>
               <p className="text-[10px] text-slate-400">
-                Android Package Installer will launch automatically once download finishes!
+                Target server: <span className="font-mono text-cyan-300 truncate">{currentResolvedUrl}</span>
               </p>
             </div>
           )}
 
-          {/* Feedback messages */}
+          {/* Detailed Error Box with Browser Fallback */}
           {errorMsg && (
-            <div className="p-3 bg-rose-950/60 border border-rose-500/50 rounded-xl text-rose-200 text-xs flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 flex-shrink-0 text-rose-400" />
-              <span>{errorMsg}</span>
+            <div className="p-3.5 bg-rose-950/70 border border-rose-500/60 rounded-2xl space-y-2.5">
+              <div className="flex items-start gap-2 text-rose-200 text-xs">
+                <AlertTriangle className="w-4 h-4 flex-shrink-0 text-rose-400 mt-0.5" />
+                <span className="leading-tight">{errorMsg}</span>
+              </div>
+
+              {/* Action buttons on error */}
+              <div className="flex flex-wrap items-center gap-2 pt-1">
+                <button
+                  onClick={handleOpenInBrowser}
+                  className="py-2 px-3 bg-rose-900/80 hover:bg-rose-800 text-rose-100 border border-rose-500/50 font-pixel text-[10px] font-bold rounded-xl flex items-center gap-1.5 cursor-pointer active:scale-95"
+                >
+                  <Globe className="w-3.5 h-3.5 text-rose-300" />
+                  <span>OPEN DOWNLOAD IN BROWSER</span>
+                </button>
+
+                <button
+                  onClick={() => setShowSettings(true)}
+                  className="py-2 px-3 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 font-pixel text-[10px] rounded-xl flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Settings className="w-3.5 h-3.5 text-slate-400" />
+                  <span>CONFIGURE URL</span>
+                </button>
+              </div>
             </div>
           )}
 
@@ -424,6 +478,14 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
                   exit={{ opacity: 0, height: 0 }}
                   className="pt-3 space-y-3 overflow-hidden text-xs"
                 >
+                  {/* Current Active Server URL Display */}
+                  <div className="p-2.5 bg-slate-950/80 rounded-xl border border-slate-800 text-[11px] text-slate-400 space-y-1">
+                    <div className="text-slate-500 text-[10px] font-mono">RESOLVED UPDATE ENDPOINT:</div>
+                    <div className="text-cyan-300 font-mono text-[10px] break-all">
+                      {currentResolvedUrl}
+                    </div>
+                  </div>
+
                   {/* Auto-check switch */}
                   <div className="flex items-center justify-between p-3 bg-slate-950 rounded-xl border border-slate-800">
                     <div>
@@ -444,30 +506,61 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
                     </button>
                   </div>
 
-                  {/* Custom URL Input */}
+                  {/* Direct APK Download URL Input (e.g. GitHub Releases) */}
                   <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-1.5">
                     <label className="block text-[11px] font-bold text-slate-300">
-                      Custom Version Manifest URL (Optional):
+                      Direct APK Download URL (e.g. GitHub Releases):
                     </label>
                     <div className="flex gap-2">
                       <input
                         type="url"
-                        placeholder="https://your-domain.com/version.json"
-                        value={customUrl}
-                        onChange={(e) => setCustomUrl(e.target.value)}
+                        placeholder="https://github.com/user/repo/releases/.../app.apk"
+                        value={customApkUrlState}
+                        onChange={(e) => setCustomApkUrlState(e.target.value)}
                         className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-cyan-400 font-mono"
                       />
                       <button
-                        onClick={handleSaveCustomUrl}
+                        onClick={handleSaveSettings}
                         className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white font-pixel text-[10px] rounded-lg cursor-pointer"
                       >
                         SAVE
                       </button>
                     </div>
                     <p className="text-[10px] text-slate-500">
-                      Default is local server manifest (<code className="text-cyan-400">/version.json</code>).
+                      Paste any direct .apk URL (GitHub Release, Google Drive, MediaFire).
                     </p>
                   </div>
+
+                  {/* Custom Version Manifest URL Input */}
+                  <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-1.5">
+                    <label className="block text-[11px] font-bold text-slate-300">
+                      Custom Version Manifest JSON URL:
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        type="url"
+                        placeholder={DEFAULT_PRODUCTION_URL + '/api/app-version'}
+                        value={customManifestUrl}
+                        onChange={(e) => setCustomManifestUrl(e.target.value)}
+                        className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-cyan-400 font-mono"
+                      />
+                      <button
+                        onClick={handleSaveSettings}
+                        className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white font-pixel text-[10px] rounded-lg cursor-pointer"
+                      >
+                        SAVE
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Reset to Default Cloud Server Button */}
+                  <button
+                    onClick={handleResetToCloud}
+                    className="w-full py-2 px-3 bg-slate-800 hover:bg-slate-700 text-slate-300 font-pixel text-[10px] rounded-xl flex items-center justify-center gap-1.5 border border-slate-700 cursor-pointer"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5 text-cyan-400" />
+                    <span>RESET TO DEFAULT CLOUD SERVER</span>
+                  </button>
                 </motion.div>
               )}
             </AnimatePresence>

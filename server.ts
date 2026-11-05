@@ -37,6 +37,44 @@ async function startServer() {
     }
   });
 
+  // API: Download latest APK binary
+  app.get('/api/download-apk', (_req, res) => {
+    try {
+      const candidates = [
+        path.join(__dirname, 'public', 'assets', 'apk', 'digipet-latest.apk'),
+        path.join(__dirname, 'public', 'digipet-latest.apk'),
+        path.join(__dirname, 'android', 'app', 'build', 'outputs', 'apk', 'debug', 'app-debug.apk'),
+        path.join(__dirname, 'android', 'app', 'build', 'outputs', 'apk', 'release', 'app-release.apk'),
+      ];
+
+      for (const apkPath of candidates) {
+        if (fs.existsSync(apkPath) && fs.statSync(apkPath).size > 1000) {
+          res.setHeader('Content-Type', 'application/vnd.android.package-archive');
+          res.setHeader('Content-Disposition', 'attachment; filename="digipet-v1.1.0.apk"');
+          return res.sendFile(apkPath);
+        }
+      }
+
+      // Check if version.json defines a direct external URL
+      const versionFile = path.join(__dirname, 'public', 'version.json');
+      if (fs.existsSync(versionFile)) {
+        try {
+          const v = JSON.parse(fs.readFileSync(versionFile, 'utf-8'));
+          if (v.directDownloadUrl && v.directDownloadUrl.startsWith('http')) {
+            return res.redirect(v.directDownloadUrl);
+          }
+        } catch {}
+      }
+
+      return res.status(404).json({
+        success: false,
+        error: 'APK binary is not yet uploaded to the server. You can provide a direct download link in Updater settings.',
+      });
+    } catch (err: any) {
+      return res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
   // API: Get current saved sprite overrides from disk
   app.get('/api/sprite-overrides', (_req, res) => {
     try {

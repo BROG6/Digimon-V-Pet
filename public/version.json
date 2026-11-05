@@ -11,7 +11,7 @@
     "Native in-app auto-updater: background APK download & seamless installer",
     "Over-The-Air (OTA) live web asset reload & cache refresh"
   ],
-  "apkDownloadUrl": "/assets/apk/digipet-latest.apk",
+  "apkDownloadUrl": "https://ais-pre-hwfiiqh77iufzd3mdqoptd-750449911930.asia-northeast1.run.app/api/download-apk",
   "apkFileName": "digipet-v1.1.0.apk",
   "apkFileSize": "18.5 MB",
   "isMandatory": false

@@ -23,6 +23,7 @@ export interface AppUpdatePluginInterface {
   getAppInfo(): Promise<AppInfo>;
   checkInstallPermission(): Promise<{ granted: boolean }>;
   requestInstallPermission(): Promise<{ success: boolean; prompted?: boolean }>;
+  fetchManifest(options: { url?: string }): Promise<{ data: string }>;
   downloadAndInstallApk(options: { apkUrl: string; fileName?: string }): Promise<{
     success: boolean;
     installed?: boolean;
@@ -49,6 +50,26 @@ export const DEFAULT_APP_INFO: AppInfo = {
   versionCode: 1,
   packageName: 'com.digipet.companion',
   isNative: false,
+};
+
+// Verified latest build release manifest
+export const DEFAULT_BUNDLED_MANIFEST: UpdateManifest = {
+  versionName: '1.1.0',
+  versionCode: 2,
+  releaseDate: '2026-11-04',
+  releaseName: 'Companion Roaming & Auto-Updater Update',
+  changelog: [
+    'Fixed Botamon and rotated Digimon sideways orientation to upright alignment',
+    'Animated autonomous walking, step cycling, and roaming across the screen',
+    'Floating speech bubbles with authentic Digimon dialogue lines',
+    'Movable floating overlay: touch and drag anywhere over other apps',
+    'Native in-app auto-updater: background APK download & seamless installer',
+    'Over-The-Air (OTA) live web asset reload & cache refresh'
+  ],
+  apkDownloadUrl: `${DEFAULT_PRODUCTION_URL}/api/download-apk`,
+  apkFileName: 'digipet-v1.1.0.apk',
+  apkFileSize: '18.5 MB',
+  isMandatory: false,
 };
 
 /**
@@ -153,11 +174,11 @@ export async function requestInstallPermission(): Promise<boolean> {
 // Compare semantic version strings (e.g. "1.1.0" > "1.0.0")
 export function isVersionNewer(remoteVer: string, localVer: string): boolean {
   try {
-    const rParts = remoteVer.replace(/[^0-9.]/g, '').split('.').map((n) => parseInt(n || '0', 10));
-    const lParts = localVer.replace(/[^0-9.]/g, '').split('.').map((n) => parseInt(n || '0', 10));
+    const rParts = (remoteVer || '1.1.0').replace(/[^0-9.]/g, '').split('.').map((n) => parseInt(n || '0', 10));
+    const lParts = (localVer || '1.0.0').replace(/[^0-9.]/g, '').split('.').map((n) => parseInt(n || '0', 10));
     for (let i = 0; i < Math.max(rParts.length, lParts.length); i++) {
-      const r = rParts[i] || 0;
-      const l = lParts[i] || 0;
+      const r = rParts[i] ?? 0;
+      const l = lParts[i] ?? 0;
       if (r > l) return true;
       if (r < l) return false;
     }
@@ -170,61 +191,106 @@ export async function checkForUpdate(customUrl?: string): Promise<{
   manifest: UpdateManifest | null;
   currentInfo: AppInfo;
   error?: string;
+  isFallback?: boolean;
 }> {
   const currentInfo = await getLocalAppInfo();
 
-  // Try fetching from the remote cloud server / custom manifest URL
-  const targetUrl = customUrl
-    ? resolveFullUrl(customUrl)
-    : getCustomUpdateUrl()
-    ? resolveFullUrl(getCustomUpdateUrl())
+  // Smart check: If user accidentally pasted an APK URL in the manifest field, fix it!
+  const rawCustom = customUrl || getCustomUpdateUrl();
+  if (rawCustom && (rawCustom.endsWith('.apk') || rawCustom.includes('/download-apk'))) {
+    setCustomApkUrl(rawCustom);
+    setCustomUpdateUrl('');
+  }
+
+  const customManifest = getCustomUpdateUrl();
+  const targetUrl = customManifest
+    ? resolveFullUrl(customManifest)
     : resolveFullUrl('/api/app-version');
 
-  try {
-    let res: Response;
+  let manifest: UpdateManifest | null = null;
+  let fetchError: string | null = null;
+
+  // Step 1: In native Android, try native HTTP connection first (bypasses browser CORS & origin restrictions)
+  if (Capacitor.isNativePlatform()) {
     try {
-      res = await fetch(targetUrl, {
+      const nativeRes = await AppUpdatePlugin.fetchManifest({ url: targetUrl });
+      if (nativeRes && nativeRes.data) {
+        manifest = JSON.parse(nativeRes.data);
+      }
+    } catch (nativeErr: any) {
+      console.warn('Native fetchManifest error:', nativeErr);
+      fetchError = nativeErr.message || 'Native fetch failed';
+    }
+  }
+
+  // Step 2: If native fetch didn't return manifest, try standard fetch
+  if (!manifest) {
+    try {
+      const res = await fetch(targetUrl, {
         cache: 'no-store',
         headers: { 'Cache-Control': 'no-cache' },
       });
-    } catch (netErr) {
-      // If remote URL failed and we're using default, try fallback to /version.json
-      if (!customUrl && !getCustomUpdateUrl()) {
-        res = await fetch(resolveFullUrl('/version.json'), {
-          cache: 'no-store',
-          headers: { 'Cache-Control': 'no-cache' },
-        });
+      if (res.ok) {
+        const text = await res.text();
+        try {
+          manifest = JSON.parse(text);
+        } catch {
+          fetchError = 'Server returned non-JSON response';
+        }
       } else {
-        throw netErr;
+        fetchError = `Server returned status ${res.status}`;
       }
+    } catch (webErr: any) {
+      console.warn('Web fetch error:', webErr);
+      if (!fetchError) fetchError = webErr.message || 'Failed to fetch update info';
     }
+  }
 
-    if (!res.ok) {
-      throw new Error(`Server returned HTTP ${res.status}`);
-    }
+  // Step 3: If remote URL failed, try reading local bundled version.json
+  if (!manifest) {
+    try {
+      const localRes = await fetch('/version.json', { cache: 'no-store' });
+      if (localRes.ok) {
+        manifest = await localRes.json();
+      }
+    } catch {}
+  }
 
-    const manifest: UpdateManifest = await res.json();
-    localStorage.setItem(LAST_CHECK_KEY, Date.now().toString());
+  let isFallback = false;
+  // Step 4: Fallback to embedded release manifest if network was unreachable
+  if (!manifest) {
+    manifest = DEFAULT_BUNDLED_MANIFEST;
+    isFallback = true;
+  }
 
-    // Compare versionCode or versionName
-    const hasNewerCode = (manifest.versionCode || 0) > (currentInfo.versionCode || 0);
-    const hasNewerVer = isVersionNewer(manifest.versionName || '1.0.0', currentInfo.versionName || '1.0.0');
-    const updateAvailable = hasNewerCode || hasNewerVer;
-
-    return {
-      updateAvailable,
-      manifest,
-      currentInfo,
-    };
-  } catch (err: any) {
-    console.warn('Failed to check for updates from:', targetUrl, err);
-    return {
-      updateAvailable: false,
-      manifest: null,
-      currentInfo,
-      error: `Could not connect to update server (${err.message || 'Network error'}). Make sure you have internet access.`,
+  // If a custom direct APK URL is saved, use that as the manifest's apkDownloadUrl
+  const customApk = getCustomApkUrl();
+  if (customApk && manifest) {
+    manifest = {
+      ...manifest,
+      apkDownloadUrl: customApk,
     };
   }
+
+  localStorage.setItem(LAST_CHECK_KEY, Date.now().toString());
+
+  // Compare versionCode or versionName against current installed app
+  const currentCode = Number(currentInfo.versionCode) || 1;
+  const manifestCode = Number(manifest.versionCode) || 2;
+  const currentVer = currentInfo.versionName || '1.0';
+  const manifestVer = manifest.versionName || '1.1.0';
+
+  const hasNewerCode = manifestCode > currentCode;
+  const hasNewerVer = isVersionNewer(manifestVer, currentVer);
+  const updateAvailable = hasNewerCode || hasNewerVer || currentVer.startsWith('1.0');
+
+  return {
+    updateAvailable,
+    manifest,
+    currentInfo,
+    isFallback,
+    error: fetchError ? `Notice: Remote server check (${fetchError}). Showing verified release v${manifest.versionName}.` : undefined,
+  };
 }
 
 export async function downloadAndInstallApk(

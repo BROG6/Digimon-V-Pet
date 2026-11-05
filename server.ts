@@ -17,6 +17,17 @@ async function startServer() {
   const httpServer = http.createServer(app);
   app.use(express.json({ limit: '50mb' }));
 
+  // Enable full CORS for Capacitor mobile apps and external web clients
+  app.use((req, res, next) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+    if (req.method === 'OPTIONS') {
+      return res.sendStatus(200);
+    }
+    next();
+  });
+
   // API: Get current app version manifest for auto-updater
   app.get('/api/app-version', (_req, res) => {
     try {

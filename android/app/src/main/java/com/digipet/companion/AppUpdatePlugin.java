@@ -86,6 +86,60 @@ public class AppUpdatePlugin extends Plugin {
         ret.put("success", true);
         ret.put("prompted", prompted);
         call.resolve(ret);
+    @PluginMethod
+    public void fetchManifest(PluginCall call) {
+        String manifestUrl = call.getString("url");
+        if (manifestUrl == null || manifestUrl.isEmpty()) {
+            manifestUrl = "https://ais-pre-hwfiiqh77iufzd3mdqoptd-750449911930.asia-northeast1.run.app/api/app-version";
+        }
+        if (manifestUrl.contains("localhost") || manifestUrl.contains("127.0.0.1")) {
+            manifestUrl = manifestUrl.replace("https://localhost", "https://ais-pre-hwfiiqh77iufzd3mdqoptd-750449911930.asia-northeast1.run.app")
+                                     .replace("http://localhost", "https://ais-pre-hwfiiqh77iufzd3mdqoptd-750449911930.asia-northeast1.run.app");
+        }
+
+        final String targetUrl = manifestUrl;
+        new Thread(() -> {
+            try {
+                URL url = new URL(targetUrl);
+                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                conn.setRequestMethod("GET");
+                conn.setConnectTimeout(15000);
+                conn.setReadTimeout(15000);
+                conn.setInstanceFollowRedirects(true);
+                conn.connect();
+
+                int code = conn.getResponseCode();
+                if (code >= 400) {
+                    final int errCode = code;
+                    final String msg = conn.getResponseMessage();
+                    conn.disconnect();
+                    new Handler(Looper.getMainLooper()).post(() -> {
+                        call.reject("HTTP " + errCode + ": " + msg);
+                    });
+                    return;
+                }
+
+                java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(conn.getInputStream()));
+                StringBuilder sb = new StringBuilder();
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    sb.append(line);
+                }
+                reader.close();
+                conn.disconnect();
+
+                final String result = sb.toString();
+                new Handler(Looper.getMainLooper()).post(() -> {
+                    JSObject ret = new JSObject();
+                    ret.put("data", result);
+                    call.resolve(ret);
+                });
+            } catch (Exception e) {
+                new Handler(Looper.getMainLooper()).post(() -> {
+                    call.reject("Native connection error: " + e.getMessage());
+                });
+            }
+        }).start();
     }
 
     @PluginMethod
@@ -239,6 +293,13 @@ public class AppUpdatePlugin extends Plugin {
         if (urlString == null || urlString.isEmpty()) {
             call.reject("URL is required");
             return;
+        }
+
+        if (urlString.contains("localhost") || urlString.contains("127.0.0.1")) {
+            urlString = urlString.replace("https://localhost", "https://ais-pre-hwfiiqh77iufzd3mdqoptd-750449911930.asia-northeast1.run.app")
+                                 .replace("http://localhost", "https://ais-pre-hwfiiqh77iufzd3mdqoptd-750449911930.asia-northeast1.run.app")
+                                 .replace("https://127.0.0.1", "https://ais-pre-hwfiiqh77iufzd3mdqoptd-750449911930.asia-northeast1.run.app")
+                                 .replace("http://127.0.0.1", "https://ais-pre-hwfiiqh77iufzd3mdqoptd-750449911930.asia-northeast1.run.app");
         }
 
         try {

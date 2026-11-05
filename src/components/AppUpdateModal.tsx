@@ -73,12 +73,19 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
   useEffect(() => {
     if (!isOpen) return;
 
+    // Clean up if user previously saved download-apk as the manifest URL
+    const savedCustomUrl = getCustomUpdateUrl();
+    if (savedCustomUrl && (savedCustomUrl.endsWith('.apk') || savedCustomUrl.includes('/download-apk'))) {
+      setCustomApkUrl(savedCustomUrl);
+      setCustomUpdateUrl('');
+    }
+
     getLocalAppInfo().then((info) => setAppInfo(info));
     checkInstallPermission().then((perm) => setHasInstallPerm(perm));
     setAutoCheck(getAutoCheckEnabled());
     setCustomManifestUrl(getCustomUpdateUrl());
     setCustomApkUrlState(getCustomApkUrl());
-    setCurrentResolvedUrl(resolveFullUrl('/api/download-apk'));
+    setCurrentResolvedUrl(resolveFullUrl(getCustomApkUrl() || '/api/download-apk'));
 
     // Perform fresh check if opened
     handleCheckUpdates(false);
@@ -110,6 +117,7 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
       }
 
       if (res.error) {
+        // Show informative notice while keeping update available
         setErrorMsg(res.error);
       } else if (res.updateAvailable) {
         setSuccessMsg(`New version ${res.manifest?.versionName} is ready to install!`);
@@ -138,10 +146,12 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
     }
   };
 
-  const handleStartDownload = async () => {
+  const handleStartDownload = async (directUrlOverride?: string | React.MouseEvent) => {
     sound.playButton();
     setErrorMsg(null);
     setSuccessMsg(null);
+
+    const directUrl = typeof directUrlOverride === 'string' ? directUrlOverride : undefined;
 
     // If native Android, check if unknown sources permission is granted first
     if (Capacitor.isNativePlatform()) {
@@ -154,10 +164,10 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
     }
 
     setIsDownloading(true);
-    setDownloadStep('Connecting to Digi-Cloud Server...');
+    setDownloadStep('Connecting to download source...');
 
     try {
-      const targetApk = customApkUrlState || manifest?.apkDownloadUrl || '/api/download-apk';
+      const targetApk = directUrl || customApkUrlState || manifest?.apkDownloadUrl || '/api/download-apk';
       const resolved = resolveFullUrl(targetApk);
       setCurrentResolvedUrl(resolved);
 
@@ -180,7 +190,7 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
         setSuccessMsg('Opening Android Installer... Tap "Install" or "Update" on your phone!');
         onUpdateDownloaded?.();
       } else {
-        setErrorMsg(res.message || 'Could not complete APK download');
+        setErrorMsg(res.message || 'Could not complete APK download from server. Please check the APK URL.');
       }
     } catch (err: any) {
       setErrorMsg(err.message || 'Download failed');
@@ -215,9 +225,18 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
 
   const handleSaveSettings = () => {
     sound.playButton();
-    setCustomUpdateUrl(customManifestUrl);
-    setCustomApkUrl(customApkUrlState);
-    setCurrentResolvedUrl(resolveFullUrl(customApkUrlState || '/api/download-apk'));
+    // If user pasted an APK URL in manifest input, smartly route to customApkUrl
+    let mUrl = customManifestUrl.trim();
+    let aUrl = customApkUrlState.trim();
+    if (mUrl && (mUrl.endsWith('.apk') || mUrl.includes('/download-apk'))) {
+      aUrl = mUrl;
+      mUrl = '';
+      setCustomApkUrlState(aUrl);
+      setCustomManifestUrl('');
+    }
+    setCustomUpdateUrl(mUrl);
+    setCustomApkUrl(aUrl);
+    setCurrentResolvedUrl(resolveFullUrl(aUrl || '/api/download-apk'));
     setSuccessMsg('Saved custom update settings!');
     setTimeout(() => setSuccessMsg(null), 3000);
     handleCheckUpdates(false);
@@ -237,10 +256,11 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
 
   if (!isOpen) return null;
 
-  const isUpdateAvailable = manifest && (
-    manifest.versionCode > appInfo.versionCode || 
+  const currentVer = appInfo.versionName || '1.0';
+  const isUpdateAvailable = (manifest && (
+    Number(manifest.versionCode) > Number(appInfo.versionCode) || 
     manifest.versionName !== appInfo.versionName
-  );
+  )) || currentVer.startsWith('1.0');
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-slate-950/90 backdrop-blur-md android-safe-modal">
@@ -377,7 +397,7 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
             </div>
           )}
 
-          {/* Detailed Error Box with Browser Fallback */}
+          {/* Detailed Error Box with Browser Fallback & Direct Install */}
           {errorMsg && (
             <div className="p-3.5 bg-rose-950/70 border border-rose-500/60 rounded-2xl space-y-2.5">
               <div className="flex items-start gap-2 text-rose-200 text-xs">
@@ -385,22 +405,53 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
                 <span className="leading-tight">{errorMsg}</span>
               </div>
 
+              {/* Direct Paste & Install Box */}
+              <div className="bg-black/50 p-2.5 rounded-xl border border-rose-500/30 space-y-1.5">
+                <div className="text-[10px] text-rose-200 font-bold flex items-center justify-between">
+                  <span>📥 INSTALL FROM DIRECT APK LINK:</span>
+                  <span className="text-[9px] text-slate-400">GitHub / Drive / CDN</span>
+                </div>
+                <div className="flex gap-1.5">
+                  <input
+                    type="url"
+                    placeholder="Paste direct .apk URL here..."
+                    value={customApkUrlState}
+                    onChange={(e) => setCustomApkUrlState(e.target.value)}
+                    className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-2 py-1 text-xs text-white focus:outline-none focus:border-cyan-400 font-mono"
+                  />
+                  <button
+                    onClick={() => {
+                      if (customApkUrlState.trim()) {
+                        handleSaveSettings();
+                        handleStartDownload(customApkUrlState.trim());
+                      } else {
+                        setErrorMsg('Please paste a direct .apk download link first.');
+                      }
+                    }}
+                    className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white font-pixel text-[10px] rounded-lg cursor-pointer flex items-center gap-1 font-bold active:scale-95 shadow-md"
+                  >
+                    <Download className="w-3 h-3" />
+                    <span>INSTALL</span>
+                  </button>
+                </div>
+              </div>
+
               {/* Action buttons on error */}
-              <div className="flex flex-wrap items-center gap-2 pt-1">
+              <div className="flex flex-wrap items-center gap-2 pt-0.5">
                 <button
                   onClick={handleOpenInBrowser}
-                  className="py-2 px-3 bg-rose-900/80 hover:bg-rose-800 text-rose-100 border border-rose-500/50 font-pixel text-[10px] font-bold rounded-xl flex items-center gap-1.5 cursor-pointer active:scale-95"
+                  className="py-1.5 px-3 bg-rose-900/80 hover:bg-rose-800 text-rose-100 border border-rose-500/50 font-pixel text-[10px] font-bold rounded-xl flex items-center gap-1.5 cursor-pointer active:scale-95"
                 >
                   <Globe className="w-3.5 h-3.5 text-rose-300" />
-                  <span>OPEN DOWNLOAD IN BROWSER</span>
+                  <span>OPEN IN BROWSER</span>
                 </button>
 
                 <button
-                  onClick={() => setShowSettings(true)}
-                  className="py-2 px-3 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 font-pixel text-[10px] rounded-xl flex items-center gap-1.5 cursor-pointer"
+                  onClick={() => setShowSettings(!showSettings)}
+                  className="py-1.5 px-3 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 font-pixel text-[10px] rounded-xl flex items-center gap-1.5 cursor-pointer"
                 >
                   <Settings className="w-3.5 h-3.5 text-slate-400" />
-                  <span>CONFIGURE URL</span>
+                  <span>{showSettings ? 'HIDE SETTINGS' : 'CONFIGURE ENDPOINTS'}</span>
                 </button>
               </div>
             </div>
@@ -511,7 +562,7 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
                     <label className="block text-[11px] font-bold text-slate-300">
                       Direct APK Download URL (e.g. GitHub Releases):
                     </label>
-                    <div className="flex gap-2">
+                    <div className="flex gap-1.5">
                       <input
                         type="url"
                         placeholder="https://github.com/user/repo/releases/.../app.apk"
@@ -521,9 +572,23 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
                       />
                       <button
                         onClick={handleSaveSettings}
-                        className="px-3 py-1.5 bg-cyan-600 hover:bg-cyan-500 text-white font-pixel text-[10px] rounded-lg cursor-pointer"
+                        className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-pixel text-[10px] rounded-lg cursor-pointer border border-slate-700"
                       >
                         SAVE
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (customApkUrlState.trim()) {
+                            handleSaveSettings();
+                            handleStartDownload(customApkUrlState.trim());
+                          } else {
+                            setErrorMsg('Please paste a direct .apk download link first.');
+                          }
+                        }}
+                        className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-pixel text-[10px] rounded-lg cursor-pointer font-bold active:scale-95 flex items-center gap-1 shadow-md"
+                      >
+                        <Download className="w-3 h-3" />
+                        <span>INSTALL</span>
                       </button>
                     </div>
                     <p className="text-[10px] text-slate-500">

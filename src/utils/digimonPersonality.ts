@@ -4,6 +4,8 @@
  * Integrates with server-side Gemini 3.8 Flash with rich offline fallbacks.
  */
 
+import { resolveFullUrl } from './appUpdater';
+
 export interface DigimonPersonalityProfile {
   name: string;
   speciesId: string;
@@ -383,14 +385,27 @@ export async function fetchDigimonAiDialogue(params: {
   userMessage?: string;
   actionContext?: string;
 }): Promise<string> {
+  const profile = getPersonalityProfile(params.speciesId);
+  const targetUrl = resolveFullUrl('/api/digimon/talk');
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => {
+    try {
+      controller.abort();
+    } catch {}
+  }, 4000);
+
   try {
-    const res = await fetch('/api/digimon/talk', {
+    const res = await fetch(targetUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(params),
+      signal: controller.signal,
     });
+
+    clearTimeout(timeoutId);
 
     if (res.ok) {
       const data = await res.json();
@@ -399,7 +414,33 @@ export async function fetchDigimonAiDialogue(params: {
       }
     }
   } catch (err) {
-    console.warn('Gemini AI talk request failed, using local personality:', err);
+    console.warn('Gemini AI talk request failed or timed out, using local personality:', err);
+  } finally {
+    clearTimeout(timeoutId);
+  }
+
+  // Smart in-character conversational fallback when offline or AI call times out
+  if (params.userMessage) {
+    const lower = params.userMessage.toLowerCase();
+    if (lower.includes('meat') || lower.includes('food') || lower.includes('eat') || lower.includes('hungry')) {
+      return profile.hungryQuotes[0] || `${params.speciesName} loves Big Meat! Feed me! 🍖`;
+    }
+    if (lower.includes('battle') || lower.includes('fight') || lower.includes('arena') || lower.includes('colosseum')) {
+      return profile.battleQuotes[0] || `Let's fight with all our power in the Colosseum! ⚔️🔥`;
+    }
+    if (lower.includes('friend') || lower.includes('love') || lower.includes('best') || lower.includes('pet')) {
+      return profile.happyQuotes[0] || `You're the best Tamer ever! I'll protect you always! 💖`;
+    }
+    if (lower.includes('evolve') || lower.includes('digivolve') || lower.includes('mega') || lower.includes('strong')) {
+      return `Train hard at the punching bag and we'll reach Mega evolution! 🥊✨`;
+    }
+    if (lower.includes('attack') || lower.includes('special')) {
+      return `${profile.catchphrases[0] || 'Digi-Power!'} Let's show them! 🔥💥`;
+    }
+    if (lower.includes('hello') || lower.includes('hi') || lower.includes('hey')) {
+      return `Hey Tamer! ${params.speciesName} is right here with you! 🐾`;
+    }
+    return `I hear you loud and clear, Tamer! Let's conquer the Digital World together! ✨`;
   }
 
   // Graceful in-character fallback

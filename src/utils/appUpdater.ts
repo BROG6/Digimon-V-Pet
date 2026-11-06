@@ -40,34 +40,37 @@ const AUTO_CHECK_KEY = 'digipet_auto_check_updates_v1';
 const CUSTOM_URL_KEY = 'digipet_custom_update_url_v1';
 const CUSTOM_APK_URL_KEY = 'digipet_custom_apk_download_url_v1';
 const LAST_CHECK_KEY = 'digipet_last_update_check_v1';
+export const GITHUB_REPO_KEY = 'digipet_github_repo_v2';
+export const USE_GITHUB_RELEASES_KEY = 'digipet_use_github_releases_v2';
 
 // Official Cloud Run deployment URL for DigiPet
 export const DEFAULT_PRODUCTION_URL = 'https://ais-pre-hwfiiqh77iufzd3mdqoptd-750449911930.asia-northeast1.run.app';
+export const DEFAULT_GITHUB_REPO = 'brodson/Digimon-V-Pet';
 
 // Base fallback version when running in browser or preview
 export const DEFAULT_APP_INFO: AppInfo = {
-  versionName: '1.2.0',
-  versionCode: 3,
+  versionName: '1.2.1',
+  versionCode: 4,
   packageName: 'com.digipet.companion',
   isNative: false,
 };
 
 // Verified latest build release manifest
 export const DEFAULT_BUNDLED_MANIFEST: UpdateManifest = {
-  versionName: '1.2.0',
-  versionCode: 3,
+  versionName: '1.2.1',
+  versionCode: 4,
   releaseDate: '2026-11-06',
-  releaseName: 'Colosseum Attack Animations & Companion Upgrade',
+  releaseName: 'Higher Speech Bubbles, Digimon AI Chat & GitHub Releases',
   changelog: [
-    'Colosseum battle attack animations: dynamic lunges, critical hit flashes, screen shakes & floating damage numbers',
-    'Floating companion overlay upgraded: 20% larger sprites, autonomous roaming & silent notification close button',
-    'In-app Digi-Auto Updater engine: smart semantic version sync & one-tap direct APK installer',
-    'Native in-app auto-updater: background APK download & seamless installer',
-    'Over-The-Air (OTA) live web asset reload & cache refresh'
+    'Elevated speech bubbles: positioned higher and behind the Digimon\'s head',
+    'Interactive Digimon AI dialogue: live chat with your companion via Gemini 3.8 Flash',
+    'GitHub Releases backup: direct auto-updater updates from GitHub repository releases',
+    'Colosseum battle attack animations: dynamic lunges, flashes, screen shakes & floating damage numbers',
+    'Native in-app auto-updater: background APK download & seamless installer'
   ],
   apkDownloadUrl: `${DEFAULT_PRODUCTION_URL}/api/download-apk`,
-  apkFileName: 'digipet-v1.2.0.apk',
-  apkFileSize: '18.8 MB',
+  apkFileName: 'digipet-v1.2.1.apk',
+  apkFileSize: '19.2 MB',
   isMandatory: false,
 };
 
@@ -199,13 +202,163 @@ export function isVersionNewer(remoteVer: string, localVer: string): boolean {
   return false;
 }
 
-export async function checkForUpdate(customUrl?: string): Promise<{
+export function getGitHubRepo(): string {
+  try {
+    return localStorage.getItem(GITHUB_REPO_KEY) || DEFAULT_GITHUB_REPO;
+  } catch {
+    return DEFAULT_GITHUB_REPO;
+  }
+}
+
+export function setGitHubRepo(repo: string): void {
+  try {
+    const clean = repo.trim().replace(/^https?:\/\/github\.com\//, '').replace(/\.git$/, '').replace(/^\/+|\/+$/g, '');
+    localStorage.setItem(GITHUB_REPO_KEY, clean);
+  } catch {}
+}
+
+export function getUseGitHubReleases(): boolean {
+  try {
+    const val = localStorage.getItem(USE_GITHUB_RELEASES_KEY);
+    return val !== null ? val === 'true' : true;
+  } catch {
+    return true;
+  }
+}
+
+export function setUseGitHubReleases(enabled: boolean): void {
+  try {
+    localStorage.setItem(USE_GITHUB_RELEASES_KEY, enabled ? 'true' : 'false');
+  } catch {}
+}
+
+/**
+ * Fetches release information directly from GitHub Releases API or GitHub raw version.json.
+ */
+export async function fetchGitHubRelease(customRepo?: string): Promise<{ manifest: UpdateManifest | null; error?: string }> {
+  const rawRepo = customRepo || getGitHubRepo();
+  const cleanRepo = rawRepo.trim().replace(/^https?:\/\/github\.com\//, '').replace(/\.git$/, '').replace(/^\/+|\/+$/g, '');
+  if (!cleanRepo || !cleanRepo.includes('/')) {
+    return { manifest: null, error: 'Invalid GitHub repository format (use owner/repo).' };
+  }
+
+  const apiUrl = `https://api.github.com/repos/${cleanRepo}/releases/latest`;
+  const rawJsonUrl = `https://raw.githubusercontent.com/${cleanRepo}/main/public/version.json`;
+
+  // 1. Try GitHub Releases API
+  try {
+    let apiData: any = null;
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const nativeRes = await AppUpdatePlugin.fetchManifest({ url: apiUrl });
+        if (nativeRes && nativeRes.data) {
+          apiData = JSON.parse(nativeRes.data);
+        }
+      } catch {}
+    }
+
+    if (!apiData) {
+      const res = await fetch(apiUrl, {
+        headers: { 'Accept': 'application/vnd.github.v3+json' },
+      });
+      if (res.ok) {
+        apiData = await res.json();
+      }
+    }
+
+    if (apiData && apiData.tag_name) {
+      const tag = String(apiData.tag_name);
+      const cleanVer = tag.replace(/^[vV]/, '');
+      const rawAssets = Array.isArray(apiData.assets) ? apiData.assets : [];
+      const apkAsset = rawAssets.find((a: any) => typeof a.name === 'string' && a.name.toLowerCase().endsWith('.apk'));
+
+      const downloadUrl = apkAsset?.browser_download_url || `https://github.com/${cleanRepo}/releases/latest/download/app-debug.apk`;
+      const fileName = apkAsset?.name || `digipet-${tag}.apk`;
+      const fileSize = apkAsset?.size ? `${(apkAsset.size / (1024 * 1024)).toFixed(1)} MB` : '19.2 MB';
+
+      const changelogLines: string[] = [];
+      if (typeof apiData.body === 'string' && apiData.body.trim()) {
+        const lines = apiData.body.split('\n')
+          .map((l: string) => l.trim().replace(/^[-*•]\s*/, ''))
+          .filter((l: string) => l.length > 0 && !l.startsWith('#'));
+        if (lines.length > 0) {
+          changelogLines.push(...lines.slice(0, 6));
+        }
+      }
+      if (changelogLines.length === 0) {
+        changelogLines.push(`Release ${tag} from GitHub (${cleanRepo})`);
+      }
+
+      const semParts = parseSemver(cleanVer);
+      const computedCode = semParts[0] * 100 + semParts[1] * 10 + semParts[2];
+
+      const manifest: UpdateManifest = {
+        versionName: cleanVer,
+        versionCode: computedCode || 4,
+        releaseDate: (apiData.published_at || '').substring(0, 10) || new Date().toISOString().substring(0, 10),
+        releaseName: apiData.name || `GitHub Release ${tag}`,
+        changelog: changelogLines,
+        apkDownloadUrl: downloadUrl,
+        apkFileName: fileName,
+        apkFileSize: fileSize,
+      };
+
+      return { manifest };
+    }
+  } catch (apiErr: any) {
+    console.warn('GitHub Releases API error:', apiErr);
+  }
+
+  // 2. Try raw version.json from GitHub repo main branch
+  try {
+    let rawData: any = null;
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const nativeRes = await AppUpdatePlugin.fetchManifest({ url: rawJsonUrl });
+        if (nativeRes && nativeRes.data) {
+          rawData = JSON.parse(nativeRes.data);
+        }
+      } catch {}
+    }
+
+    if (!rawData) {
+      const res = await fetch(rawJsonUrl);
+      if (res.ok) {
+        rawData = await res.json();
+      }
+    }
+
+    if (rawData && rawData.versionName) {
+      return {
+        manifest: {
+          ...rawData,
+          apkDownloadUrl: rawData.apkDownloadUrl || `https://github.com/${cleanRepo}/releases/latest/download/app-debug.apk`,
+        },
+      };
+    }
+  } catch (rawErr: any) {
+    console.warn('GitHub raw version.json error:', rawErr);
+  }
+
+  return { manifest: null, error: `No releases found on GitHub repo "${cleanRepo}".` };
+}
+
+export async function checkForUpdate(optionsOrCustomUrl?: string | {
+  customUrl?: string;
+  preferGitHub?: boolean;
+  githubRepo?: string;
+}): Promise<{
   updateAvailable: boolean;
   manifest: UpdateManifest | null;
   currentInfo: AppInfo;
+  source: 'server' | 'github' | 'bundled';
   error?: string;
   isFallback?: boolean;
 }> {
+  const customUrl = typeof optionsOrCustomUrl === 'string' ? optionsOrCustomUrl : optionsOrCustomUrl?.customUrl;
+  const preferGitHub = typeof optionsOrCustomUrl === 'object' ? optionsOrCustomUrl.preferGitHub : false;
+  const githubRepo = typeof optionsOrCustomUrl === 'object' ? optionsOrCustomUrl.githubRepo : undefined;
+
   const currentInfo = await getLocalAppInfo();
 
   // Smart check: If user accidentally pasted an APK URL in the manifest field, fix it!
@@ -215,65 +368,91 @@ export async function checkForUpdate(customUrl?: string): Promise<{
     setCustomUpdateUrl('');
   }
 
-  const customManifest = getCustomUpdateUrl();
-  const targetUrl = customManifest
-    ? resolveFullUrl(customManifest)
-    : resolveFullUrl('/api/app-version');
-
   let manifest: UpdateManifest | null = null;
   let fetchError: string | null = null;
+  let source: 'server' | 'github' | 'bundled' = 'server';
 
-  // Step 1: In native Android, try native HTTP connection first (bypasses browser CORS & origin restrictions)
-  if (Capacitor.isNativePlatform()) {
-    try {
-      const nativeRes = await AppUpdatePlugin.fetchManifest({ url: targetUrl });
-      if (nativeRes && nativeRes.data) {
-        manifest = JSON.parse(nativeRes.data);
-      }
-    } catch (nativeErr: any) {
-      console.warn('Native fetchManifest error:', nativeErr);
-      fetchError = nativeErr.message || 'Native fetch failed';
+  // Strategy A: If preferGitHub or getUseGitHubReleases() is enabled, check GitHub Releases first!
+  if (preferGitHub || getUseGitHubReleases()) {
+    const gh = await fetchGitHubRelease(githubRepo);
+    if (gh.manifest) {
+      manifest = gh.manifest;
+      source = 'github';
     }
   }
 
-  // Step 2: If native fetch didn't return manifest, try standard fetch
+  // Strategy B: If no GitHub manifest yet, query primary server endpoint (/api/app-version)
   if (!manifest) {
-    try {
-      const res = await fetch(targetUrl, {
-        cache: 'no-store',
-        headers: { 'Cache-Control': 'no-cache' },
-      });
-      if (res.ok) {
-        const text = await res.text();
-        try {
-          manifest = JSON.parse(text);
-        } catch {
-          fetchError = 'Server returned non-JSON response';
+    const customManifest = getCustomUpdateUrl();
+    const targetUrl = customManifest
+      ? resolveFullUrl(customManifest)
+      : resolveFullUrl('/api/app-version');
+
+    // In native Android, try native HTTP connection first
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const nativeRes = await AppUpdatePlugin.fetchManifest({ url: targetUrl });
+        if (nativeRes && nativeRes.data) {
+          manifest = JSON.parse(nativeRes.data);
+          source = 'server';
         }
-      } else {
-        fetchError = `Server returned status ${res.status}`;
+      } catch (nativeErr: any) {
+        console.warn('Native fetchManifest error:', nativeErr);
+        fetchError = nativeErr.message || 'Native fetch failed';
       }
-    } catch (webErr: any) {
-      console.warn('Web fetch error:', webErr);
-      if (!fetchError) fetchError = webErr.message || 'Failed to fetch update info';
+    }
+
+    if (!manifest) {
+      try {
+        const res = await fetch(targetUrl, {
+          cache: 'no-store',
+          headers: { 'Cache-Control': 'no-cache' },
+        });
+        if (res.ok) {
+          const text = await res.text();
+          try {
+            manifest = JSON.parse(text);
+            source = 'server';
+          } catch {
+            fetchError = 'Server returned non-JSON response';
+          }
+        } else {
+          fetchError = `Server returned status ${res.status}`;
+        }
+      } catch (webErr: any) {
+        console.warn('Web fetch error:', webErr);
+        if (!fetchError) fetchError = webErr.message || 'Failed to fetch update info';
+      }
     }
   }
 
-  // Step 3: If remote URL failed, try reading local bundled version.json
+  // Strategy C: If server failed (e.g. 404 or offline) and we haven't tried GitHub yet, try GitHub now as backup!
+  if (!manifest && !preferGitHub && !getUseGitHubReleases()) {
+    const gh = await fetchGitHubRelease(githubRepo);
+    if (gh.manifest) {
+      manifest = gh.manifest;
+      source = 'github';
+      fetchError = null; // Successfully rescued by GitHub backup!
+    }
+  }
+
+  // Strategy D: If remote failed, try local bundled version.json
   if (!manifest) {
     try {
       const localRes = await fetch('/version.json', { cache: 'no-store' });
       if (localRes.ok) {
         manifest = await localRes.json();
+        source = 'bundled';
       }
     } catch {}
   }
 
   let isFallback = false;
-  // Step 4: Fallback to embedded release manifest if network was unreachable
+  // Strategy E: Fallback to embedded release manifest if network was unreachable
   if (!manifest) {
     manifest = DEFAULT_BUNDLED_MANIFEST;
     isFallback = true;
+    source = 'bundled';
   }
 
   // If a custom direct APK URL is saved, use that as the manifest's apkDownloadUrl
@@ -290,8 +469,8 @@ export async function checkForUpdate(customUrl?: string): Promise<{
   // Compare versionCode or versionName against current installed app
   const currentCode = Number(currentInfo.versionCode) || 1;
   const manifestCode = Number(manifest.versionCode) || 0;
-  const currentVer = currentInfo.versionName || '1.2.0';
-  const manifestVer = manifest.versionName || '1.2.0';
+  const currentVer = currentInfo.versionName || '1.0.0';
+  const manifestVer = manifest.versionName || '1.2.1';
 
   const hasNewerCode = manifestCode > currentCode;
   const hasNewerVer = isVersionNewer(manifestVer, currentVer);
@@ -301,8 +480,9 @@ export async function checkForUpdate(customUrl?: string): Promise<{
     updateAvailable,
     manifest,
     currentInfo,
+    source,
     isFallback,
-    error: fetchError ? `Notice: Remote server check (${fetchError}). Showing verified release v${manifest.versionName}.` : undefined,
+    error: fetchError ? `Notice: Remote server check (${fetchError}). Showing release v${manifest.versionName}.` : undefined,
   };
 }
 

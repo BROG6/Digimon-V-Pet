@@ -130,6 +130,15 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
     return () => clearInterval(wanderInterval);
   }, [isOverlayActive, posX, pet.isSleeping, pet.isSick, isChatInputOpen]);
 
+  // Safety watchdog to prevent talk function from ever getting stuck
+  useEffect(() => {
+    if (!isAiThinking) return;
+    const safetyTimer = setTimeout(() => {
+      setIsAiThinking(false);
+    }, 5500);
+    return () => clearTimeout(safetyTimer);
+  }, [isAiThinking]);
+
   // Generate context-aware speech bubble (with species lore and Gemini AI)
   const triggerSpeech = async (customMessage?: string) => {
     if (speechTimerRef.current) clearTimeout(speechTimerRef.current);
@@ -140,29 +149,41 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
       setIsAiThinking(true);
       sound.playButton();
 
-      const aiText = await fetchDigimonAiDialogue({
-        speciesName: species?.name || 'Digimon',
-        speciesId: pet.currentSpeciesId,
-        stage: pet.stage,
-        hunger: pet.hunger,
-        happiness: pet.happiness,
-        energy: pet.energy,
-        isSick: pet.isSick,
-        poopCount: pet.poopCount,
-        userMessage: customMessage,
-      });
+      try {
+        const aiText = await fetchDigimonAiDialogue({
+          speciesName: species?.name || 'Digimon',
+          speciesId: pet.currentSpeciesId,
+          stage: pet.stage,
+          hunger: pet.hunger,
+          happiness: pet.happiness,
+          energy: pet.energy,
+          isSick: pet.isSick,
+          poopCount: pet.poopCount,
+          userMessage: customMessage,
+        });
 
-      setSpeechBubble(aiText);
-      setIsAiThinking(false);
-      sound.playAlert();
-      setCurrentAction('happy');
-      setTimeout(() => {
-        setCurrentAction(pet.isSick ? 'sick' : 'idle');
-      }, 1500);
+        setSpeechBubble(aiText || 'Digi-Power! Ready to go, Tamer! ✨');
+        sound.playAlert();
+        setCurrentAction('happy');
+        setTimeout(() => {
+          setCurrentAction(pet.isSick ? 'sick' : 'idle');
+        }, 1500);
 
-      speechTimerRef.current = setTimeout(() => {
-        setSpeechBubble(null);
-      }, 7000);
+        speechTimerRef.current = setTimeout(() => {
+          setSpeechBubble(null);
+        }, 7000);
+      } catch (err) {
+        console.warn('Speech trigger error:', err);
+        const fallback = getContextualQuote(pet.currentSpeciesId, {
+          isSick: pet.isSick,
+          hunger: pet.hunger,
+          poopCount: pet.poopCount,
+          happiness: pet.happiness,
+        });
+        setSpeechBubble(fallback);
+      } finally {
+        setIsAiThinking(false);
+      }
       return;
     }
 
@@ -190,7 +211,6 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
     if (!text || !text.trim() || isAiThinking) return;
     const clean = text.trim();
     setChatInputText('');
-    setIsChatInputOpen(false);
     triggerSpeech(clean);
   };
 
@@ -515,16 +535,19 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
                   type="text"
                   value={chatInputText}
                   onChange={(e) => setChatInputText(e.target.value)}
-                  placeholder={`Say something to ${species?.name || 'Digimon'}...`}
-                  disabled={isAiThinking}
-                  className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-cyan-400 font-sans"
+                  placeholder={isAiThinking ? `${species?.name || 'Digimon'} is thinking...` : `Say something to ${species?.name || 'Digimon'}...`}
+                  className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-cyan-400 font-sans placeholder:text-slate-500"
                 />
                 <button
                   type="submit"
                   disabled={!chatInputText.trim() || isAiThinking}
-                  className="p-2 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-slate-950 rounded-xl cursor-pointer disabled:opacity-40 transition-all active:scale-95 shadow-md shadow-cyan-500/20"
+                  className="p-2 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-slate-950 rounded-xl cursor-pointer disabled:opacity-40 transition-all active:scale-95 shadow-md shadow-cyan-500/20 flex items-center justify-center"
                 >
-                  <Send className="w-3.5 h-3.5" />
+                  {isAiThinking ? (
+                    <Sparkles className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Send className="w-3.5 h-3.5" />
+                  )}
                 </button>
               </form>
             </motion.div>

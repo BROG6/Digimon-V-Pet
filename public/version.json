@@ -1,17 +1,17 @@
 {
-  "versionName": "1.2.0",
-  "versionCode": 3,
+  "versionName": "1.2.1",
+  "versionCode": 4,
   "releaseDate": "2026-11-06",
-  "releaseName": "Colosseum Attack Animations & Companion Upgrade",
+  "releaseName": "Elevated Speech Bubbles, Digimon AI Chat & GitHub Releases Backup",
   "changelog": [
+    "Speech bubbles positioned higher and behind Digimon heads in the floating companion overlay",
+    "Interactive Digimon AI dialogue engine: chat directly with your companion powered by Gemini",
+    "GitHub Releases auto-updater backup: automatically detects releases and updates from GitHub repository",
     "Colosseum battle attack animations: dynamic lunges, critical hit flashes, screen shakes & floating damage numbers",
-    "Floating companion overlay upgraded: 20% larger sprites, autonomous roaming & silent notification close button",
-    "In-app Digi-Auto Updater engine: smart semantic version sync & one-tap direct APK installer",
-    "Native in-app auto-updater: background APK download & seamless installer",
-    "Over-The-Air (OTA) live web asset reload & cache refresh"
+    "Native in-app auto-updater: background APK download & seamless installer"
   ],
   "apkDownloadUrl": "https://ais-pre-hwfiiqh77iufzd3mdqoptd-750449911930.asia-northeast1.run.app/api/download-apk",
-  "apkFileName": "digipet-v1.2.0.apk",
-  "apkFileSize": "18.8 MB",
+  "apkFileName": "digipet-v1.2.1.apk",
+  "apkFileSize": "19.2 MB",
   "isMandatory": false
 }

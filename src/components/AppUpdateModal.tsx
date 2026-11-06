@@ -13,7 +13,10 @@ import {
   Settings, 
   Layers,
   Globe,
-  RotateCcw
+  RotateCcw,
+  Github,
+  GitBranch,
+  HelpCircle
 } from 'lucide-react';
 import { sound } from '../utils/audio';
 import { 
@@ -34,7 +37,12 @@ import {
   getCustomUpdateUrl, 
   setCustomUpdateUrl,
   getCustomApkUrl,
-  setCustomApkUrl
+  setCustomApkUrl,
+  getGitHubRepo,
+  setGitHubRepo,
+  getUseGitHubReleases,
+  setUseGitHubReleases,
+  DEFAULT_GITHUB_REPO
 } from '../utils/appUpdater';
 import { Capacitor } from '@capacitor/core';
 
@@ -69,6 +77,10 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
   const [customManifestUrl, setCustomManifestUrl] = useState<string>('');
   const [customApkUrlState, setCustomApkUrlState] = useState<string>('');
   const [currentResolvedUrl, setCurrentResolvedUrl] = useState<string>('');
+  const [githubRepoState, setGithubRepoState] = useState<string>(DEFAULT_GITHUB_REPO);
+  const [useGitHubReleasesState, setUseGitHubReleasesState] = useState<boolean>(true);
+  const [isCheckingGitHub, setIsCheckingGitHub] = useState<boolean>(false);
+  const [showHowUpdatesWork, setShowHowUpdatesWork] = useState<boolean>(false);
 
   // Load app info and check install permission on mount / open
   useEffect(() => {
@@ -86,6 +98,8 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
     setAutoCheck(getAutoCheckEnabled());
     setCustomManifestUrl(getCustomUpdateUrl());
     setCustomApkUrlState(getCustomApkUrl());
+    setGithubRepoState(getGitHubRepo());
+    setUseGitHubReleasesState(getUseGitHubReleases());
     setCurrentResolvedUrl(resolveFullUrl(getCustomApkUrl() || '/api/download-apk'));
 
     // Perform fresh check if opened
@@ -102,14 +116,19 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
     return () => window.removeEventListener('focus', handleFocus);
   }, [isOpen]);
 
-  const handleCheckUpdates = async (playSfx: boolean = true) => {
+  const handleCheckUpdates = async (playSfx: boolean = true, forceGitHub: boolean = false) => {
     if (playSfx) sound.playButton();
     setIsChecking(true);
+    if (forceGitHub) setIsCheckingGitHub(true);
     setErrorMsg(null);
     setSuccessMsg(null);
 
     try {
-      const res = await checkForUpdate(customManifestUrl || undefined);
+      const res = await checkForUpdate({
+        customUrl: customManifestUrl || undefined,
+        preferGitHub: forceGitHub || useGitHubReleasesState,
+        githubRepo: githubRepoState,
+      });
       setManifest(res.manifest);
       setAppInfo(res.currentInfo);
 
@@ -121,16 +140,21 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
         // Show informative notice while keeping update available
         setErrorMsg(res.error);
       } else if (res.updateAvailable) {
-        setSuccessMsg(`New version ${res.manifest?.versionName} is ready to install!`);
+        setSuccessMsg(`New version v${res.manifest?.versionName} is ready to install! (${res.source === 'github' ? 'From GitHub Releases' : 'From Digi-Cloud'})`);
         if (playSfx) sound.playVictory();
       } else {
-        setSuccessMsg('You have the newest version installed! 🛡️');
+        setSuccessMsg(`You have the newest version (v${appInfo.versionName}) installed! 🛡️`);
       }
     } catch (e: any) {
       setErrorMsg(e.message || 'Error checking for updates');
     } finally {
       setIsChecking(false);
+      setIsCheckingGitHub(false);
     }
+  };
+
+  const handleCheckGitHubOnly = async () => {
+    await handleCheckUpdates(true, true);
   };
 
   const handleRequestPermission = async () => {
@@ -237,8 +261,10 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
     }
     setCustomUpdateUrl(mUrl);
     setCustomApkUrl(aUrl);
+    setGitHubRepo(githubRepoState);
+    setUseGitHubReleases(useGitHubReleasesState);
     setCurrentResolvedUrl(resolveFullUrl(aUrl || '/api/download-apk'));
-    setSuccessMsg('Saved custom update settings!');
+    setSuccessMsg('Saved custom update & GitHub settings!');
     setTimeout(() => setSuccessMsg(null), 3000);
     handleCheckUpdates(false);
   };
@@ -249,8 +275,12 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
     setCustomApkUrlState('');
     setCustomUpdateUrl('');
     setCustomApkUrl('');
+    setGithubRepoState(DEFAULT_GITHUB_REPO);
+    setGitHubRepo(DEFAULT_GITHUB_REPO);
+    setUseGitHubReleasesState(true);
+    setUseGitHubReleases(true);
     setCurrentResolvedUrl(resolveFullUrl('/api/download-apk'));
-    setSuccessMsg('Reset to official Digi-Cloud server!');
+    setSuccessMsg('Reset to official Digi-Cloud & default GitHub repository!');
     setTimeout(() => setSuccessMsg(null), 3000);
     handleCheckUpdates(false);
   };
@@ -464,6 +494,79 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
             </div>
           )}
 
+          {/* GitHub Releases Backup Card */}
+          <div className="p-3.5 bg-gradient-to-r from-slate-900 via-indigo-950/40 to-slate-900 border border-indigo-500/40 rounded-2xl space-y-2.5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Github className="w-4 h-4 text-indigo-400" />
+                <span className="font-chakra font-bold text-xs text-white">
+                  GITHUB RELEASES BACKUP
+                </span>
+              </div>
+              <span className="text-[9px] font-mono text-indigo-300 bg-indigo-950/70 border border-indigo-500/30 px-2 py-0.5 rounded-full">
+                {githubRepoState}
+              </span>
+            </div>
+
+            <p className="text-[11px] text-slate-300 leading-tight">
+              Direct update mirror from your GitHub repository releases. If the cloud server is unreachable, updates are automatically resolved here.
+            </p>
+
+            <div className="grid grid-cols-2 gap-2 pt-0.5">
+              <button
+                onClick={handleCheckGitHubOnly}
+                disabled={isCheckingGitHub}
+                className="py-2 px-2.5 bg-indigo-900/60 hover:bg-indigo-800 text-indigo-200 border border-indigo-500/40 font-pixel text-[9px] font-bold rounded-xl flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3 h-3 ${isCheckingGitHub ? 'animate-spin' : ''}`} />
+                <span>{isCheckingGitHub ? 'FETCHING GITHUB...' : 'CHECK GITHUB'}</span>
+              </button>
+
+              <button
+                onClick={() => {
+                  const directGhApk = `https://github.com/${githubRepoState}/releases/latest/download/app-debug.apk`;
+                  handleStartDownload(directGhApk);
+                }}
+                className="py-2 px-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-pixel text-[9px] font-bold rounded-xl flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 shadow-md"
+              >
+                <Download className="w-3 h-3" />
+                <span>GET GITHUB APK</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Educational Callout: How Updates Work */}
+          <div className="rounded-2xl border border-slate-800 bg-slate-950/60 overflow-hidden">
+            <button
+              onClick={() => setShowHowUpdatesWork(!showHowUpdatesWork)}
+              className="w-full p-2.5 flex items-center justify-between text-left text-xs text-slate-400 hover:text-slate-200 cursor-pointer"
+            >
+              <div className="flex items-center gap-1.5">
+                <HelpCircle className="w-3.5 h-3.5 text-cyan-400" />
+                <span className="font-bold text-[11px] text-cyan-300">How do APK updates work?</span>
+              </div>
+              <span className="text-[10px] font-pixel text-slate-500">
+                {showHowUpdatesWork ? '▲ HIDE' : '▼ READ'}
+              </span>
+            </button>
+
+            {showHowUpdatesWork && (
+              <div className="p-3 pt-0 border-t border-slate-800 text-[11px] text-slate-300 space-y-2 leading-relaxed">
+                <p>
+                  <strong>Why code edits don't appear immediately as APK updates:</strong> Changes made here update this web project's code files. However, an Android phone runs a compiled native APK binary.
+                </p>
+                <p>
+                  <strong>How to get a new APK update on your phone:</strong>
+                </p>
+                <ol className="list-decimal list-inside space-y-1 text-slate-400 text-[10px]">
+                  <li>Push your changes to your GitHub repo (<code className="text-cyan-300 font-mono">{githubRepoState}</code>).</li>
+                  <li>GitHub Actions automatically compiles the native APK and attaches it to the latest Release.</li>
+                  <li>Tap <strong>CHECK GITHUB</strong> above or open this updater, and tap <strong>INSTALL</strong>!</li>
+                </ol>
+              </div>
+            )}
+          </div>
+
           {/* PRIMARY ACTIONS */}
           <div className="space-y-2 pt-1">
             {isUpdateAvailable ? (
@@ -514,7 +617,7 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
             >
               <div className="flex items-center gap-1.5">
                 <Settings className="w-3.5 h-3.5 text-slate-500" />
-                <span>Auto-Updater Preferences & Custom Endpoint</span>
+                <span>Auto-Updater Preferences & GitHub Backup</span>
               </div>
               <span className="text-[10px] font-pixel text-slate-500">
                 {showSettings ? '▲ HIDE' : '▼ CONFIGURE'}
@@ -534,6 +637,44 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
                     <div className="text-slate-500 text-[10px] font-mono">RESOLVED UPDATE ENDPOINT:</div>
                     <div className="text-cyan-300 font-mono text-[10px] break-all">
                       {currentResolvedUrl}
+                    </div>
+                  </div>
+
+                  {/* GitHub Repo Configuration */}
+                  <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] font-bold text-white flex items-center gap-1.5">
+                        <Github className="w-3.5 h-3.5 text-indigo-400" />
+                        <span>GitHub Repository (owner/repo):</span>
+                      </label>
+                      <button
+                        onClick={() => {
+                          const next = !useGitHubReleasesState;
+                          setUseGitHubReleasesState(next);
+                          setUseGitHubReleases(next);
+                        }}
+                        className={`text-[9px] font-pixel px-2 py-0.5 rounded cursor-pointer ${
+                          useGitHubReleasesState ? 'bg-indigo-600 text-white' : 'bg-slate-800 text-slate-400'
+                        }`}
+                      >
+                        {useGitHubReleasesState ? 'BACKUP ON' : 'BACKUP OFF'}
+                      </button>
+                    </div>
+
+                    <div className="flex gap-1.5">
+                      <input
+                        type="text"
+                        placeholder="brodson/Digimon-V-Pet"
+                        value={githubRepoState}
+                        onChange={(e) => setGithubRepoState(e.target.value)}
+                        className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-400 font-mono"
+                      />
+                      <button
+                        onClick={handleSaveSettings}
+                        className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white font-pixel text-[10px] rounded-lg cursor-pointer font-bold"
+                      >
+                        SAVE
+                      </button>
                     </div>
                   </div>
 
@@ -560,7 +701,7 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
                   {/* Direct APK Download URL Input (e.g. GitHub Releases) */}
                   <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-1.5">
                     <label className="block text-[11px] font-bold text-slate-300">
-                      Direct APK Download URL (e.g. GitHub Releases):
+                      Direct APK Download URL:
                     </label>
                     <div className="flex gap-1.5">
                       <input
@@ -596,7 +737,7 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
                     </p>
                   </div>
 
-                  {/* Custom Version Manifest URL Input */}
+                  {/* Custom Version Manifest JSON URL Input */}
                   <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-1.5">
                     <label className="block text-[11px] font-bold text-slate-300">
                       Custom Version Manifest JSON URL:

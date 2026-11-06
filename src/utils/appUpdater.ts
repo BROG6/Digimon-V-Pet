@@ -46,29 +46,28 @@ export const DEFAULT_PRODUCTION_URL = 'https://ais-pre-hwfiiqh77iufzd3mdqoptd-75
 
 // Base fallback version when running in browser or preview
 export const DEFAULT_APP_INFO: AppInfo = {
-  versionName: '1.0.0',
-  versionCode: 1,
+  versionName: '1.2.0',
+  versionCode: 3,
   packageName: 'com.digipet.companion',
   isNative: false,
 };
 
 // Verified latest build release manifest
 export const DEFAULT_BUNDLED_MANIFEST: UpdateManifest = {
-  versionName: '1.1.0',
-  versionCode: 2,
-  releaseDate: '2026-11-04',
-  releaseName: 'Companion Roaming & Auto-Updater Update',
+  versionName: '1.2.0',
+  versionCode: 3,
+  releaseDate: '2026-11-06',
+  releaseName: 'Colosseum Attack Animations & Companion Upgrade',
   changelog: [
-    'Fixed Botamon and rotated Digimon sideways orientation to upright alignment',
-    'Animated autonomous walking, step cycling, and roaming across the screen',
-    'Floating speech bubbles with authentic Digimon dialogue lines',
-    'Movable floating overlay: touch and drag anywhere over other apps',
+    'Colosseum battle attack animations: dynamic lunges, critical hit flashes, screen shakes & floating damage numbers',
+    'Floating companion overlay upgraded: 20% larger sprites, autonomous roaming & silent notification close button',
+    'In-app Digi-Auto Updater engine: smart semantic version sync & one-tap direct APK installer',
     'Native in-app auto-updater: background APK download & seamless installer',
     'Over-The-Air (OTA) live web asset reload & cache refresh'
   ],
   apkDownloadUrl: `${DEFAULT_PRODUCTION_URL}/api/download-apk`,
-  apkFileName: 'digipet-v1.1.0.apk',
-  apkFileSize: '18.5 MB',
+  apkFileName: 'digipet-v1.2.0.apk',
+  apkFileSize: '18.8 MB',
   isMandatory: false,
 };
 
@@ -171,11 +170,25 @@ export async function requestInstallPermission(): Promise<boolean> {
   }
 }
 
-// Compare semantic version strings (e.g. "1.1.0" > "1.0.0")
+// Parse semantic version string to numerical array (e.g. "1.2.0" -> [1, 2, 0])
+export function parseSemver(verStr: string): number[] {
+  if (!verStr) return [0, 0, 0];
+  const clean = verStr.trim().replace(/^[vV]/, '').replace(/[^0-9.]/g, '');
+  const parts = clean.split('.').map((n) => {
+    const val = parseInt(n || '0', 10);
+    return isNaN(val) ? 0 : val;
+  });
+  while (parts.length < 3) {
+    parts.push(0);
+  }
+  return parts;
+}
+
+// Compare semantic version strings (e.g. "1.2.0" > "1.1.0")
 export function isVersionNewer(remoteVer: string, localVer: string): boolean {
   try {
-    const rParts = (remoteVer || '1.1.0').replace(/[^0-9.]/g, '').split('.').map((n) => parseInt(n || '0', 10));
-    const lParts = (localVer || '1.0.0').replace(/[^0-9.]/g, '').split('.').map((n) => parseInt(n || '0', 10));
+    const rParts = parseSemver(remoteVer);
+    const lParts = parseSemver(localVer);
     for (let i = 0; i < Math.max(rParts.length, lParts.length); i++) {
       const r = rParts[i] ?? 0;
       const l = lParts[i] ?? 0;
@@ -183,7 +196,7 @@ export function isVersionNewer(remoteVer: string, localVer: string): boolean {
       if (r < l) return false;
     }
   } catch {}
-  return remoteVer !== localVer;
+  return false;
 }
 
 export async function checkForUpdate(customUrl?: string): Promise<{
@@ -276,13 +289,13 @@ export async function checkForUpdate(customUrl?: string): Promise<{
 
   // Compare versionCode or versionName against current installed app
   const currentCode = Number(currentInfo.versionCode) || 1;
-  const manifestCode = Number(manifest.versionCode) || 2;
-  const currentVer = currentInfo.versionName || '1.0';
-  const manifestVer = manifest.versionName || '1.1.0';
+  const manifestCode = Number(manifest.versionCode) || 0;
+  const currentVer = currentInfo.versionName || '1.2.0';
+  const manifestVer = manifest.versionName || '1.2.0';
 
   const hasNewerCode = manifestCode > currentCode;
   const hasNewerVer = isVersionNewer(manifestVer, currentVer);
-  const updateAvailable = hasNewerCode || hasNewerVer || currentVer.startsWith('1.0');
+  const updateAvailable = hasNewerCode || hasNewerVer;
 
   return {
     updateAvailable,

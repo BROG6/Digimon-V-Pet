@@ -1,18 +1,17 @@
 {
-  "versionName": "1.1.0",
-  "versionCode": 2,
-  "releaseDate": "2026-11-04",
-  "releaseName": "Companion Roaming & Auto-Updater Update",
+  "versionName": "1.2.0",
+  "versionCode": 3,
+  "releaseDate": "2026-11-06",
+  "releaseName": "Colosseum Attack Animations & Companion Upgrade",
   "changelog": [
-    "Fixed Botamon and rotated Digimon sideways orientation to upright alignment",
-    "Animated autonomous walking, step cycling, and roaming across the screen",
-    "Floating speech bubbles with authentic Digimon dialogue lines",
-    "Movable floating overlay: touch and drag anywhere over other apps",
+    "Colosseum battle attack animations: dynamic lunges, critical hit flashes, screen shakes & floating damage numbers",
+    "Floating companion overlay upgraded: 20% larger sprites, autonomous roaming & silent notification close button",
+    "In-app Digi-Auto Updater engine: smart semantic version sync & one-tap direct APK installer",
     "Native in-app auto-updater: background APK download & seamless installer",
     "Over-The-Air (OTA) live web asset reload & cache refresh"
   ],
   "apkDownloadUrl": "https://ais-pre-hwfiiqh77iufzd3mdqoptd-750449911930.asia-northeast1.run.app/api/download-apk",
-  "apkFileName": "digipet-v1.1.0.apk",
-  "apkFileSize": "18.5 MB",
+  "apkFileName": "digipet-v1.2.0.apk",
+  "apkFileSize": "18.8 MB",
   "isMandatory": false
 }

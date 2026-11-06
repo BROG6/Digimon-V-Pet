@@ -28,6 +28,7 @@ import {
   openExternalUrl,
   resolveFullUrl,
   DEFAULT_PRODUCTION_URL,
+  isVersionNewer,
   getAutoCheckEnabled, 
   setAutoCheckEnabled, 
   getCustomUpdateUrl, 
@@ -51,8 +52,8 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
   onUpdateDownloaded,
 }) => {
   const [appInfo, setAppInfo] = useState<AppInfo>({
-    versionName: '1.0.0',
-    versionCode: 1,
+    versionName: '1.2.0',
+    versionCode: 3,
     packageName: 'com.digipet.companion',
     isNative: false,
   });
@@ -256,11 +257,10 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
 
   if (!isOpen) return null;
 
-  const currentVer = appInfo.versionName || '1.0';
-  const isUpdateAvailable = (manifest && (
+  const isUpdateAvailable = !!(manifest && (
     Number(manifest.versionCode) > Number(appInfo.versionCode) || 
-    manifest.versionName !== appInfo.versionName
-  )) || currentVer.startsWith('1.0');
+    isVersionNewer(manifest.versionName, appInfo.versionName)
+  ));
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-slate-950/90 backdrop-blur-md android-safe-modal">

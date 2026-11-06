@@ -36,14 +36,14 @@ public class AppUpdatePlugin extends Plugin {
             } else {
                 versionCode = pInfo.versionCode;
             }
-            ret.put("versionName", pInfo.versionName != null ? pInfo.versionName : "1.0.0");
+            ret.put("versionName", pInfo.versionName != null ? pInfo.versionName : "1.2.0");
             ret.put("versionCode", versionCode);
             ret.put("packageName", ctx.getPackageName());
             ret.put("isNative", true);
             call.resolve(ret);
         } catch (Exception e) {
-            ret.put("versionName", "1.0.0");
-            ret.put("versionCode", 1);
+            ret.put("versionName", "1.2.0");
+            ret.put("versionCode", 3);
             ret.put("packageName", ctx.getPackageName());
             ret.put("isNative", true);
             call.resolve(ret);

@@ -117,7 +117,7 @@ define(['./workbox-7e5eb42b'], (function (workbox) { 'use strict';
     "revision": "6a6198496ea3e595c6a0b927b36f1184"
   }, {
     "url": "index.html",
-    "revision": "41514b0b614dc22ca14885bbcd0ecc73"
+    "revision": "d327544c5fc95583c7a36d3add2a7be8"
   }, {
     "url": "garuda_test.html",
     "revision": "31b8bbeb9b34406e3b1c5488b1784cfc"
@@ -1070,10 +1070,10 @@ define(['./workbox-7e5eb42b'], (function (workbox) { 'use strict';
     "url": "assets/koromon_transparent.png",
     "revision": null
   }, {
-    "url": "assets/index-DSuDRlT6.js",
+    "url": "assets/index-CJtUM6Ix.css",
     "revision": null
   }, {
-    "url": "assets/index-CX63CTUV.css",
+    "url": "assets/index-BjEhePnu.js",
     "revision": null
   }, {
     "url": "assets/greymon_transparent.png",

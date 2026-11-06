@@ -13,6 +13,7 @@ import {
 import { getEffectiveSpriteConfig } from '../utils/customSpriteManager';
 import { DigimonSpriteConfig, SpriteFrame } from '../utils/newDigimonSprites';
 import { HELLOPET_QUOTES } from '../data/digidex';
+import { getPersonalityProfile } from '../utils/digimonPersonality';
 
 interface NativePipOverlayProps {
   pet: PetState;
@@ -350,6 +351,16 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
         const walkingFrames = config?.frames?.walking || standingFrames;
         const activeFrame = walkingFrames[0] || standingFrames[0] || { x: 2, y: 2, w: 48, h: 48 };
 
+        const profile = getPersonalityProfile(species?.id);
+        const speciesQuotes = [
+          ...profile.catchphrases,
+          ...profile.idleQuotes,
+          ...profile.happyQuotes,
+          ...profile.hungryQuotes,
+          ...profile.battleQuotes,
+          ...HELLOPET_QUOTES,
+        ];
+
         const ok = await startNativeFloatingOverlay({
           speciesName: species?.name || 'Digimon',
           spriteUrl: config?.sheetPath || '/assets/aistudio/Copy_of_Agumon_Adventure_04d0832a.png',
@@ -363,7 +374,7 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
           frameRotate: activeFrame.rotate || 0,
           standingFramesJson: JSON.stringify(standingFrames),
           walkingFramesJson: JSON.stringify(walkingFrames),
-          quotesJson: JSON.stringify(HELLOPET_QUOTES),
+          quotesJson: JSON.stringify(speciesQuotes),
         });
 
         if (ok) {

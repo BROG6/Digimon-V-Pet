@@ -4,7 +4,6 @@ import { PetState, DigimonSpecies, DigiEggInfo } from '../types/digimon';
 import { DigimonSprite } from './DigimonSprite';
 import { sound } from '../utils/audio';
 import { getBatteryStatus, DeviceBatteryInfo } from '../utils/battery';
-import { HELLOPET_QUOTES } from '../data/digidex';
 import { 
   Battery, 
   BatteryCharging, 
@@ -22,8 +21,12 @@ import {
   Home,
   Menu,
   Activity,
-  Smartphone
+  Smartphone,
+  MessageSquare,
+  Send,
+  X
 } from 'lucide-react';
+import { fetchDigimonAiDialogue, getContextualQuote } from '../utils/digimonPersonality';
 
 interface FloatingOverlayProps {
   pet: PetState;
@@ -68,10 +71,14 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
   const [currentAction, setCurrentAction] = useState<'idle' | 'walk' | 'sleep' | 'sick' | 'eat' | 'happy' | 'sit' | 'poop'>('idle');
   const [speechBubble, setSpeechBubble] = useState<string | null>(null);
   const [isMenuOpen, setIsMenuOpen] = useState<boolean>(false);
+  const [isChatInputOpen, setIsChatInputOpen] = useState<boolean>(false);
+  const [chatInputText, setChatInputText] = useState<string>('');
+  const [isAiThinking, setIsAiThinking] = useState<boolean>(false);
   const [battery, setBattery] = useState<DeviceBatteryInfo>({ level: 85, charging: false, supported: false });
   const [currentTimeStr, setCurrentTimeStr] = useState<string>('');
   const [isMuted, setIsMuted] = useState<boolean>(sound.getMuted());
   const isDraggingRef = useRef<boolean>(false);
+  const speechTimerRef = useRef<any>(null);
 
   // Initialize battery and clock
   useEffect(() => {
@@ -94,7 +101,7 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
     }
 
     const wanderInterval = setInterval(() => {
-      if (isDraggingRef.current) return;
+      if (isDraggingRef.current || isChatInputOpen) return;
 
       // Random chance to wander, say something, sit, or stay idle
       const roll = Math.random();
@@ -121,33 +128,70 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
     }, 2200);
 
     return () => clearInterval(wanderInterval);
-  }, [isOverlayActive, posX, pet.isSleeping, pet.isSick]);
+  }, [isOverlayActive, posX, pet.isSleeping, pet.isSick, isChatInputOpen]);
 
-  // Generate context-aware speech bubble
-  const triggerSpeech = () => {
-    let msg = '';
-    if (pet.isSick) {
-      msg = "Achoo... I don't feel well! Need vitamins! 💊";
-    } else if (pet.hunger < 30) {
-      msg = "My tummy is rumbling! Big Meat please! 🍖";
-    } else if (pet.poopCount > 0) {
-      msg = "Uh oh... Tamer, can you clean up my poop? 💩";
-    } else if (battery.level <= 20 && !battery.charging) {
-      msg = `Battery is at ${battery.level}%! Please plug in our device! ⚡`;
-    } else if (Math.random() < 0.3) {
-      msg = `Current Time is ${currentTimeStr}! Ready for adventure! ⏰`;
-    } else {
-      const randomQuote = HELLOPET_QUOTES[Math.floor(Math.random() * HELLOPET_QUOTES.length)];
-      msg = randomQuote;
+  // Generate context-aware speech bubble (with species lore and Gemini AI)
+  const triggerSpeech = async (customMessage?: string) => {
+    if (speechTimerRef.current) clearTimeout(speechTimerRef.current);
+
+    if (customMessage) {
+      // User directly talked to Digimon -> use Gemini AI!
+      setSpeechBubble('💭 ...');
+      setIsAiThinking(true);
+      sound.playButton();
+
+      const aiText = await fetchDigimonAiDialogue({
+        speciesName: species?.name || 'Digimon',
+        speciesId: pet.currentSpeciesId,
+        stage: pet.stage,
+        hunger: pet.hunger,
+        happiness: pet.happiness,
+        energy: pet.energy,
+        isSick: pet.isSick,
+        poopCount: pet.poopCount,
+        userMessage: customMessage,
+      });
+
+      setSpeechBubble(aiText);
+      setIsAiThinking(false);
+      sound.playAlert();
+      setCurrentAction('happy');
+      setTimeout(() => {
+        setCurrentAction(pet.isSick ? 'sick' : 'idle');
+      }, 1500);
+
+      speechTimerRef.current = setTimeout(() => {
+        setSpeechBubble(null);
+      }, 7000);
+      return;
     }
+
+    // Contextual autonomous or tapped line
+    const msg = getContextualQuote(pet.currentSpeciesId, {
+      isSick: pet.isSick,
+      hunger: pet.hunger,
+      poopCount: pet.poopCount,
+      happiness: pet.happiness,
+      isSleeping: pet.isSleeping,
+      batteryLevel: battery.level,
+      currentTimeStr,
+    });
 
     setSpeechBubble(msg);
     sound.playAlert();
 
     // Auto-dismiss after 5 seconds
-    setTimeout(() => {
+    speechTimerRef.current = setTimeout(() => {
       setSpeechBubble(null);
     }, 5000);
+  };
+
+  const handleSendUserChat = (text: string) => {
+    if (!text || !text.trim() || isAiThinking) return;
+    const clean = text.trim();
+    setChatInputText('');
+    setIsChatInputOpen(false);
+    triggerSpeech(clean);
   };
 
   const handleSpriteClick = () => {
@@ -286,19 +330,21 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
         transition={{ type: 'spring', damping: 25, stiffness: 120 }}
         className="absolute top-0 left-0 pointer-events-auto cursor-grab active:cursor-grabbing flex flex-col items-center select-none"
       >
-        {/* Hellopet Speech Dialogue Bubble */}
+        {/* Hellopet Speech Dialogue Bubble - Landing HIGHER and BEHIND the head of the Digimon */}
         <AnimatePresence>
           {speechBubble && (
             <motion.div
-              initial={{ scale: 0, opacity: 0, y: 10 }}
+              initial={{ scale: 0, opacity: 0, y: 8 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0, opacity: 0, y: 10 }}
-              className="relative mb-2 max-w-[220px] bg-white text-slate-900 border-2 border-slate-900 rounded-2xl px-3 py-2 shadow-2xl text-xs font-medium text-center z-50 filter drop-shadow-lg"
+              exit={{ scale: 0, opacity: 0, y: 8 }}
+              className="absolute -top-16 sm:-top-20 left-1/2 -translate-x-1/2 pointer-events-none max-w-[240px] w-max z-0 select-none"
             >
-              <span>{speechBubble}</span>
-              {/* Bubble tail */}
-              <div className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-0 h-0 border-x-8 border-x-transparent border-t-8 border-t-white" />
-              <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 w-0 h-0 border-x-[9px] border-x-transparent border-t-[9px] border-t-slate-900 -z-10" />
+              <div className="relative bg-white/95 backdrop-blur-md text-slate-900 border-2 border-slate-950 rounded-2xl px-3.5 py-2 shadow-2xl text-xs font-bold text-center filter drop-shadow-xl leading-snug">
+                <span>{speechBubble}</span>
+                {/* Bubble tail dipping down behind the head */}
+                <div className="absolute -bottom-2.5 left-1/2 -translate-x-1/2 w-0 h-0 border-x-8 border-x-transparent border-t-8 border-t-white" />
+                <div className="absolute -bottom-3.5 left-1/2 -translate-x-1/2 w-0 h-0 border-x-[9px] border-x-transparent border-t-[9px] border-t-slate-950 -z-10" />
+              </div>
             </motion.div>
           )}
         </AnimatePresence>
@@ -319,15 +365,17 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
           </motion.div>
         )}
 
-        {/* Digimon Sprite (20% bigger than previous compact size) */}
-        <DigimonSprite
-          species={species}
-          egg={pet.stage === 'egg' ? egg : undefined}
-          action={currentAction}
-          facing={facing}
-          scale={0.72}
-          onClick={handleSpriteClick}
-        />
+        {/* Digimon Sprite (Wrapped in relative z-20 so the head is in FRONT of the speech bubble) */}
+        <div className="relative z-20">
+          <DigimonSprite
+            species={species}
+            egg={pet.stage === 'egg' ? egg : undefined}
+            action={currentAction}
+            facing={facing}
+            scale={0.72}
+            onClick={handleSpriteClick}
+          />
+        </div>
 
         {/* Quick Interaction Radial / Drawer Menu on Tap */}
         <AnimatePresence>
@@ -336,8 +384,22 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
               initial={{ opacity: 0, scale: 0.8, y: 10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.8, y: 10 }}
-              className="absolute -bottom-16 bg-slate-950/95 backdrop-blur-md border border-cyan-500/40 rounded-2xl p-2 shadow-2xl flex items-center gap-2 z-50 text-slate-100"
+              className="absolute -bottom-16 bg-slate-950/95 backdrop-blur-md border border-cyan-500/40 rounded-2xl p-2 shadow-2xl flex items-center gap-1.5 z-50 text-slate-100"
             >
+              {/* AI Talk Button */}
+              <button
+                onClick={() => {
+                  setIsMenuOpen(false);
+                  setIsChatInputOpen(true);
+                  sound.playButton();
+                }}
+                className="flex flex-col items-center justify-center p-2 rounded-xl bg-cyan-950/70 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 transition-transform active:scale-90"
+                title="Talk with Digimon (AI)"
+              >
+                <MessageSquare className="w-4 h-4 text-cyan-400" />
+                <span className="text-[9px] font-pixel mt-1">TALK</span>
+              </button>
+
               <button
                 onClick={handleFeedMeat}
                 className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-800/80 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 transition-transform active:scale-90"
@@ -399,6 +461,72 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
                 <Gamepad2 className="w-4 h-4 text-blue-400" />
                 <span className="text-[9px] font-pixel mt-1">ARENA</span>
               </button>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Interactive AI Talk Popover */}
+        <AnimatePresence>
+          {isChatInputOpen && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 10 }}
+              className="absolute -bottom-36 w-72 bg-slate-950/95 backdrop-blur-md border-2 border-cyan-500/60 rounded-2xl p-3 shadow-2xl z-50 text-slate-100 flex flex-col gap-2 pointer-events-auto"
+            >
+              <div className="flex items-center justify-between border-b border-slate-800 pb-1.5">
+                <div className="flex items-center gap-1.5 text-xs font-chakra font-bold text-cyan-300">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+                  <span>TALK TO {species?.name?.toUpperCase() || 'DIGIMON'} (AI)</span>
+                </div>
+                <button
+                  onClick={() => setIsChatInputOpen(false)}
+                  className="text-slate-400 hover:text-white p-0.5 rounded cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              {/* Quick suggestion chips */}
+              <div className="flex flex-wrap gap-1">
+                {['🍖 Got meat?', '🥊 Ready to battle?', '✨ Best friend?', '🔥 Special attack!'].map((prompt, i) => (
+                  <button
+                    key={i}
+                    onClick={() => {
+                      setChatInputText(prompt);
+                      handleSendUserChat(prompt);
+                    }}
+                    className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 active:scale-95 transition-all cursor-pointer"
+                  >
+                    {prompt}
+                  </button>
+                ))}
+              </div>
+
+              {/* Input field + Send button */}
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  handleSendUserChat(chatInputText);
+                }}
+                className="flex items-center gap-1.5 pt-1"
+              >
+                <input
+                  type="text"
+                  value={chatInputText}
+                  onChange={(e) => setChatInputText(e.target.value)}
+                  placeholder={`Say something to ${species?.name || 'Digimon'}...`}
+                  disabled={isAiThinking}
+                  className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-cyan-400 font-sans"
+                />
+                <button
+                  type="submit"
+                  disabled={!chatInputText.trim() || isAiThinking}
+                  className="p-2 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-slate-950 rounded-xl cursor-pointer disabled:opacity-40 transition-all active:scale-95 shadow-md shadow-cyan-500/20"
+                >
+                  <Send className="w-3.5 h-3.5" />
+                </button>
+              </form>
             </motion.div>
           )}
         </AnimatePresence>

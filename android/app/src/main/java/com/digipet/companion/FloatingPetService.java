@@ -129,9 +129,9 @@ public class FloatingPetService extends Service {
             layoutType = WindowManager.LayoutParams.TYPE_PHONE;
         }
 
-        // 20% bigger viewport: spacious, upright, and seamless on mobile screens
-        int viewW = dpToPx(135);
-        int viewH = dpToPx(120);
+        // Expanded viewport for higher speech bubbles behind the head & seamless roaming
+        int viewW = dpToPx(140);
+        int viewH = dpToPx(138);
         params = new WindowManager.LayoutParams(
             viewW,
             viewH,
@@ -288,26 +288,26 @@ public class FloatingPetService extends Service {
             "html, body { margin:0; padding:0; background:transparent; overflow:hidden; width:100%; height:100%; user-select:none; -webkit-user-select:none; pointer-events:none; font-family:sans-serif; }" +
             "#stage { position:relative; width:100%; height:100%; overflow:visible; }" +
             
-            // Compact Speech Bubble with subtle tail and animated pop
-            "#bubble { position:absolute; top:2px; left:50%; transform:translateX(-50%) scale(0); opacity:0; max-width:110px; background:#ffffff; color:#0f172a; border:1.5px solid #0f172a; border-radius:9px; padding:2px 7px; font-size:8.5px; font-weight:bold; font-family:monospace; text-align:center; box-shadow:0 3px 8px rgba(0,0,0,0.4); transition:transform 0.2s cubic-bezier(0.175,0.885,0.32,1.275), opacity 0.18s ease; z-index:30; pointer-events:none; }" +
+            // Speech Bubble landing higher and behind the head (z-index 1 behind spriteBox z-index 10)
+            "#bubble { position:absolute; bottom:calc(100% - 10px); left:50%; transform:translateX(-50%) scale(0); opacity:0; max-width:125px; background:rgba(255,255,255,0.96); color:#0f172a; border:2px solid #0f172a; border-radius:11px; padding:3px 7px; font-size:8.5px; font-weight:bold; font-family:monospace; text-align:center; box-shadow:0 4px 10px rgba(0,0,0,0.45); transition:transform 0.22s cubic-bezier(0.175,0.885,0.32,1.275), opacity 0.18s ease; z-index:1; pointer-events:none; white-space:normal; line-height:1.25; }" +
             "#bubble.show { transform:translateX(-50%) scale(1); opacity:1; }" +
             "#bubble::after { content:''; position:absolute; bottom:-5px; left:50%; transform:translateX(-50%); width:0; height:0; border-left:4px solid transparent; border-right:4px solid transparent; border-top:5px solid #ffffff; }" +
             "#bubble::before { content:''; position:absolute; bottom:-7px; left:50%; transform:translateX(-50%); width:0; height:0; border-left:5px solid transparent; border-right:5px solid transparent; border-top:6px solid #0f172a; z-index:-1; }" +
 
-            // Pet wrap & 20% bigger upright sprite box (name tag completely removed)
-            "#petWrap { position:absolute; bottom:10px; left:45px; display:flex; flex-direction:column; align-items:center; transition:none; }" +
-            "#spriteBox { position:relative; overflow:hidden; }" +
+            // Pet wrap & upright sprite box (spriteBox has z-index 10 in front of bubble)
+            "#petWrap { position:absolute; bottom:8px; left:45px; display:flex; flex-direction:column; align-items:center; transition:none; overflow:visible; }" +
+            "#spriteBox { position:relative; overflow:hidden; z-index:10; }" +
             "#innerBox { position:absolute; top:50%; left:50%; transform-origin:center center; overflow:hidden; }" +
             "#sheetImg { position:absolute; max-width:none; image-rendering:pixelated; }" +
-            "#shadow { width:22px; height:4px; background:rgba(0,0,0,0.35); border-radius:50%; margin-top:1px; }" +
+            "#shadow { width:22px; height:4px; background:rgba(0,0,0,0.35); border-radius:50%; margin-top:1px; z-index:10; }" +
 
             // Jump / Hop animation on tap or speech
             "@keyframes hopAnim { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-8px); } }" +
             ".hopping { animation: hopAnim 0.3s ease-in-out; }" +
             "</style></head><body>" +
             "<div id='stage'>" +
-            "  <div id='bubble'>Hello Tamer!</div>" +
             "  <div id='petWrap'>" +
+            "    <div id='bubble'>Hello Tamer!</div>" +
             "    <div id='spriteBox'>" +
             "      <div id='innerBox'>" +
             "        <img id='sheetImg' src='" + relSpriteUrl + "' onerror=\"if(this.getAttribute('data-tried')!=='1'){this.setAttribute('data-tried','1');this.src='" + absSpriteUrl + "';}\" />" +

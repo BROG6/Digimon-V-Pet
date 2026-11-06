@@ -4,6 +4,7 @@ import { createServer as createViteServer } from 'vite';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { GoogleGenAI } from '@google/genai';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -11,6 +12,17 @@ const __dirname = path.dirname(__filename);
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const OVERRIDES_FILE = path.join(__dirname, 'src', 'utils', 'savedSpriteOverrides.json');
 const SPRITES_TS_FILE = path.join(__dirname, 'src', 'utils', 'newDigimonSprites.ts');
+
+const ai = process.env.GEMINI_API_KEY
+  ? new GoogleGenAI({
+      apiKey: process.env.GEMINI_API_KEY,
+      httpOptions: {
+        headers: {
+          'User-Agent': 'aistudio-build',
+        },
+      },
+    })
+  : null;
 
 async function startServer() {
   const app = express();
@@ -164,6 +176,107 @@ async function startServer() {
     } catch (err: any) {
       console.error('[Sync] Failed to save sprite definitions:', err);
       return res.status(500).json({ success: false, error: err.message });
+    }
+  });
+
+  // Helper for server-side Digimon dialogue fallback
+  function getFallbackDialogue(speciesName: string = 'Digimon', hunger: number = 50, isSick: boolean = false, poopCount: number = 0, userMessage?: string): string {
+    if (isSick) return `Achoo... I don't feel so well, Tamer! Need vitamins! 💊`;
+    if (hunger < 30) return `My stomach is roaring loudly! Big Meat please! 🍖`;
+    if (poopCount > 0) return `Uh oh... I made a mess on the screen! Flush please! 💩`;
+    if (userMessage) return `I hear you, Tamer! Together we can achieve anything! ✨`;
+    const quotes = [
+      `Keeping watch over your screen! No wild Digimon getting past me! 🛡️`,
+      `File Island breeze feels great today! Ready to train! 🥊`,
+      `Tamer, let's explore and reach Mega digivolution! 🔥`,
+      `Your screen is so bright and fun to roam around on! 🐾`,
+    ];
+    return quotes[Math.floor(Math.random() * quotes.length)];
+  }
+
+  // API: AI-Powered Digimon Personality & Dialogue
+  app.post('/api/digimon/talk', async (req, res) => {
+    try {
+      const {
+        speciesName = 'Agumon',
+        stage = 'Rookie',
+        hunger = 50,
+        happiness = 80,
+        energy = 80,
+        isSick = false,
+        poopCount = 0,
+        userMessage,
+        actionContext,
+      } = req.body || {};
+
+      if (!ai) {
+        return res.json({
+          success: true,
+          text: getFallbackDialogue(speciesName, hunger, isSick, poopCount, userMessage),
+          source: 'local_personality',
+        });
+      }
+
+      const systemInstruction = `You are ${speciesName}, an authentic Digimon virtual pet living with your human Tamer on their device screen.
+Your stage is ${stage}.
+Current status:
+- Hunger: ${hunger}/100 (lower means starving)
+- Happiness: ${happiness}/100
+- Energy: ${energy}/100
+- Sick: ${isSick ? 'YES (feeling weak)' : 'No'}
+- Poop around: ${poopCount > 0 ? 'YES' : 'No'}
+${actionContext ? `Current context: ${actionContext}` : ''}
+
+PERSONALITY GUIDELINES:
+- Stay 100% in character as ${speciesName} from Digimon lore.
+- For Agumon: energetic, brave, loves meat, loyal, says "Taichi!" or calls the human "Tamer".
+- For Gabumon: slightly shy, sweet, caring, warm fur pelt, deeply devoted.
+- For Patamon: cute, fluffy, hopeful, flaps ears, Boom Bubble, sweet baby hero.
+- For Palmon: spunky, loves plants/flowers, chic, Poison Ivy.
+- For Tentomon: polite Kansai intellect, analyzes stats, tech-savvy, Super Shocker.
+- For Gomamon: playful prankster, water-loving, reliable buddy, Marching Fishes.
+- For Veemon: bold, energetic brawler, "Digi-Armor Energize!", loves fighting.
+- For Guilmon: child-like dino, curious, loves bread/meat, "Takato-mon!", cute growls.
+- For Renamon: stoic ninja, disciplined, sharp instincts, Diamond Storm.
+
+RULES:
+- KEEP IT SHORT: Exactly 1 to 2 short sentences (MAXIMUM 18 words). It must fit inside a floating comic speech bubble over the Digimon's head!
+- Use 1-2 expressive emojis (🍖, 🔥, ⚡, 🐾, 💖, 🛡️, etc.).
+- Never say you are an AI, a language model, or break character. You ARE ${speciesName}.`;
+
+      const userPrompt = userMessage
+        ? `The Tamer says to you: "${userMessage}". Respond directly to them in character!`
+        : `Give a brief, spontaneous remark to your Tamer as you roam on their screen.`;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.8-flash',
+        contents: userPrompt,
+        config: {
+          systemInstruction,
+        },
+      });
+
+      const generatedText = response.text ? response.text.trim().replace(/^["']|["']$/g, '') : '';
+      if (generatedText) {
+        return res.json({
+          success: true,
+          text: generatedText,
+          source: 'gemini_3.8_flash',
+        });
+      }
+
+      return res.json({
+        success: true,
+        text: getFallbackDialogue(speciesName, hunger, isSick, poopCount, userMessage),
+        source: 'local_personality_fallback',
+      });
+    } catch (err: any) {
+      console.warn('Gemini dialogue generation error:', err);
+      return res.json({
+        success: true,
+        text: getFallbackDialogue(req.body?.speciesName, req.body?.hunger, req.body?.isSick, req.body?.poopCount, req.body?.userMessage),
+        source: 'local_personality_error_fallback',
+      });
     }
   });
 

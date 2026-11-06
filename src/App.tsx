@@ -8,6 +8,7 @@ import {
   DigimonStage 
 } from './types/digimon';
 import { DIGI_EGGS, DIGIMON_DATABASE, FURNITURE_SHOP, ROOM_THEMES, HELLOPET_QUOTES } from './data/digidex';
+import { getPersonalityProfile } from './utils/digimonPersonality';
 import { DigiviceHUD } from './components/DigiviceHUD';
 import { FloatingOverlay } from './components/FloatingOverlay';
 import { EggSelectionModal } from './components/EggSelectionModal';
@@ -246,6 +247,16 @@ export default function App() {
         const walkingFrames = currentSpeciesConf?.frames?.walking || standingFrames;
         const activeFrame = walkingFrames[0] || standingFrames[0] || { x: 2, y: 2, w: 48, h: 48 };
 
+        const profile = getPersonalityProfile(currentSpecies?.id);
+        const speciesQuotes = [
+          ...profile.catchphrases,
+          ...profile.idleQuotes,
+          ...profile.happyQuotes,
+          ...profile.hungryQuotes,
+          ...profile.battleQuotes,
+          ...HELLOPET_QUOTES,
+        ];
+
         const ok = await startNativeFloatingOverlay({
           speciesName: currentSpecies?.name || 'Digimon',
           spriteUrl: currentSpeciesConf?.sheetPath || '/assets/aistudio/Copy_of_Agumon_Adventure_04d0832a.png',
@@ -259,7 +270,7 @@ export default function App() {
           frameRotate: activeFrame.rotate || 0,
           standingFramesJson: JSON.stringify(standingFrames),
           walkingFramesJson: JSON.stringify(walkingFrames),
-          quotesJson: JSON.stringify(HELLOPET_QUOTES),
+          quotesJson: JSON.stringify(speciesQuotes),
         });
 
         if (ok) {

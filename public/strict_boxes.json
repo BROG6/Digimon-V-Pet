@@ -1,0 +1,106 @@
+{
+  "motBoxes": {
+    "r1_c1_stand": {
+      "x": 2,
+      "y": 5,
+      "w": 32,
+      "h": 38,
+      "pixelCount": 941
+    },
+    "r5_c2_happy": {
+      "x": 44,
+      "y": 152,
+      "w": 39,
+      "h": 38,
+      "pixelCount": 972
+    },
+    "r3_c3_stand": {
+      "x": 85,
+      "y": 69,
+      "w": 33,
+      "h": 38,
+      "pixelCount": 954
+    },
+    "r4_c3_stand": {
+      "x": 86,
+      "y": 109,
+      "w": 34,
+      "h": 41,
+      "pixelCount": 1010
+    }
+  },
+  "megBoxes": {
+    "r1_c5_stand": {
+      "x": 373,
+      "y": 11,
+      "w": 74,
+      "h": 74,
+      "pixelCount": 3479
+    },
+    "r2_c5_walk": {
+      "x": 373,
+      "y": 87,
+      "w": 74,
+      "h": 75,
+      "pixelCount": 3542
+    },
+    "r3_c5_walk": {
+      "x": 373,
+      "y": 164,
+      "w": 80,
+      "h": 76,
+      "pixelCount": 3161
+    },
+    "r4_c4_walk": {
+      "x": 293,
+      "y": 242,
+      "w": 79,
+      "h": 78,
+      "pixelCount": 3735
+    }
+  },
+  "hercBoxes": {
+    "r1_c1_stand": {
+      "x": 2,
+      "y": 6,
+      "w": 100,
+      "h": 86,
+      "pixelCount": 4920
+    },
+    "r4_c1_front": {
+      "x": 2,
+      "y": 288,
+      "w": 99,
+      "h": 104,
+      "pixelCount": 5061
+    },
+    "r5_c1_step": {
+      "x": 2,
+      "y": 394,
+      "w": 101,
+      "h": 103,
+      "pixelCount": 5098
+    },
+    "r5_c3_walk1": {
+      "x": 197,
+      "y": 411,
+      "w": 97,
+      "h": 86,
+      "pixelCount": 4873
+    },
+    "r5_c4_walk2": {
+      "x": 296,
+      "y": 413,
+      "w": 95,
+      "h": 84,
+      "pixelCount": 4350
+    },
+    "r5_c5_walk3": {
+      "x": 393,
+      "y": 413,
+      "w": 90,
+      "h": 84,
+      "pixelCount": 4978
+    }
+  }
+}

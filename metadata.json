@@ -1,0 +1,6 @@
+{
+  "name": "DigiPet: Virtual Screen Overlay Companion",
+  "description": "Hellopet-inspired Digimon virtual pet companion. Choose your DigiDestined egg, feed big meat, give vitamins, train, digivolve, customize your Digi-Room, and battle in the Digital Colosseum.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

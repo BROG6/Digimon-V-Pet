@@ -1,0 +1,12 @@
+{
+	"appId": "com.digipet.companion",
+	"appName": "DigiPet: Digital Monster Companion",
+	"webDir": "dist",
+	"bundledWebRuntime": false,
+	"server": {
+		"androidScheme": "https"
+	},
+	"android": {
+		"allowMixedContent": true
+	}
+}

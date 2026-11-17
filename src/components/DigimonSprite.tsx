@@ -348,10 +348,10 @@ export const DigimonSprite: React.FC<DigimonSpriteProps> = ({
 
             const chompAnim = activePose === 'eating'
               ? (eatBeat === 1 || eatBeat === 2
-                  ? { x: 9, y: 1, scaleX: 1.13, scaleY: 0.87, rotate: 7 }
+                  ? { x: 6, y: 0, scaleX: 1, scaleY: 1, rotate: 0 }
                   : eatBeat === 3
-                  ? { x: 0, y: -6, scaleX: 0.94, scaleY: 1.09, rotate: -3 }
-                  : { x: 1, y: 0, scaleX: 1, scaleY: 1, rotate: 0 })
+                  ? { x: 0, y: -4, scaleX: 1, scaleY: 1, rotate: 0 }
+                  : { x: 0, y: 0, scaleX: 1, scaleY: 1, rotate: 0 })
               : { x: 0, y: 0, scaleX: 1, scaleY: 1, rotate: 0 };
 
             return (

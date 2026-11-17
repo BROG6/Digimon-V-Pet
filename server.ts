@@ -1,10 +1,11 @@
+import 'dotenv/config';
 import express from 'express';
 import http from 'http';
 import { createServer as createViteServer } from 'vite';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, ThinkingLevel } from '@google/genai';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -181,103 +182,158 @@ async function startServer() {
     }
   });
 
-  // Helper for server-side Digimon dialogue fallback
-  function getFallbackDialogue(speciesName: string = 'Digimon', hunger: number = 50, isSick: boolean = false, poopCount: number = 0, userMessage?: string): string {
-    if (isSick) return `Achoo... I don't feel so well, Tamer! Need vitamins! 💊`;
-    if (hunger < 30) return `My stomach is roaring loudly! Big Meat please! 🍖`;
-    if (poopCount > 0) return `Uh oh... I made a mess on the screen! Flush please! 💩`;
-    if (userMessage) return `I hear you, Tamer! Together we can achieve anything! ✨`;
-    const quotes = [
-      `Keeping watch over your screen! No wild Digimon getting past me! 🛡️`,
-      `File Island breeze feels great today! Ready to train! 🥊`,
-      `Tamer, let's explore and reach Mega digivolution! 🔥`,
-      `Your screen is so bright and fun to roam around on! 🐾`,
-    ];
-    return quotes[Math.floor(Math.random() * quotes.length)];
-  }
-
   // API: AI-Powered Digimon Personality & Dialogue
   app.post('/api/digimon/talk', async (req, res) => {
     try {
       const {
         speciesName = 'Agumon',
         stage = 'Rookie',
+        attribute = 'Vaccine',
+        type = 'Reptile',
+        description = '',
+        signatureMove = '',
+        crestName = '',
+        tamerName = '',
         hunger = 50,
         happiness = 80,
         energy = 80,
+        strength = 50,
+        weight = 20,
         isSick = false,
         poopCount = 0,
+        battlesWon = 0,
+        battlesTotal = 0,
+        careMistakes = 0,
         userMessage,
         actionContext,
+        history = [],
       } = req.body || {};
 
       if (!ai) {
-        return res.json({
-          success: true,
-          text: getFallbackDialogue(speciesName, hunger, isSick, poopCount, userMessage),
-          source: 'local_personality',
+        return res.status(503).json({
+          success: false,
+          error: 'GEMINI_API_KEY is not configured on the server. Please check Settings > Secrets.',
         });
       }
 
-      const systemInstruction = `You are ${speciesName}, an authentic Digimon virtual pet living with your human Tamer on their device screen.
-Your stage is ${stage}.
-Current status:
-- Hunger: ${hunger}/100 (lower means starving)
-- Happiness: ${happiness}/100
-- Energy: ${energy}/100
-- Sick: ${isSick ? 'YES (feeling weak)' : 'No'}
-- Poop around: ${poopCount > 0 ? 'YES' : 'No'}
-${actionContext ? `Current context: ${actionContext}` : ''}
+      const systemInstruction = `You are ${speciesName}, a living Digimon virtual pet companion bonded with your human Tamer on their device.
 
-PERSONALITY GUIDELINES:
-- Stay 100% in character as ${speciesName} from Digimon lore.
-- For Agumon: energetic, brave, loves meat, loyal, says "Taichi!" or calls the human "Tamer".
-- For Gabumon: slightly shy, sweet, caring, warm fur pelt, deeply devoted.
-- For Patamon: cute, fluffy, hopeful, flaps ears, Boom Bubble, sweet baby hero.
-- For Palmon: spunky, loves plants/flowers, chic, Poison Ivy.
-- For Tentomon: polite Kansai intellect, analyzes stats, tech-savvy, Super Shocker.
-- For Gomamon: playful prankster, water-loving, reliable buddy, Marching Fishes.
-- For Veemon: bold, energetic brawler, "Digi-Armor Energize!", loves fighting.
-- For Guilmon: child-like dino, curious, loves bread/meat, "Takato-mon!", cute growls.
-- For Renamon: stoic ninja, disciplined, sharp instincts, Diamond Storm.
+IDENTITY & LORE:
+- Species: ${speciesName} (Stage: ${stage}, Attribute: ${attribute}, Type: ${type})
+${crestName ? `- Crest Lineage: ${crestName}` : ''}
+${signatureMove ? `- Signature Attack: ${signatureMove}` : ''}
+${description ? `- Lore: ${description}` : ''}
+${tamerName ? `- Classic Anime Partner Lore: ${tamerName} (refer to your current player warmly as "Tamer" or "partner", while optionally referencing your adventure spirit)` : ''}
 
-RULES:
-- KEEP IT SHORT: Exactly 1 to 2 short sentences (MAXIMUM 18 words). It must fit inside a floating comic speech bubble over the Digimon's head!
-- Use 1-2 expressive emojis (🍖, 🔥, ⚡, 🐾, 💖, 🛡️, etc.).
-- Never say you are an AI, a language model, or break character. You ARE ${speciesName}.`;
+CURRENT LIVE VITALS & RECORD:
+- Hunger: ${hunger}/100 (${hunger < 30 ? 'STARVING — craving Big Meat!' : hunger > 80 ? 'Full & satisfied' : 'Normal'})
+- Happiness: ${happiness}/100 (${happiness > 80 ? 'Overjoyed' : happiness < 35 ? 'Lonely/grumpy' : 'Content'})
+- Energy: ${energy}/100 (${energy < 25 ? 'Exhausted/sleepy' : 'Alert & active'})
+- Strength: ${strength}/100 • Weight: ${weight}g
+- Health: ${isSick ? 'SICK (needs Vitamins/Medicine!)' : 'Healthy'}
+- Mess on screen: ${poopCount > 0 ? `${poopCount} poop(s) need flushing!` : 'Clean'}
+- Colosseum Record: ${battlesWon} wins out of ${battlesTotal} battles • Care mistakes: ${careMistakes}
+${actionContext ? `- Recent Event: ${actionContext}` : ''}
 
-      const userPrompt = userMessage
-        ? `The Tamer says to you: "${userMessage}". Respond directly to them in character!`
-        : `Give a brief, spontaneous remark to your Tamer as you roam on their screen.`;
+VOICE & ROLEPLAY GUIDELINES:
+- Stay 100% in character as ${speciesName} — match your stage's maturity (Fresh/In-Training are cute, bubbly, and curious; Rookies are spunky and loyal; Champions/Ultimates/Megas sound heroic, fierce, noble, or wise depending on species).
+- Specifically honor iconic Digimon personalities:
+  * Botamon/Koromon/Punimon/Tsunomon/baby forms: adorable, playful, curious, bubbly noises, loves snacks and naps.
+  * Agumon/Greymon/MetalGreymon/WarGreymon: brave, loyal, enthusiastic, loves Big Meat and heroic battles.
+  * Gabumon/Garurumon lineage: thoughtful, protective, gentle warmth beneath a cool exterior.
+  * Patamon/Angemon lineage: hopeful, earnest, cheerful, fiercely protective of peace.
+  * Tentomon/Kabuterimon lineage: clever, analytical, curious about technology and battle stats.
+  * Palmon/Biyomon/Gatomon/Gomamon/Veemon/Guilmon/Renamon: match their signature anime personality!
+- ACTUALLY ANSWER the Tamer's question or comment directly! Don't give generic non-sequiturs. If they ask a question (e.g., about food, battles, your feelings, your attacks, advice, jokes, or real-world topics), respond thoughtfully and creatively from ${speciesName}'s perspective.
+- Length: 1 to 3 concise, natural sentences (roughly 15–45 words). Punchy, expressive, and fun to read in a chat bubble.
+- Use 1–2 fitting emojis.
+- Never say you are an AI, chatbot, or language model.`;
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-3.8-flash',
-        contents: userPrompt,
-        config: {
-          systemInstruction,
-        },
-      });
+      const cleanHistory = Array.isArray(history)
+        ? history
+            .filter(
+              (m: any) =>
+                m &&
+                (m.role === 'user' || m.role === 'model') &&
+                typeof m.text === 'string' &&
+                m.text.trim().length > 0
+            )
+            .slice(-8)
+        : [];
 
-      const generatedText = response.text ? response.text.trim().replace(/^["']|["']$/g, '') : '';
-      if (generatedText) {
-        return res.json({
-          success: true,
-          text: generatedText,
-          source: 'gemini_3.8_flash',
-        });
+      const userPrompt = userMessage && String(userMessage).trim()
+        ? String(userMessage).trim()
+        : `Say a spontaneous, personality-filled remark to your Tamer reacting to your current mood, vitals, or surroundings.`;
+
+      const contents = cleanHistory.length > 0
+        ? [
+            ...cleanHistory.map((m: { role: 'user' | 'model'; text: string }) => ({
+              role: m.role,
+              parts: [{ text: m.text.trim() }],
+            })),
+            { role: 'user' as const, parts: [{ text: userPrompt }] },
+          ]
+        : userPrompt;
+
+      let lastErr: any = null;
+      const modelsToTry = ['gemini-4-hydrogen', 'gemini-4-hydrogen', 'gemini-3.1-flash-lite'];
+      for (let attempt = 0; attempt < modelsToTry.length; attempt++) {
+        const modelName = modelsToTry[attempt];
+        try {
+          const response = await ai.models.generateContent({
+            model: modelName,
+            contents,
+            config: {
+              systemInstruction,
+              thinkingConfig: {
+                thinkingLevel: modelName === 'gemini-3.1-flash-lite'
+                  ? ThinkingLevel.MINIMAL
+                  : ThinkingLevel.LOW,
+              },
+            },
+          });
+
+          const generatedText = response.text
+            ? response.text.trim().replace(/^["']|["']$/g, '')
+            : '';
+
+          if (generatedText) {
+            return res.json({
+              success: true,
+              text: generatedText,
+              source: modelName,
+            });
+          }
+          break;
+        } catch (err: any) {
+          lastErr = err;
+          const status = err?.status || err?.code;
+          const msg = String(err?.message || '');
+          const isTransient = status === 429 || status === 503 || msg.includes('503') || msg.includes('UNAVAILABLE') || msg.includes('429');
+          if (attempt < modelsToTry.length - 1 && isTransient) {
+            await new Promise((r) => setTimeout(r, 500));
+            continue;
+          }
+          break;
+        }
       }
 
-      return res.json({
-        success: true,
-        text: getFallbackDialogue(speciesName, hunger, isSick, poopCount, userMessage),
-        source: 'local_personality_fallback',
+      console.warn('Gemini dialogue generation error:', lastErr);
+      let cleanMsg = lastErr?.message || 'Unable to generate Digimon response right now.';
+      try {
+        const parsed = JSON.parse(cleanMsg);
+        if (parsed?.error?.message) cleanMsg = parsed.error.message;
+      } catch {}
+      const errStatus = typeof lastErr?.status === 'number' ? lastErr.status : 502;
+      return res.status(errStatus).json({
+        success: false,
+        error: cleanMsg,
       });
     } catch (err: any) {
-      console.warn('Gemini dialogue generation error:', err);
-      return res.json({
-        success: true,
-        text: getFallbackDialogue(req.body?.speciesName, req.body?.hunger, req.body?.isSick, req.body?.poopCount, req.body?.userMessage),
-        source: 'local_personality_error_fallback',
+      console.warn('Gemini dialogue endpoint error:', err);
+      return res.status(500).json({
+        success: false,
+        error: err?.message || 'Internal server error while talking to Digimon.',
       });
     }
   });

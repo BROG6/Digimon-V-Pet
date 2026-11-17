@@ -26,7 +26,7 @@ import {
   Send,
   X
 } from 'lucide-react';
-import { fetchDigimonAiDialogue, getContextualQuote } from '../utils/digimonPersonality';
+import { fetchDigimonAiDialogue, getContextualQuote, DigimonChatTurn } from '../utils/digimonPersonality';
 
 interface FloatingOverlayProps {
   pet: PetState;
@@ -73,6 +73,7 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
   const [isMenuOpen, setIsMenuOpen] = useState<boolean>(false);
   const [isChatInputOpen, setIsChatInputOpen] = useState<boolean>(false);
   const [chatInputText, setChatInputText] = useState<string>('');
+  const [chatHistory, setChatHistory] = useState<DigimonChatTurn[]>([]);
   const [isAiThinking, setIsAiThinking] = useState<boolean>(false);
   const [battery, setBattery] = useState<DeviceBatteryInfo>({ level: 85, charging: false, supported: false });
   const [currentTimeStr, setCurrentTimeStr] = useState<string>('');
@@ -135,7 +136,7 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
     if (!isAiThinking) return;
     const safetyTimer = setTimeout(() => {
       setIsAiThinking(false);
-    }, 5500);
+    }, 13000);
     return () => clearTimeout(safetyTimer);
   }, [isAiThinking]);
 
@@ -144,25 +145,41 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
     if (speechTimerRef.current) clearTimeout(speechTimerRef.current);
 
     if (customMessage) {
-      // User directly talked to Digimon -> use Gemini AI!
+      // User directly talked to Digimon -> use Gemini AI with species lore & conversation history!
       setSpeechBubble('💭 ...');
       setIsAiThinking(true);
       sound.playButton();
 
+      const priorHistory = chatHistory.slice(-8);
+      setChatHistory((prev) => [...prev, { role: 'user', text: customMessage }]);
+
       try {
-        const aiText = await fetchDigimonAiDialogue({
-          speciesName: species?.name || 'Digimon',
+        const result = await fetchDigimonAiDialogue({
+          speciesName: species?.name || pet.nickname || 'Digimon',
           speciesId: pet.currentSpeciesId,
           stage: pet.stage,
+          attribute: species?.attribute,
+          type: species?.type,
+          description: species?.description,
+          signatureMove: species?.signatureMove?.name,
+          crestName: egg?.crestName,
+          tamerName: egg?.tamerName,
           hunger: pet.hunger,
           happiness: pet.happiness,
           energy: pet.energy,
+          strength: pet.strength,
+          weight: pet.weight,
           isSick: pet.isSick,
           poopCount: pet.poopCount,
+          battlesWon: pet.battlesWon,
+          battlesTotal: pet.battlesTotal,
+          careMistakes: pet.careMistakes,
           userMessage: customMessage,
+          history: priorHistory,
         });
 
-        setSpeechBubble(aiText || 'Digi-Power! Ready to go, Tamer! ✨');
+        setChatHistory((prev) => [...prev, { role: 'model', text: result.text }]);
+        setSpeechBubble(result.text);
         sound.playAlert();
         setCurrentAction('happy');
         setTimeout(() => {
@@ -171,7 +188,7 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
 
         speechTimerRef.current = setTimeout(() => {
           setSpeechBubble(null);
-        }, 7000);
+        }, 9000);
       } catch (err) {
         console.warn('Speech trigger error:', err);
         const fallback = getContextualQuote(pet.currentSpeciesId, {
@@ -404,7 +421,7 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
             egg={pet.stage === 'egg' ? egg : undefined}
             action={currentAction}
             facing={facing}
-            scale={0.72}
+            scale={0.8}
             onClick={handleSpriteClick}
           />
         </div>
@@ -497,75 +514,95 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
           )}
         </AnimatePresence>
 
-        {/* Interactive AI Talk Popover */}
-        <AnimatePresence>
-          {isChatInputOpen && (
-            <motion.div
-              initial={{ opacity: 0, scale: 0.9, y: 10 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.9, y: 10 }}
-              className="absolute -bottom-36 w-72 bg-slate-950/95 backdrop-blur-md border-2 border-cyan-500/60 rounded-2xl p-3 shadow-2xl z-50 text-slate-100 flex flex-col gap-2 pointer-events-auto"
-            >
-              <div className="flex items-center justify-between border-b border-slate-800 pb-1.5">
-                <div className="flex items-center gap-1.5 text-xs font-chakra font-bold text-cyan-300">
-                  <Sparkles className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
-                  <span>TALK TO {species?.name?.toUpperCase() || 'DIGIMON'} (AI)</span>
-                </div>
-                <button
-                  onClick={() => setIsChatInputOpen(false)}
-                  className="text-slate-400 hover:text-white p-0.5 rounded cursor-pointer"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              </div>
+      </motion.div>
 
-              {/* Quick suggestion chips */}
-              <div className="flex flex-wrap gap-1">
-                {['🍖 Got meat?', '🥊 Ready to battle?', '✨ Best friend?', '🔥 Special attack!'].map((prompt, i) => (
-                  <button
-                    key={i}
-                    onClick={() => {
-                      setChatInputText(prompt);
-                      handleSendUserChat(prompt);
-                    }}
-                    className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 active:scale-95 transition-all cursor-pointer"
+      {/* Interactive AI Talk Popover (Fixed at bottom-center so it never clips off-screen) */}
+      <AnimatePresence>
+        {isChatInputOpen && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.94, y: 16 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.94, y: 16 }}
+            className="fixed bottom-[max(calc(env(safe-area-inset-bottom,0px)+1rem),1rem)] left-1/2 -translate-x-1/2 w-[min(92vw,360px)] bg-slate-950/95 backdrop-blur-md border-2 border-cyan-500/60 rounded-2xl p-3 shadow-2xl z-50 text-slate-100 flex flex-col gap-2 pointer-events-auto"
+          >
+            <div className="flex items-center justify-between border-b border-slate-800 pb-1.5">
+              <div className="flex items-center gap-1.5 text-xs font-chakra font-bold text-cyan-300">
+                <Sparkles className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+                <span>TALK TO {species?.name?.toUpperCase() || 'DIGIMON'}</span>
+              </div>
+              <button
+                onClick={() => setIsChatInputOpen(false)}
+                className="text-slate-400 hover:text-white p-0.5 rounded cursor-pointer"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            {chatHistory.length > 0 && (
+              <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1 bg-slate-900/70 border border-slate-800 rounded-xl p-2">
+                {chatHistory.slice(-6).map((turn, idx) => (
+                  <div
+                    key={idx}
+                    className={`flex ${turn.role === 'user' ? 'justify-end' : 'justify-start'}`}
                   >
-                    {prompt}
-                  </button>
+                    <div
+                      className={`max-w-[85%] rounded-xl px-2.5 py-1 text-[11px] leading-snug ${
+                        turn.role === 'user'
+                          ? 'bg-cyan-600 text-white'
+                          : 'bg-slate-800 text-slate-100 border border-slate-700'
+                      }`}
+                    >
+                      {turn.text}
+                    </div>
+                  </div>
                 ))}
               </div>
+            )}
 
-              {/* Input field + Send button */}
-              <form
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  handleSendUserChat(chatInputText);
-                }}
-                className="flex items-center gap-1.5 pt-1"
-              >
-                <input
-                  type="text"
-                  value={chatInputText}
-                  onChange={(e) => setChatInputText(e.target.value)}
-                  placeholder={isAiThinking ? `${species?.name || 'Digimon'} is thinking...` : `Say something to ${species?.name || 'Digimon'}...`}
-                  className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-cyan-400 font-sans placeholder:text-slate-500"
-                />
+            {/* Quick suggestion chips */}
+            <div className="flex flex-wrap gap-1">
+              {['How are you feeling?', 'Tell me your attack!', 'Ready to battle?', 'Want some meat?'].map((prompt, i) => (
                 <button
-                  type="submit"
-                  disabled={!chatInputText.trim() || isAiThinking}
-                  className="p-2 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-slate-950 rounded-xl cursor-pointer disabled:opacity-40 transition-all active:scale-95 shadow-md shadow-cyan-500/20 flex items-center justify-center"
+                  key={i}
+                  onClick={() => handleSendUserChat(prompt)}
+                  disabled={isAiThinking}
+                  className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 active:scale-95 transition-all cursor-pointer disabled:opacity-40"
                 >
-                  {isAiThinking ? (
-                    <Sparkles className="w-3.5 h-3.5 animate-spin" />
-                  ) : (
-                    <Send className="w-3.5 h-3.5" />
-                  )}
+                  {prompt}
                 </button>
-              </form>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </motion.div>
+              ))}
+            </div>
+
+            {/* Input field + Send button */}
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleSendUserChat(chatInputText);
+              }}
+              className="flex items-center gap-1.5 pt-0.5"
+            >
+              <input
+                type="text"
+                value={chatInputText}
+                onChange={(e) => setChatInputText(e.target.value)}
+                placeholder={isAiThinking ? `${species?.name || 'Digimon'} is thinking...` : `Say something to ${species?.name || 'Digimon'}...`}
+                className="flex-1 bg-slate-900 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-cyan-400 font-sans placeholder:text-slate-500"
+              />
+              <button
+                type="submit"
+                disabled={!chatInputText.trim() || isAiThinking}
+                className="p-2 bg-gradient-to-r from-cyan-500 to-blue-500 hover:from-cyan-400 hover:to-blue-400 text-slate-950 rounded-xl cursor-pointer disabled:opacity-40 transition-all active:scale-95 shadow-md shadow-cyan-500/20 flex items-center justify-center"
+              >
+                {isAiThinking ? (
+                  <Sparkles className="w-3.5 h-3.5 animate-spin" />
+                ) : (
+                  <Send className="w-3.5 h-3.5" />
+                )}
+              </button>
+            </form>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };

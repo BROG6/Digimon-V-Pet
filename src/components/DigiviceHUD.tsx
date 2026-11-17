@@ -242,8 +242,12 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
 
       const roll = Math.random();
       if (roll < 0.45) {
-        // Walk across the screen
-        const targetX = Math.random() < 0.5 ? Math.max(18, monX - 25) : Math.min(82, monX + 25);
+        // Walk widely across the expanded LCD screen (15% to 85%)
+        const goLeft = monX > 72 ? true : monX < 28 ? false : Math.random() < 0.5;
+        const step = 22 + Math.random() * 26;
+        const targetX = goLeft
+          ? Math.max(15, Math.round(monX - step))
+          : Math.min(85, Math.round(monX + step));
         const newFacing = targetX > monX ? 'right' : 'left';
         setFacing(newFacing);
         setInternalPose('walking');
@@ -374,10 +378,10 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
   const screenBorderColor = isLightsOff ? 'border-[#22c55e]/50' : 'border-[#0a120c]/40';
 
   return (
-    <div className="flex flex-col items-center justify-center p-2 sm:p-4 select-none">
+    <div className="w-full flex flex-col items-center justify-center py-1 sm:py-2 px-0 select-none">
       
       {/* AUTHENTIC DIGIVICE TOY COLORWAYS SELECTOR */}
-      <div className="flex flex-col items-center mb-3">
+      <div className="flex flex-col items-center mb-3 px-2">
         <div className="flex items-center gap-1.5 px-3 py-1 bg-slate-900/90 rounded-full border border-slate-700/80 shadow-md">
           <Palette className="w-3.5 h-3.5 text-amber-400" />
           <span className="font-pixel text-[9px] text-slate-300">
@@ -405,7 +409,7 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
       </div>
 
       {/* QUICK STATUS BAR: DIGIBITS & EVOLUTION BADGE (OUTSIDE THE TOY CASING) */}
-      <div className="flex items-center justify-between w-[360px] sm:w-[430px] mb-2 px-2 z-10">
+      <div className="flex items-center justify-between w-full mb-2 px-2.5 sm:px-3 z-10">
         <div className="flex items-center gap-2">
           {canEvolve && (
             <motion.button
@@ -433,9 +437,9 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
       </div>
 
       {/* ========================================================== */}
-      {/* 1997 BANDAI BRICK DIGIVICE HARDWARE CHASSIS (PHOTO REPLICA) */}
+      {/* 1997 BANDAI BRICK DIGIVICE HARDWARE CHASSIS (EDGE-TO-EDGE) */}
       {/* ========================================================== */}
-      <div className="relative flex items-center">
+      <div className="relative flex items-center w-full">
         
         {/* Top authentic molded connectors & pins on top edge */}
         <div className="absolute -top-3 left-1/3 -translate-x-1/2 flex items-end gap-3 pointer-events-none z-20">
@@ -446,12 +450,12 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
           <div className="w-2.5 h-2 bg-[#94a3b8] rounded-t-sm border border-[#475569] shadow-sm" />
         </div>
 
-        {/* Master Brick Casing with Chamfered Corners */}
+        {/* Master Brick Casing with Chamfered Corners (Edge-to-Edge Full Width) */}
         <div 
-          className={`relative w-full max-w-[370px] sm:max-w-[430px] h-[245px] sm:h-[265px] ${currentShell.bg} border-4 ${currentShell.border} p-2 sm:p-4 shadow-[0_25px_50px_rgba(0,0,0,0.85),inset_0_2px_4px_rgba(255,255,255,0.35),inset_0_-3px_6px_rgba(0,0,0,0.6)] flex items-center justify-between mx-auto`}
+          className={`relative w-full h-[270px] sm:h-[325px] ${currentShell.bg} border-y-4 border-x-2 sm:border-4 ${currentShell.border} px-2 sm:px-4 py-2 sm:py-3 shadow-[0_25px_50px_rgba(0,0,0,0.85),inset_0_2px_4px_rgba(255,255,255,0.35),inset_0_-3px_6px_rgba(0,0,0,0.6)] flex items-center justify-between gap-1 sm:gap-2`}
           style={{
             // Authentic 45-degree chamfered beveled corners
-            clipPath: 'polygon(16px 0, calc(100% - 16px) 0, 100% 16px, 100% calc(100% - 16px), calc(100% - 16px) 100%, 16px 100%, 0 calc(100% - 16px), 0 16px)',
+            clipPath: 'polygon(14px 0, calc(100% - 14px) 0, 100% 14px, 100% calc(100% - 14px), calc(100% - 14px) 100%, 14px 100%, 0 calc(100% - 14px), 0 14px)',
           }}
         >
           {/* EMBOSSED BRICK WALL GROOVE PATTERN (MATCHING REFERENCE PHOTO) */}
@@ -477,8 +481,8 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
             <div className="absolute top-[75%] bottom-0 left-[86%] w-[2.5px] bg-black/55" />
           </div>
 
-          {/* LEFT CHASSIS: BRUSHED METAL SCREEN CAGE & LCD SCREEN */}
-          <div className="relative z-10 w-[228px] sm:w-[285px] h-[210px] sm:h-[225px] flex items-center justify-center shrink-0">
+          {/* LEFT CHASSIS: BRUSHED METAL SCREEN CAGE & EXPANDED LCD SCREEN */}
+          <div className="relative z-10 flex-1 min-w-0 h-[232px] sm:h-[280px] flex items-center justify-center">
             
             {/* THE BRUSHED METAL CAGE (FRAMING THE LCD SCREEN) */}
             {/* Top Rail with Claws */}
@@ -517,7 +521,7 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
 
             {/* THE LCD SCREEN WINDOW (FULL-COLOR DIGITAL WORLD LANDSCAPE) */}
             <div 
-              className={`relative w-[202px] sm:w-[255px] h-[175px] sm:h-[190px] rounded-lg border-2 border-[#090d16] p-1 sm:p-1.5 overflow-hidden flex flex-col justify-between shadow-[inset_0_4px_10px_rgba(0,0,0,0.8)] z-20 ${
+              className={`absolute top-3 bottom-3 left-3 right-7 rounded-lg border-2 border-[#090d16] p-1.5 sm:p-2 overflow-hidden flex flex-col justify-between shadow-[inset_0_4px_10px_rgba(0,0,0,0.8)] z-20 ${
                 isLightsOff ? 'bg-[#081813]' : 'bg-gradient-to-b from-[#38bdf8] via-[#7dd3fc] 55% to-[#16a34a]'
               }`}
             >
@@ -600,12 +604,13 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
                     </motion.div>
                   )}
 
-                  {/* Center stage: Digimon Sprite walking and moving inside LCD */}
-                  <div className="relative flex-1 flex items-end justify-center pb-0.5">
+                  {/* Center stage: Digimon Sprite walking and moving across full LCD width */}
+                  <div className="relative flex-1 w-full pb-0.5">
                     <div
-                      className="transition-all duration-700 ease-linear flex flex-col items-center z-10"
+                      className="absolute bottom-0.5 transition-[left] duration-[1600ms] ease-linear flex flex-col items-center z-10"
                       style={{
-                        transform: `translateX(${(monX - 50) * 0.9}px)`,
+                        left: `${monX}%`,
+                        transform: 'translateX(-50%)',
                       }}
                     >
                       <DigimonSprite
@@ -614,7 +619,7 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
                         pose={internalPose}
                         facing={facing}
                         lcdMode={false}
-                        scale={0.85}
+                        scale={0.92}
                       />
                     </div>
                   </div>
@@ -773,7 +778,7 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
           </div>
 
           {/* RIGHT CHASSIS: MOLDED CIRCULAR WELLS & 3 DARK CHARCOAL BUTTONS (A, B, C) */}
-          <div className="relative z-10 flex flex-col items-center justify-between h-[215px] sm:h-[225px] pr-1 sm:pr-2">
+          <div className="relative z-10 shrink-0 flex flex-col items-center justify-between h-[232px] sm:h-[280px] pl-2 sm:pl-3 pr-0.5 sm:pr-2">
             
             {/* BUTTON A: Select (with molded UP arrow above it) */}
             <div className="flex flex-col items-center">
@@ -854,7 +859,7 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
         {/* BOTTOM-RIGHT MOLDED CORNER EYELET LUG & AUTHENTIC CHROME KEYCHAIN (MATCHING PHOTO) */}
         <div 
           onClick={handleKeychainJingle}
-          className="absolute -bottom-14 right-1 z-30 cursor-pointer flex flex-col items-center group pointer-events-auto"
+          className="absolute -bottom-14 right-2 z-30 cursor-pointer flex flex-col items-center group pointer-events-auto"
           title="Click to jingle Digivice Keychain!"
         >
           {/* Triangular molded plastic lug on corner */}

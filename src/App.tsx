@@ -23,6 +23,7 @@ import { ShopModal } from './components/ShopModal';
 import { PwaInstallModal } from './components/PwaInstallModal';
 import { NativePipOverlay } from './components/NativePipOverlay';
 import { DigiChat } from './components/DigiChat';
+import { DigimonTalkModal } from './components/DigimonTalkModal';
 import { DigimonGallery } from './components/DigimonGallery';
 import { AppUpdateModal } from './components/AppUpdateModal';
 import { checkForUpdate, UpdateManifest, getAutoCheckEnabled } from './utils/appUpdater';
@@ -124,6 +125,7 @@ export default function App() {
   const [isPwaModalOpen, setIsPwaModalOpen] = useState<boolean>(false);
   const [isNativePipOpen, setIsNativePipOpen] = useState<boolean>(false);
   const [isChatOpen, setIsChatOpen] = useState<boolean>(false);
+  const [isTalkModalOpen, setIsTalkModalOpen] = useState<boolean>(false);
   const [isGalleryOpen, setIsGalleryOpen] = useState<boolean>(false);
   const [isGalleryHidden, setIsGalleryHidden] = useState<boolean>(() => getHideGalleryButtonPref());
   const [isCareSheetOpen, setIsCareSheetOpen] = useState<boolean>(false);
@@ -132,8 +134,9 @@ export default function App() {
   const [updateManifest, setUpdateManifest] = useState<UpdateManifest | null>(null);
   const [hasUpdateAvailable, setHasUpdateAvailable] = useState<boolean>(false);
 
-  // Background Auto-Updater check on startup
+  // Background Auto-Updater check on startup (Native APK builds only — Web app is always up to date)
   useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
     if (!getAutoCheckEnabled()) return;
     const timer = setTimeout(() => {
       checkForUpdate()
@@ -814,17 +817,17 @@ export default function App() {
               setIsUpdateModalOpen(true);
             }}
             className={`relative p-1.5 rounded-xl border transition-colors cursor-pointer ${
-              hasUpdateAvailable
+              Capacitor.isNativePlatform() && hasUpdateAvailable
                 ? 'bg-amber-950/80 border-amber-500/70 text-amber-300 shadow-md shadow-amber-500/30'
                 : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-300'
             }`}
             title="App Updates & Auto-Updater"
           >
-            <Download className={`w-3.5 h-3.5 ${hasUpdateAvailable ? 'text-amber-400 animate-bounce' : 'text-cyan-400'}`} />
-            {hasUpdateAvailable && (
+            <Download className={`w-3.5 h-3.5 ${Capacitor.isNativePlatform() && hasUpdateAvailable ? 'text-amber-400 animate-bounce' : 'text-cyan-400'}`} />
+            {Capacitor.isNativePlatform() && hasUpdateAvailable && (
               <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-amber-400 rounded-full animate-ping" />
             )}
-            {hasUpdateAvailable && (
+            {Capacitor.isNativePlatform() && hasUpdateAvailable && (
               <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-amber-400 rounded-full border border-slate-950" />
             )}
           </button>
@@ -855,49 +858,53 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* MAIN VIEWPORT: PURE MOBILE PORTRAIT LAYOUT */}
-      <main className="flex-1 flex flex-col items-center justify-start px-3 py-2 relative z-10 max-w-md mx-auto w-full pb-24">
+      {/* MAIN VIEWPORT: EDGE-TO-EDGE MOBILE & TABLET LAYOUT */}
+      <main className="flex-1 flex flex-col items-center justify-start px-0 py-2 relative z-10 max-w-2xl mx-auto w-full pb-24">
         
-        {/* Prominent Auto-Update Available Callout Banner */}
-        {hasUpdateAvailable && updateManifest && (
-          <motion.button
-            initial={{ scale: 0.95, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            whileTap={{ scale: 0.96 }}
-            onClick={() => {
-              sound.playButton();
-              setIsUpdateModalOpen(true);
-            }}
-            className="w-full mb-2 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-500 text-slate-950 py-2.5 px-3.5 rounded-2xl font-pixel text-xs font-bold shadow-lg shadow-amber-500/25 flex items-center justify-between cursor-pointer active:scale-98 border-2 border-amber-300"
-          >
-            <div className="flex items-center gap-2">
-              <Download className="w-4 h-4 text-slate-950 animate-bounce shrink-0" />
-              <span className="truncate">NEW UPDATE: v{updateManifest.versionName} AVAILABLE!</span>
-            </div>
-            <span className="bg-slate-950 text-amber-300 px-2.5 py-0.5 rounded-full text-[9px] shrink-0 font-bold border border-amber-400/50">
-              UPDATE NOW
-            </span>
-          </motion.button>
+        {/* Prominent Auto-Update Available Callout Banner (Native Android APK only — Web is always up-to-date) */}
+        {Capacitor.isNativePlatform() && hasUpdateAvailable && updateManifest && (
+          <div className="w-full px-2.5 sm:px-4">
+            <motion.button
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              whileTap={{ scale: 0.96 }}
+              onClick={() => {
+                sound.playButton();
+                setIsUpdateModalOpen(true);
+              }}
+              className="w-full mb-2 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-500 text-slate-950 py-2.5 px-3.5 rounded-2xl font-pixel text-xs font-bold shadow-lg shadow-amber-500/25 flex items-center justify-between cursor-pointer active:scale-98 border-2 border-amber-300"
+            >
+              <div className="flex items-center gap-2">
+                <Download className="w-4 h-4 text-slate-950 animate-bounce shrink-0" />
+                <span className="truncate">NEW UPDATE: v{updateManifest.versionName} AVAILABLE!</span>
+              </div>
+              <span className="bg-slate-950 text-amber-300 px-2.5 py-0.5 rounded-full text-[9px] shrink-0 font-bold border border-amber-400/50">
+                UPDATE NOW
+              </span>
+            </motion.button>
+          </div>
         )}
         
         {/* Prominent Evolution Ready Callout Banner */}
         {evolutionCheck.can && (
-          <motion.button
-            animate={{ scale: [1, 1.03, 1] }}
-            transition={{ repeat: Infinity, duration: 0.8 }}
-            onClick={() => {
-              triggerHaptic('success');
-              triggerEvolution();
-            }}
-            className="w-full mb-2.5 bg-gradient-to-r from-amber-400 via-orange-400 to-amber-300 text-slate-950 py-2.5 px-4 rounded-2xl font-pixel text-xs font-bold shadow-xl shadow-amber-500/30 border-2 border-amber-300 cursor-pointer flex items-center justify-center gap-2 active:scale-95 transition-transform"
-          >
-            <Sparkles className="w-4 h-4 text-slate-950 animate-spin" />
-            <span>⚡ DIGIVOLUTION READY! (TAP TO EVOLVE) ⚡</span>
-          </motion.button>
+          <div className="w-full px-2.5 sm:px-4">
+            <motion.button
+              animate={{ scale: [1, 1.03, 1] }}
+              transition={{ repeat: Infinity, duration: 0.8 }}
+              onClick={() => {
+                triggerHaptic('success');
+                triggerEvolution();
+              }}
+              className="w-full mb-2.5 bg-gradient-to-r from-amber-400 via-orange-400 to-amber-300 text-slate-950 py-2.5 px-4 rounded-2xl font-pixel text-xs font-bold shadow-xl shadow-amber-500/30 border-2 border-amber-300 cursor-pointer flex items-center justify-center gap-2 active:scale-95 transition-transform"
+            >
+              <Sparkles className="w-4 h-4 text-slate-950 animate-spin" />
+              <span>⚡ DIGIVOLUTION READY! (TAP TO EVOLVE) ⚡</span>
+            </motion.button>
+          </div>
         )}
 
         {/* Mobile Vitals Dashboard Bar */}
-        <div className="w-full grid grid-cols-4 gap-1.5 mb-2.5 text-[9px] font-pixel">
+        <div className="w-full px-2.5 sm:px-4 grid grid-cols-4 gap-1.5 mb-2.5 text-[9px] font-pixel">
           {/* Hunger */}
           <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-1.5 flex flex-col items-center">
             <div className="flex items-center gap-1 text-amber-300">
@@ -943,7 +950,7 @@ export default function App() {
           </div>
         </div>
 
-        {/* 1997 Digivice Hardware Shell */}
+        {/* 1997 Digivice Hardware Shell (Edge-to-Edge) */}
         <DigiviceHUD
           pet={pet}
           species={currentSpecies}
@@ -966,16 +973,16 @@ export default function App() {
         />
 
         {/* Quick Care Actions Ribbon */}
-        <div className="w-full grid grid-cols-2 gap-2 mt-3">
+        <div className="w-full px-2.5 sm:px-4 grid grid-cols-3 gap-2 mt-3">
           <button
             onClick={() => {
               handleFeedMeat();
               triggerHaptic('heavy');
             }}
-            className="py-2.5 px-3 bg-slate-900/90 hover:bg-slate-800 border border-amber-500/40 rounded-2xl flex items-center justify-center gap-2 font-pixel text-[11px] text-amber-300 shadow-md active:scale-95 transition-all cursor-pointer"
+            className="py-2.5 px-2 bg-slate-900/90 hover:bg-slate-800 border border-amber-500/40 rounded-2xl flex items-center justify-center gap-1.5 font-pixel text-[10px] text-amber-300 shadow-md active:scale-95 transition-all cursor-pointer"
           >
             <span className="text-base">🍖</span>
-            <span>FEED MEAT ({pet.bigMeatStock})</span>
+            <span className="truncate">MEAT ({pet.bigMeatStock})</span>
           </button>
 
           <button
@@ -983,16 +990,28 @@ export default function App() {
               handleGiveVitamin();
               triggerHaptic('heavy');
             }}
-            className="py-2.5 px-3 bg-slate-900/90 hover:bg-slate-800 border border-purple-500/40 rounded-2xl flex items-center justify-center gap-2 font-pixel text-[11px] text-purple-300 shadow-md active:scale-95 transition-all cursor-pointer"
+            className="py-2.5 px-2 bg-slate-900/90 hover:bg-slate-800 border border-purple-500/40 rounded-2xl flex items-center justify-center gap-1.5 font-pixel text-[10px] text-purple-300 shadow-md active:scale-95 transition-all cursor-pointer"
           >
             <span className="text-base">💊</span>
-            <span>VITAMIN ({pet.vitaminStock})</span>
+            <span className="truncate">VIT ({pet.vitaminStock})</span>
+          </button>
+
+          <button
+            onClick={() => {
+              sound.playButton();
+              triggerHaptic('light');
+              setIsTalkModalOpen(true);
+            }}
+            className="py-2.5 px-2 bg-slate-900/90 hover:bg-slate-800 border border-cyan-500/40 rounded-2xl flex items-center justify-center gap-1.5 font-pixel text-[10px] text-cyan-300 shadow-md active:scale-95 transition-all cursor-pointer"
+          >
+            <MessageSquare className="w-4 h-4 text-cyan-400 shrink-0" />
+            <span className="truncate">TALK</span>
           </button>
         </div>
 
         {/* Poop cleaning / Sickness urgent alerts */}
         {(pet.poopCount > 0 || pet.isSick) && (
-          <div className="w-full flex gap-2 mt-2">
+          <div className="w-full px-2.5 sm:px-4 flex gap-2 mt-2">
             {pet.poopCount > 0 && (
               <button
                 onClick={() => {
@@ -1248,7 +1267,7 @@ export default function App() {
                 >
                   <Download className="w-5 h-5 text-amber-400 shrink-0" />
                   <span className="truncate">AUTO UPDATER</span>
-                  {hasUpdateAvailable && (
+                  {Capacitor.isNativePlatform() && hasUpdateAvailable && (
                     <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-amber-400 animate-ping" />
                   )}
                 </button>
@@ -1490,6 +1509,14 @@ export default function App() {
         species={currentSpecies}
         isOpen={isChatOpen}
         onClose={() => setIsChatOpen(false)}
+      />
+
+      <DigimonTalkModal
+        pet={pet}
+        species={currentSpecies}
+        egg={pet.stage === 'egg' ? currentEgg : undefined}
+        isOpen={isTalkModalOpen}
+        onClose={() => setIsTalkModalOpen(false)}
       />
 
       <EvolutionModal

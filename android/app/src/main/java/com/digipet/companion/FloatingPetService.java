@@ -130,8 +130,8 @@ public class FloatingPetService extends Service {
         }
 
         // Expanded viewport for higher speech bubbles behind the head & seamless roaming
-        int viewW = dpToPx(140);
-        int viewH = dpToPx(138);
+        int viewW = dpToPx(154);
+        int viewH = dpToPx(152);
         params = new WindowManager.LayoutParams(
             viewW,
             viewH,
@@ -346,8 +346,8 @@ public class FloatingPetService extends Service {
             "var bubble = document.getElementById('bubble');" +
             "var stage = document.getElementById('stage');" +
 
-            // 20% bigger sprite scale (1.11 vs 0.925)
-            "var scale = 1.11;" +
+            // +10% larger sprite scale (1.22 vs 1.11)
+            "var scale = 1.22;" +
             "var facingRight = true;" +
             "var posX = 45;" +
             "var targetX = 45;" +

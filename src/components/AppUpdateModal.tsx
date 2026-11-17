@@ -139,6 +139,8 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
       if (res.error) {
         // Show informative notice while keeping update available
         setErrorMsg(res.error);
+      } else if (!Capacitor.isNativePlatform()) {
+        setSuccessMsg('Web App is always up to date with the latest live release! 🌐');
       } else if (res.updateAvailable) {
         setSuccessMsg(`New version v${res.manifest?.versionName} is ready to install! (${res.source === 'github' ? 'From GitHub Releases' : 'From Digi-Cloud'})`);
         if (playSfx) sound.playVictory();
@@ -287,7 +289,8 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
 
   if (!isOpen) return null;
 
-  const isUpdateAvailable = !!(manifest && (
+  const isNative = Capacitor.isNativePlatform();
+  const isUpdateAvailable = isNative && !!(manifest && (
     Number(manifest.versionCode) > Number(appInfo.versionCode) || 
     isVersionNewer(manifest.versionName, appInfo.versionName)
   ));
@@ -350,7 +353,7 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
                   ? 'bg-amber-500/20 text-amber-300 border border-amber-500/50 animate-pulse'
                   : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
               }`}>
-                {isUpdateAvailable ? `v${manifest?.versionName} AVAILABLE` : `v${appInfo.versionName} LATEST`}
+                {isUpdateAvailable ? `v${manifest?.versionName} AVAILABLE` : isNative ? `v${appInfo.versionName} LATEST` : 'WEB LIVE LATEST'}
               </span>
             </div>
 

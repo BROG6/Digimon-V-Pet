@@ -244,7 +244,7 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
           ? config.frames.standing
           : [{ x: 0, y: 0, w: 32, h: 32 }];
 
-        const renderScale = 1.3;
+        const renderScale = 1.43;
         const usesSharedStage = Boolean(config?.stageWidth && config?.stageHeight);
         const frameIndex = usesSharedStage
           ? Math.floor(performance.now() / 62.5) % Math.max(1, walkFrames.length)
@@ -440,7 +440,7 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
           <div style="width: 80px; height: 80px; display: flex; align-items: center; justify-content: center; position: relative; margin: 4px 0;">
             ${
               spriteSrc && walkFrame0
-                ? `<div style="width: ${walkFrame0.w}px; height: ${walkFrame0.h}px; background-image: url('${spriteSrc}'); background-position: -${walkFrame0.x}px -${walkFrame0.y}px; background-repeat: no-repeat; image-rendering: pixelated; transform: scale(1.4); transform-origin: center;"></div>`
+                ? `<div style="width: ${walkFrame0.w}px; height: ${walkFrame0.h}px; background-image: url('${spriteSrc}'); background-position: -${walkFrame0.x}px -${walkFrame0.y}px; background-repeat: no-repeat; image-rendering: pixelated; transform: scale(1.54); transform-origin: center;"></div>`
                 : `<div style="font-size: 40px;">👾</div>`
             }
           </div>

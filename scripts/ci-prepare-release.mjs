@@ -11,7 +11,7 @@ function runGit(cmd) {
 }
 
 function parseSemver(ver) {
-  const clean = String(ver || '1.0.0').trim().replace(/^[vV]/, '');
+  const clean = String(ver || '1.0.0').trim().replace(/^[vV]/, '').split('+')[0].split('-')[0];
   const parts = clean.split('.').map((n) => parseInt(n, 10) || 0);
   return [parts[0] || 0, parts[1] || 0, parts[2] || 0];
 }
@@ -33,6 +33,10 @@ function bumpPatch(ver) {
     patch = 0;
     minor += 1;
   }
+  if (minor > 9) {
+    minor = 0;
+    major += 1;
+  }
   return `${major}.${minor}.${patch}`;
 }
 
@@ -47,28 +51,39 @@ const versionJsonPath = path.join(root, 'public', 'version.json');
 const gradlePath = path.join(root, 'android', 'app', 'build.gradle');
 
 const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf-8'));
-const pkgVersion = pkg.version || '1.2.2';
+const pkgVersion = pkg.version || '1.2.3';
 const eventName = process.env.GITHUB_EVENT_NAME || 'push';
 
 // Fetch remote tags if in a git repository
 runGit('git fetch --tags --force');
 
-const allTagsRaw = runGit('git tag --list "v*" --sort=-v:refname');
-const allTags = allTagsRaw ? allTagsRaw.split('\n').map((t) => t.trim()).filter(Boolean) : [];
+const allTagsRaw = runGit('git tag --list "v*"');
+const allTags = (allTagsRaw ? allTagsRaw.split('\n').map((t) => t.trim()).filter(Boolean) : [])
+  .filter((t) => /^[vV]\d+\.\d+\.\d+$/.test(t))
+  .sort((a, b) => compareSemver(b.replace(/^[vV]/, ''), a.replace(/^[vV]/, '')));
+
 const lastTag = allTags[0] || '';
 const lastTagVersion = lastTag ? lastTag.replace(/^[vV]/, '') : '';
 const pkgTagExists = allTags.includes(`v${pkgVersion}`) || allTags.includes(pkgVersion);
+
+const headMsg = runGit('git log -1 --pretty=%B');
+const skipRequested = /\[(skip release|no release)\]/i.test(headMsg);
 
 let shouldRelease = false;
 let releaseVersion = pkgVersion;
 let reason = '';
 
-if (eventName === 'workflow_dispatch') {
+if (skipRequested && eventName !== 'workflow_dispatch') {
+  shouldRelease = false;
+  releaseVersion = lastTagVersion || pkgVersion;
+  reason = 'Commit message requested [skip release].';
+} else if (eventName === 'workflow_dispatch') {
   shouldRelease = true;
-  if (lastTagVersion && compareSemver(lastTagVersion, pkgVersion) >= 0) {
-    releaseVersion = bumpPatch(lastTagVersion);
-  } else if (pkgTagExists && lastTagVersion) {
-    releaseVersion = bumpPatch(lastTagVersion);
+  if (!pkgTagExists && (!lastTagVersion || compareSemver(pkgVersion, lastTagVersion) > 0)) {
+    releaseVersion = pkgVersion;
+  } else {
+    const baseVer = lastTagVersion && compareSemver(lastTagVersion, pkgVersion) >= 0 ? lastTagVersion : pkgVersion;
+    releaseVersion = bumpPatch(baseVer);
   }
   reason = `Manual workflow_dispatch release v${releaseVersion}.`;
 } else if (!lastTag) {
@@ -82,15 +97,15 @@ if (eventName === 'workflow_dispatch') {
 } else {
   const countStr = runGit(`git rev-list --count "${lastTag}..HEAD"`);
   const commitsSinceTag = parseInt(countStr || '0', 10) || 0;
-  if (commitsSinceTag >= 2) {
+  if (commitsSinceTag >= 1) {
     shouldRelease = true;
     const baseVer = compareSemver(lastTagVersion, pkgVersion) >= 0 ? lastTagVersion : pkgVersion;
     releaseVersion = bumpPatch(baseVer);
-    reason = `${commitsSinceTag} changes since ${lastTag} — publishing every 2nd change release v${releaseVersion}.`;
+    reason = `${commitsSinceTag} commit(s) pushed since ${lastTag} — auto-bumping to release v${releaseVersion}.`;
   } else {
     shouldRelease = false;
     releaseVersion = lastTagVersion || pkgVersion;
-    reason = `Only ${commitsSinceTag} change since ${lastTag} — skipping release until the 2nd change.`;
+    reason = `HEAD is already tagged at ${lastTag} — skipping duplicate release.`;
   }
 }
 
@@ -109,6 +124,13 @@ if (lastTag) {
   }
 }
 
+let existingVersionJsonVer = '';
+if (fs.existsSync(versionJsonPath)) {
+  try {
+    existingVersionJsonVer = JSON.parse(fs.readFileSync(versionJsonPath, 'utf-8')).versionName || '';
+  } catch {}
+}
+
 // Synchronize package.json, public/version.json, and android/app/build.gradle for the build
 if (shouldRelease) {
   if (pkg.version !== releaseVersion) {
@@ -118,11 +140,12 @@ if (shouldRelease) {
 
   if (fs.existsSync(versionJsonPath)) {
     const vj = JSON.parse(fs.readFileSync(versionJsonPath, 'utf-8'));
+    const versionJsonMatchesRelease = existingVersionJsonVer === releaseVersion;
     vj.versionName = releaseVersion;
     vj.versionCode = versionCode;
     vj.releaseDate = new Date().toISOString().slice(0, 10);
     vj.apkFileName = `digipet-v${releaseVersion}.apk`;
-    if (commitBullets.length > 0 && releaseVersion !== pkgVersion) {
+    if (commitBullets.length > 0 && !versionJsonMatchesRelease) {
       vj.releaseName = `DigiPet v${releaseVersion} Auto-Release`;
       vj.changelog = commitBullets;
     }
@@ -138,7 +161,7 @@ if (shouldRelease) {
 }
 
 let releaseNotes = '';
-if (fs.existsSync(versionJsonPath)) {
+if (existingVersionJsonVer === releaseVersion && fs.existsSync(versionJsonPath)) {
   try {
     const vj = JSON.parse(fs.readFileSync(versionJsonPath, 'utf-8'));
     if (Array.isArray(vj.changelog) && vj.changelog.length > 0) {
@@ -148,6 +171,14 @@ if (fs.existsSync(versionJsonPath)) {
 }
 if (!releaseNotes && commitBullets.length > 0) {
   releaseNotes = commitBullets.map((c) => `- ${c}`).join('\n');
+}
+if (!releaseNotes && fs.existsSync(versionJsonPath)) {
+  try {
+    const vj = JSON.parse(fs.readFileSync(versionJsonPath, 'utf-8'));
+    if (Array.isArray(vj.changelog) && vj.changelog.length > 0) {
+      releaseNotes = vj.changelog.map((c) => `- ${c}`).join('\n');
+    }
+  } catch {}
 }
 if (!releaseNotes) {
   releaseNotes = `- Release v${releaseVersion} build with latest Digivice, AI chat, and mini-game updates.`;

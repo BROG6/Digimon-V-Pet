@@ -1,17 +1,18 @@
 {
-  "versionName": "1.2.2",
-  "versionCode": 122,
+  "versionName": "1.2.3",
+  "versionCode": 123,
   "releaseDate": "2026-11-17",
-  "releaseName": "Proportional Digivice, Gemini 4 AI Chat & Mini-Game Upgrades",
+  "releaseName": "Pixel Item Sprites, Training Punching Bag, Flush Wave & Auto-Updater v1.2.3",
   "changelog": [
-    "Proportional Digivice scaling preserving brick aspect ratio with wider LCD roaming",
-    "Upgraded Talk to Digimon AI dialogue powered by Gemini 4 with full species lore & chat history",
-    "Meat Catch mini-game: walking/idle animations, collected vitamins added to stock, apples removed",
-    "Increased floating sprite sizes by 10% across overlays and Picture-in-Picture",
-    "Suppressed update banner on Web builds and automated every-2nd-change GitHub releases"
+    "Retro pixel-art meat, vitamin pill, bad meat, golden poop, and swinging punching bag sprites",
+    "Faster Dojo training & Meat Catch mini-games with compact Critical Hit pill and Bad Meat stun",
+    "1997 Digivice right-to-left LCD flush wave animation when clearing poop",
+    "Strict build.gradle versionName auto-updater comparison with redundant-notification prevention",
+    "Automatic GitHub APK release creation on every push with new commits"
   ],
   "apkDownloadUrl": "https://ais-pre-hwfiiqh77iufzd3mdqoptd-750449911930.asia-northeast1.run.app/api/download-apk",
-  "apkFileName": "digipet-v1.2.2.apk",
+  "directDownloadUrl": "https://github.com/BROG6/Digimon-V-Pet/releases/latest/download/digipet-latest.apk",
+  "apkFileName": "digipet-v1.2.3.apk",
   "apkFileSize": "19.2 MB",
   "isMandatory": false
 }

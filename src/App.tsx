@@ -545,15 +545,17 @@ export default function App() {
     }
   };
 
-  const handleFoodGameComplete = (score: number, meatEarned: number, coinsEarned: number) => {
+  const handleFoodGameComplete = (_score: number, meatEarned: number, vitaminsEarned: number, coinsEarned: number) => {
     setPet((prev) => ({
       ...prev,
       bigMeatStock: prev.bigMeatStock + meatEarned,
+      vitaminStock: prev.vitaminStock + vitaminsEarned,
       digiBits: prev.digiBits + coinsEarned,
       hunger: Math.min(100, prev.hunger + 30),
       happiness: Math.min(100, prev.happiness + 20),
     }));
-    showNotification(`Feast Over! Earned +${meatEarned} Big Meat 🍖 & +${coinsEarned} Bits 🪙!`);
+    const vitText = vitaminsEarned > 0 ? `, +${vitaminsEarned} Vitamin${vitaminsEarned === 1 ? '' : 's'} 💊` : '';
+    showNotification(`Feast Over! Earned +${meatEarned} Big Meat 🍖${vitText} & +${coinsEarned} Bits 🪙!`);
   };
 
   const handleBattleEnd = (won: boolean, coinsReward: number, dpReward: number) => {

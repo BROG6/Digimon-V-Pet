@@ -51,15 +51,15 @@ async function startServer() {
         return res.json(JSON.parse(content));
       }
       return res.json({
-        versionName: '1.2.1',
-        versionCode: 4,
-        releaseDate: '2026-11-06',
+        versionName: '1.2.2',
+        versionCode: 122,
+        releaseDate: '2026-11-17',
         changelog: [
-          'Speech bubbles positioned higher and behind Digimon heads in the floating companion overlay',
-          'Interactive Digimon AI dialogue engine: chat directly with your companion powered by Gemini',
-          'GitHub Releases auto-updater backup: automatically detects releases and updates from GitHub repository',
-          'Colosseum battle attack animations: dynamic lunges, critical hit flashes, screen shakes & floating damage numbers',
-          'Native in-app auto-updater: background APK download & seamless installer',
+          'Proportional Digivice scaling preserving brick aspect ratio with wider LCD roaming',
+          'Upgraded Talk to Digimon AI dialogue powered by Gemini 4 with full species lore & chat history',
+          'Meat Catch mini-game: walking/idle animations, collected vitamins added to stock, apples removed',
+          'Increased floating sprite sizes by 10% across overlays and Picture-in-Picture',
+          'Suppressed update banner on Web builds and automated every-2nd-change GitHub releases',
         ]
       });
     } catch (err: any) {
@@ -80,7 +80,7 @@ async function startServer() {
       for (const apkPath of candidates) {
         if (fs.existsSync(apkPath) && fs.statSync(apkPath).size > 1000) {
           res.setHeader('Content-Type', 'application/vnd.android.package-archive');
-          res.setHeader('Content-Disposition', 'attachment; filename="digipet-v1.2.1.apk"');
+          res.setHeader('Content-Disposition', 'attachment; filename="digipet-v1.2.2.apk"');
           return res.sendFile(apkPath);
         }
       }

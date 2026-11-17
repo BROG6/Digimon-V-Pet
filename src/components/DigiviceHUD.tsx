@@ -176,12 +176,42 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
   const nextEvo = species?.nextEvolutions && species.nextEvolutions.length > 0 ? species.nextEvolutions[0] : null;
 
   // AUTONOMOUS MOVEMENT ENGINE INSIDE LCD SCREEN
-  const [monX, setMonX] = useState<number>(50); // percentage 20% to 80%
+  const [monX, setMonX] = useState<number>(50); // percentage 15% to 85%
   const [facing, setFacing] = useState<'left' | 'right'>('right');
   const [internalPose, setInternalPose] = useState<DigimonPose>('standing');
   const isMovingRef = useRef<boolean>(false);
   const isActionLockedRef = useRef<boolean>(false);
   const actionTimersRef = useRef<number[]>([]);
+
+  // PROPORTIONAL UNIFORM SCALING (Preserves authentic 1997 brick aspect ratio until hitting edges)
+  const BASE_WIDTH = 400;
+  const BASE_HEIGHT = 256;
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [hudScale, setHudScale] = useState<number>(1);
+
+  useEffect(() => {
+    const updateScale = () => {
+      const containerW = containerRef.current?.clientWidth || (typeof window !== 'undefined' ? window.innerWidth : BASE_WIDTH);
+      const winH = typeof window !== 'undefined' ? window.innerHeight : 800;
+      const availH = Math.max(210, winH - 375);
+      const scaleByW = containerW / BASE_WIDTH;
+      const scaleByH = availH / BASE_HEIGHT;
+      const nextScale = Math.max(0.75, Math.min(scaleByW, scaleByH));
+      setHudScale(Number(nextScale.toFixed(4)));
+    };
+
+    updateScale();
+    let ro: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined' && containerRef.current) {
+      ro = new ResizeObserver(updateScale);
+      ro.observe(containerRef.current);
+    }
+    window.addEventListener('resize', updateScale);
+    return () => {
+      window.removeEventListener('resize', updateScale);
+      ro?.disconnect();
+    };
+  }, []);
 
   // Active shell theme
   const currentShell = SHELL_STYLES[shellIndex];
@@ -378,7 +408,7 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
   const screenBorderColor = isLightsOff ? 'border-[#22c55e]/50' : 'border-[#0a120c]/40';
 
   return (
-    <div className="w-full flex flex-col items-center justify-center py-1 sm:py-2 px-0 select-none">
+    <div ref={containerRef} className="w-full flex flex-col items-center justify-center py-1 sm:py-2 px-0 select-none">
       
       {/* AUTHENTIC DIGIVICE TOY COLORWAYS SELECTOR */}
       <div className="flex flex-col items-center mb-3 px-2">
@@ -409,7 +439,10 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
       </div>
 
       {/* QUICK STATUS BAR: DIGIBITS & EVOLUTION BADGE (OUTSIDE THE TOY CASING) */}
-      <div className="flex items-center justify-between w-full mb-2 px-2.5 sm:px-3 z-10">
+      <div
+        className="flex items-center justify-between mb-2 px-2 z-10"
+        style={{ width: `${Math.round(BASE_WIDTH * hudScale)}px`, maxWidth: '100%' }}
+      >
         <div className="flex items-center gap-2">
           {canEvolve && (
             <motion.button
@@ -436,10 +469,27 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
         </div>
       </div>
 
-      {/* ========================================================== */}
-      {/* 1997 BANDAI BRICK DIGIVICE HARDWARE CHASSIS (EDGE-TO-EDGE) */}
-      {/* ========================================================== */}
-      <div className="relative flex items-center w-full">
+      {/* ==================================================================== */}
+      {/* 1997 BANDAI BRICK DIGIVICE HARDWARE CHASSIS (PROPORTIONAL SCALING)   */}
+      {/* ==================================================================== */}
+      <div
+        className="relative flex justify-center shrink-0"
+        style={{
+          width: `${Math.round(BASE_WIDTH * hudScale)}px`,
+          height: `${Math.round(BASE_HEIGHT * hudScale)}px`,
+          marginTop: `${Math.round(10 * hudScale)}px`,
+          marginBottom: `${Math.round(46 * hudScale)}px`,
+        }}
+      >
+      <div
+        className="relative flex items-center shrink-0"
+        style={{
+          width: `${BASE_WIDTH}px`,
+          height: `${BASE_HEIGHT}px`,
+          transform: `scale(${hudScale})`,
+          transformOrigin: 'top center',
+        }}
+      >
         
         {/* Top authentic molded connectors & pins on top edge */}
         <div className="absolute -top-3 left-1/3 -translate-x-1/2 flex items-end gap-3 pointer-events-none z-20">
@@ -450,12 +500,12 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
           <div className="w-2.5 h-2 bg-[#94a3b8] rounded-t-sm border border-[#475569] shadow-sm" />
         </div>
 
-        {/* Master Brick Casing with Chamfered Corners (Edge-to-Edge Full Width) */}
+        {/* Master Brick Casing with Chamfered Corners (Authentic Aspect Ratio) */}
         <div 
-          className={`relative w-full h-[270px] sm:h-[325px] ${currentShell.bg} border-y-4 border-x-2 sm:border-4 ${currentShell.border} px-2 sm:px-4 py-2 sm:py-3 shadow-[0_25px_50px_rgba(0,0,0,0.85),inset_0_2px_4px_rgba(255,255,255,0.35),inset_0_-3px_6px_rgba(0,0,0,0.6)] flex items-center justify-between gap-1 sm:gap-2`}
+          className={`relative w-[400px] h-[256px] ${currentShell.bg} border-4 ${currentShell.border} p-3.5 shadow-[0_25px_50px_rgba(0,0,0,0.85),inset_0_2px_4px_rgba(255,255,255,0.35),inset_0_-3px_6px_rgba(0,0,0,0.6)] flex items-center justify-between`}
           style={{
             // Authentic 45-degree chamfered beveled corners
-            clipPath: 'polygon(14px 0, calc(100% - 14px) 0, 100% 14px, 100% calc(100% - 14px), calc(100% - 14px) 100%, 14px 100%, 0 calc(100% - 14px), 0 14px)',
+            clipPath: 'polygon(16px 0, calc(100% - 16px) 0, 100% 16px, 100% calc(100% - 16px), calc(100% - 16px) 100%, 16px 100%, 0 calc(100% - 16px), 0 16px)',
           }}
         >
           {/* EMBOSSED BRICK WALL GROOVE PATTERN (MATCHING REFERENCE PHOTO) */}
@@ -482,7 +532,7 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
           </div>
 
           {/* LEFT CHASSIS: BRUSHED METAL SCREEN CAGE & EXPANDED LCD SCREEN */}
-          <div className="relative z-10 flex-1 min-w-0 h-[232px] sm:h-[280px] flex items-center justify-center">
+          <div className="relative z-10 w-[266px] h-[220px] flex items-center justify-center shrink-0">
             
             {/* THE BRUSHED METAL CAGE (FRAMING THE LCD SCREEN) */}
             {/* Top Rail with Claws */}
@@ -778,7 +828,7 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
           </div>
 
           {/* RIGHT CHASSIS: MOLDED CIRCULAR WELLS & 3 DARK CHARCOAL BUTTONS (A, B, C) */}
-          <div className="relative z-10 shrink-0 flex flex-col items-center justify-between h-[232px] sm:h-[280px] pl-2 sm:pl-3 pr-0.5 sm:pr-2">
+          <div className="relative z-10 shrink-0 flex flex-col items-center justify-between h-[220px] pl-1 pr-1">
             
             {/* BUTTON A: Select (with molded UP arrow above it) */}
             <div className="flex flex-col items-center">
@@ -881,6 +931,7 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
           </div>
         </div>
 
+      </div>
       </div>
 
     </div>

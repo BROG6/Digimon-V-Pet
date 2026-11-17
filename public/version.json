@@ -1,17 +1,17 @@
 {
-  "versionName": "1.2.1",
-  "versionCode": 4,
-  "releaseDate": "2026-11-06",
-  "releaseName": "Elevated Speech Bubbles, Digimon AI Chat & GitHub Releases Backup",
+  "versionName": "1.2.2",
+  "versionCode": 122,
+  "releaseDate": "2026-11-17",
+  "releaseName": "Proportional Digivice, Gemini 4 AI Chat & Mini-Game Upgrades",
   "changelog": [
-    "Speech bubbles positioned higher and behind Digimon heads in the floating companion overlay",
-    "Interactive Digimon AI dialogue engine: chat directly with your companion powered by Gemini",
-    "GitHub Releases auto-updater backup: automatically detects releases and updates from GitHub repository",
-    "Colosseum battle attack animations: dynamic lunges, critical hit flashes, screen shakes & floating damage numbers",
-    "Native in-app auto-updater: background APK download & seamless installer"
+    "Proportional Digivice scaling preserving brick aspect ratio with wider LCD roaming",
+    "Upgraded Talk to Digimon AI dialogue powered by Gemini 4 with full species lore & chat history",
+    "Meat Catch mini-game: walking/idle animations, collected vitamins added to stock, apples removed",
+    "Increased floating sprite sizes by 10% across overlays and Picture-in-Picture",
+    "Suppressed update banner on Web builds and automated every-2nd-change GitHub releases"
   ],
   "apkDownloadUrl": "https://ais-pre-hwfiiqh77iufzd3mdqoptd-750449911930.asia-northeast1.run.app/api/download-apk",
-  "apkFileName": "digipet-v1.2.1.apk",
+  "apkFileName": "digipet-v1.2.2.apk",
   "apkFileSize": "19.2 MB",
   "isMandatory": false
 }

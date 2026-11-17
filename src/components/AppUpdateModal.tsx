@@ -60,8 +60,8 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
   onUpdateDownloaded,
 }) => {
   const [appInfo, setAppInfo] = useState<AppInfo>({
-    versionName: '1.2.1',
-    versionCode: 4,
+    versionName: '1.2.2',
+    versionCode: 122,
     packageName: 'com.digipet.companion',
     isNative: false,
   });

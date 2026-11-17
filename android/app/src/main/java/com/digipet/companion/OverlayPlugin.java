@@ -74,9 +74,11 @@ public class OverlayPlugin extends Plugin {
         }
 
         String speciesName = call.getString("speciesName", "Agumon");
-        String spriteUrl = call.getString("spriteUrl", "file:///android_asset/public/assets/aistudio/Copy_of_Agumon_Adventure_04d0832a.png");
+        String spriteUrl = call.getString("spriteUrl", "file:///android_asset/public/assets/digidestined/agumon.png");
         Integer sheetWidth = call.getInt("sheetWidth", 200);
         Integer sheetHeight = call.getInt("sheetHeight", 200);
+        Integer stageWidth = call.getInt("stageWidth", 0);
+        Integer stageHeight = call.getInt("stageHeight", 0);
         Integer groundOffset = call.getInt("groundOffset", 0);
         String standingFramesJson = call.getString("standingFramesJson", "[]");
         String walkingFramesJson = call.getString("walkingFramesJson", "[]");
@@ -92,6 +94,8 @@ public class OverlayPlugin extends Plugin {
         serviceIntent.putExtra("spriteUrl", spriteUrl);
         serviceIntent.putExtra("sheetWidth", sheetWidth);
         serviceIntent.putExtra("sheetHeight", sheetHeight);
+        serviceIntent.putExtra("stageWidth", stageWidth);
+        serviceIntent.putExtra("stageHeight", stageHeight);
         serviceIntent.putExtra("groundOffset", groundOffset);
         serviceIntent.putExtra("standingFramesJson", standingFramesJson);
         serviceIntent.putExtra("walkingFramesJson", walkingFramesJson);

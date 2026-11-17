@@ -5,6 +5,8 @@ export interface OverlayLaunchParams {
   spriteUrl: string;
   sheetWidth?: number;
   sheetHeight?: number;
+  stageWidth?: number;
+  stageHeight?: number;
   groundOffset?: number;
   frameX: number;
   frameY: number;

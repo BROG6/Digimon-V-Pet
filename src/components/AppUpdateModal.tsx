@@ -60,8 +60,8 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
   onUpdateDownloaded,
 }) => {
   const [appInfo, setAppInfo] = useState<AppInfo>({
-    versionName: '1.2.0',
-    versionCode: 3,
+    versionName: '1.2.1',
+    versionCode: 4,
     packageName: 'com.digipet.companion',
     isNative: false,
   });
@@ -664,7 +664,7 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
                     <div className="flex gap-1.5">
                       <input
                         type="text"
-                        placeholder="brodson/Digimon-V-Pet"
+                        placeholder="BROG6/Digimon-V-Pet"
                         value={githubRepoState}
                         onChange={(e) => setGithubRepoState(e.target.value)}
                         className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-400 font-mono"

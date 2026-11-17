@@ -254,7 +254,7 @@ public class FloatingPetService extends Service {
             : "Digimon";
         String rawSpriteUrl = intent != null && intent.getStringExtra("spriteUrl") != null
             ? intent.getStringExtra("spriteUrl")
-            : "assets/aistudio/Copy_of_Agumon_Adventure_04d0832a.png";
+            : "assets/digidestined/agumon.png";
         
         String relSpriteUrl = rawSpriteUrl;
         if (relSpriteUrl.startsWith("file:///android_asset/public/")) {
@@ -266,6 +266,8 @@ public class FloatingPetService extends Service {
 
         int sheetWidth = intent != null ? intent.getIntExtra("sheetWidth", 200) : 200;
         int sheetHeight = intent != null ? intent.getIntExtra("sheetHeight", 200) : 200;
+        int stageWidth = intent != null ? intent.getIntExtra("stageWidth", 0) : 0;
+        int stageHeight = intent != null ? intent.getIntExtra("stageHeight", 0) : 0;
         int groundOffset = intent != null ? intent.getIntExtra("groundOffset", 0) : 0;
         int frameX = intent != null ? intent.getIntExtra("frameX", 2) : 2;
         int frameY = intent != null ? intent.getIntExtra("frameY", 2) : 2;
@@ -296,7 +298,8 @@ public class FloatingPetService extends Service {
 
             // Pet wrap & upright sprite box (spriteBox has z-index 10 in front of bubble)
             "#petWrap { position:absolute; bottom:8px; left:45px; display:flex; flex-direction:column; align-items:center; transition:none; overflow:visible; }" +
-            "#spriteBox { position:relative; overflow:hidden; z-index:10; }" +
+            "#spriteBox { position:relative; overflow:visible; z-index:10; }" +
+            "#frameClip { position:relative; overflow:hidden; }" +
             "#innerBox { position:absolute; top:50%; left:50%; transform-origin:center center; overflow:hidden; }" +
             "#sheetImg { position:absolute; max-width:none; image-rendering:pixelated; }" +
             "#shadow { width:22px; height:4px; background:rgba(0,0,0,0.35); border-radius:50%; margin-top:1px; z-index:10; }" +
@@ -309,8 +312,10 @@ public class FloatingPetService extends Service {
             "  <div id='petWrap'>" +
             "    <div id='bubble'>Hello Tamer!</div>" +
             "    <div id='spriteBox'>" +
-            "      <div id='innerBox'>" +
-            "        <img id='sheetImg' src='" + relSpriteUrl + "' onerror=\"if(this.getAttribute('data-tried')!=='1'){this.setAttribute('data-tried','1');this.src='" + absSpriteUrl + "';}\" />" +
+            "      <div id='frameClip'>" +
+            "        <div id='innerBox'>" +
+            "          <img id='sheetImg' src='" + relSpriteUrl + "' onerror=\"if(this.getAttribute('data-tried')!=='1'){this.setAttribute('data-tried','1');this.src='" + absSpriteUrl + "';}\" />" +
+            "        </div>" +
             "      </div>" +
             "    </div>" +
             "    <div id='shadow'></div>" +
@@ -319,6 +324,8 @@ public class FloatingPetService extends Service {
             "<script>" +
             "var sheetW = " + sheetWidth + ";" +
             "var sheetH = " + sheetHeight + ";" +
+            "var stageBoxW = " + stageWidth + ";" +
+            "var stageBoxH = " + stageHeight + ";" +
             "var groundOffset = " + groundOffset + ";" +
             "var fallbackFrame = { x: " + frameX + ", y: " + frameY + ", w: " + frameW + ", h: " + frameH + ", rotate: " + frameRotate + " };" +
             "var standingFrames = [];" +
@@ -333,6 +340,7 @@ public class FloatingPetService extends Service {
 
             "var petWrap = document.getElementById('petWrap');" +
             "var spriteBox = document.getElementById('spriteBox');" +
+            "var frameClip = document.getElementById('frameClip');" +
             "var innerBox = document.getElementById('innerBox');" +
             "var sheetImg = document.getElementById('sheetImg');" +
             "var bubble = document.getElementById('bubble');" +
@@ -348,7 +356,7 @@ public class FloatingPetService extends Service {
             "var standFrameIdx = 0;" +
             "var bubbleTimeout = null;" +
 
-            // Upright sprite frame rendering: mirrors DigimonSprite.tsx!
+            // Upright shared-origin sprite frame rendering: mirrors DigimonSprite.tsx!
             "function renderFrame(frame) {" +
             "  if (!frame) return;" +
             "  if (frame.sheetPath) {" +
@@ -364,10 +372,26 @@ public class FloatingPetService extends Service {
             "  var isRot = (rot === 90 || rot === -90 || rot === 270);" +
             "  var dw = (isRot ? frame.h : frame.w) * scale;" +
             "  var dh = (isRot ? frame.w : frame.h) * scale;" +
-            "  var effOffset = ((frame.offsetY || 0) + groundOffset) * scale;" +
-            "  spriteBox.style.width = dw + 'px';" +
-            "  spriteBox.style.height = dh + 'px';" +
-            "  spriteBox.style.transform = 'translateY(' + effOffset + 'px) scaleX(' + (facingRight ? 1 : -1) + ')';" +
+            "  if (stageBoxW > 0 && stageBoxH > 0) {" +
+            "    spriteBox.style.width = (stageBoxW * scale) + 'px';" +
+            "    spriteBox.style.height = (stageBoxH * scale) + 'px';" +
+            "    spriteBox.style.transform = 'scaleX(' + (facingRight ? 1 : -1) + ')';" +
+            "    frameClip.style.position = 'absolute';" +
+            "    frameClip.style.left = ((frame.offsetX || 0) * scale) + 'px';" +
+            "    frameClip.style.top = (((frame.offsetY || 0) + groundOffset) * scale) + 'px';" +
+            "    frameClip.style.width = dw + 'px';" +
+            "    frameClip.style.height = dh + 'px';" +
+            "  } else {" +
+            "    var effOffset = ((frame.offsetY || 0) + groundOffset) * scale;" +
+            "    spriteBox.style.width = dw + 'px';" +
+            "    spriteBox.style.height = dh + 'px';" +
+            "    spriteBox.style.transform = 'translateY(' + effOffset + 'px) scaleX(' + (facingRight ? 1 : -1) + ')';" +
+            "    frameClip.style.position = 'relative';" +
+            "    frameClip.style.left = '0px';" +
+            "    frameClip.style.top = '0px';" +
+            "    frameClip.style.width = dw + 'px';" +
+            "    frameClip.style.height = dh + 'px';" +
+            "  }" +
             "  innerBox.style.width = (frame.w * scale) + 'px';" +
             "  innerBox.style.height = (frame.h * scale) + 'px';" +
             "  innerBox.style.transform = 'translate(-50%, -50%) ' + (rot ? 'rotate(' + rot + 'deg)' : '');" +
@@ -424,7 +448,7 @@ public class FloatingPetService extends Service {
             "  }" +
             "}, 25);" +
 
-            // Frame animation step
+            // Frame animation step (16 fps = 62.5 ms per frame)
             "setInterval(function() {" +
             "  if (isWalking) {" +
             "    walkFrameIdx = (walkFrameIdx + 1) % walkingFrames.length;" +
@@ -433,7 +457,7 @@ public class FloatingPetService extends Service {
             "    standFrameIdx = (standFrameIdx + 1) % standingFrames.length;" +
             "    renderFrame(standingFrames[standFrameIdx]);" +
             "  }" +
-            "}, 140);" +
+            "}, 62);" +
 
             // AI Behavior Decision: Roams frequently (every 2.0s, 75% chance to walk)
             "setInterval(function() {" +

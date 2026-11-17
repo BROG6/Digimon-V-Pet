@@ -244,7 +244,11 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
           ? config.frames.standing
           : [{ x: 0, y: 0, w: 32, h: 32 }];
 
-        const frameIndex = Math.floor(frame / 12) % Math.max(1, walkFrames.length);
+        const renderScale = 1.3;
+        const usesSharedStage = Boolean(config?.stageWidth && config?.stageHeight);
+        const frameIndex = usesSharedStage
+          ? Math.floor(performance.now() / 62.5) % Math.max(1, walkFrames.length)
+          : Math.floor(frame / 12) % Math.max(1, walkFrames.length);
         const currentFrame = walkFrames[frameIndex] || walkFrames[0] || { x: 0, y: 0, w: 32, h: 32 };
 
         const srcX = currentFrame.x || 0;
@@ -252,13 +256,23 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
         const srcW = Math.max(1, currentFrame.w || 32);
         const srcH = Math.max(1, currentFrame.h || 32);
 
-        const renderScale = 1.3;
         const destW = srcW * renderScale;
         const destH = srcH * renderScale;
 
-        const totalGroundOffset = (((currentFrame.offsetY || 0) + (config?.groundOffset || 0)) * renderScale) || 0;
-        const destY = floorY - destH - totalGroundOffset;
-        const destX = xPos - destW / 2;
+        let destX: number;
+        let destY: number;
+        if (usesSharedStage) {
+          const stageW = (config!.stageWidth || srcW) * renderScale;
+          const stageH = (config!.stageHeight || srcH) * renderScale;
+          const stageLeft = xPos - stageW / 2;
+          const stageTop = floorY - stageH;
+          destX = stageLeft + (currentFrame.offsetX || 0) * renderScale;
+          destY = stageTop + ((currentFrame.offsetY || 0) + (config?.groundOffset || 0)) * renderScale;
+        } else {
+          const totalGroundOffset = (((currentFrame.offsetY || 0) + (config?.groundOffset || 0)) * renderScale) || 0;
+          destY = floorY - destH - totalGroundOffset;
+          destX = xPos - destW / 2;
+        }
 
         // Ground shadow beneath feet (safe ellipse / arc fallback)
         ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
@@ -363,9 +377,11 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
 
         const ok = await startNativeFloatingOverlay({
           speciesName: species?.name || 'Digimon',
-          spriteUrl: config?.sheetPath || '/assets/aistudio/Copy_of_Agumon_Adventure_04d0832a.png',
+          spriteUrl: config?.sheetPath || '/assets/digidestined/agumon.png',
           sheetWidth: config?.sheetWidth || 200,
           sheetHeight: config?.sheetHeight || 200,
+          stageWidth: config?.stageWidth || 0,
+          stageHeight: config?.stageHeight || 0,
           groundOffset: config?.groundOffset || 0,
           frameX: activeFrame.x || 0,
           frameY: activeFrame.y || 0,

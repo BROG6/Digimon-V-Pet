@@ -232,21 +232,33 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
   };
 
   const handleFeedMeat = () => {
-    sound.playEat();
+    if (pet.bigMeatStock <= 0) {
+      onFeedMeat();
+      return;
+    }
     setCurrentAction('eat');
     onFeedMeat();
     setTimeout(() => {
-      setCurrentAction(pet.isSick ? 'sick' : 'idle');
-    }, 1200);
+      setCurrentAction('happy');
+      setTimeout(() => {
+        setCurrentAction(pet.isSick ? 'sick' : 'idle');
+      }, 900);
+    }, 1700);
   };
 
   const handleGiveVitamin = () => {
-    sound.playMedicine();
-    setCurrentAction('happy');
+    if (pet.vitaminStock <= 0) {
+      onGiveVitamin();
+      return;
+    }
+    setCurrentAction('eat');
     onGiveVitamin();
     setTimeout(() => {
-      setCurrentAction(pet.isSick ? 'sick' : 'idle');
-    }, 1200);
+      setCurrentAction('happy');
+      setTimeout(() => {
+        setCurrentAction(pet.isSick ? 'sick' : 'idle');
+      }, 900);
+    }, 1700);
   };
 
   const toggleSound = () => {

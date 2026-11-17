@@ -40,12 +40,12 @@ const AUTO_CHECK_KEY = 'digipet_auto_check_updates_v1';
 const CUSTOM_URL_KEY = 'digipet_custom_update_url_v1';
 const CUSTOM_APK_URL_KEY = 'digipet_custom_apk_download_url_v1';
 const LAST_CHECK_KEY = 'digipet_last_update_check_v1';
-export const GITHUB_REPO_KEY = 'digipet_github_repo_v2';
+export const GITHUB_REPO_KEY = 'digipet_github_repo_v3';
 export const USE_GITHUB_RELEASES_KEY = 'digipet_use_github_releases_v2';
 
 // Official Cloud Run deployment URL for DigiPet
 export const DEFAULT_PRODUCTION_URL = 'https://ais-pre-hwfiiqh77iufzd3mdqoptd-750449911930.asia-northeast1.run.app';
-export const DEFAULT_GITHUB_REPO = 'brodson/Digimon-V-Pet';
+export const DEFAULT_GITHUB_REPO = 'BROG6/Digimon-V-Pet';
 
 // Base fallback version when running in browser or preview
 export const DEFAULT_APP_INFO: AppInfo = {
@@ -204,7 +204,11 @@ export function isVersionNewer(remoteVer: string, localVer: string): boolean {
 
 export function getGitHubRepo(): string {
   try {
-    return localStorage.getItem(GITHUB_REPO_KEY) || DEFAULT_GITHUB_REPO;
+    const saved = localStorage.getItem(GITHUB_REPO_KEY);
+    if (!saved || saved.toLowerCase().startsWith('brodson/')) {
+      return DEFAULT_GITHUB_REPO;
+    }
+    return saved;
   } catch {
     return DEFAULT_GITHUB_REPO;
   }
@@ -213,7 +217,7 @@ export function getGitHubRepo(): string {
 export function setGitHubRepo(repo: string): void {
   try {
     const clean = repo.trim().replace(/^https?:\/\/github\.com\//, '').replace(/\.git$/, '').replace(/^\/+|\/+$/g, '');
-    localStorage.setItem(GITHUB_REPO_KEY, clean);
+    localStorage.setItem(GITHUB_REPO_KEY, clean || DEFAULT_GITHUB_REPO);
   } catch {}
 }
 

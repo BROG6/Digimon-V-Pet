@@ -183,6 +183,7 @@ export default function App() {
 
   const [isMuted, setIsMuted] = useState<boolean>(sound.getMuted());
   const [statusNotification, setStatusNotification] = useState<string | null>(null);
+  const [hudAction, setHudAction] = useState<{ pose: 'eating' | 'happy'; nonce: number } | null>(null);
 
   // Android Safe Area & Status Bar Clearance Custom Offset
   const [extraTopPad, setExtraTopPad] = useState<number>(() => {
@@ -259,9 +260,11 @@ export default function App() {
 
         const ok = await startNativeFloatingOverlay({
           speciesName: currentSpecies?.name || 'Digimon',
-          spriteUrl: currentSpeciesConf?.sheetPath || '/assets/aistudio/Copy_of_Agumon_Adventure_04d0832a.png',
+          spriteUrl: currentSpeciesConf?.sheetPath || '/assets/digidestined/agumon.png',
           sheetWidth: currentSpeciesConf?.sheetWidth || 200,
           sheetHeight: currentSpeciesConf?.sheetHeight || 200,
+          stageWidth: currentSpeciesConf?.stageWidth || 0,
+          stageHeight: currentSpeciesConf?.stageHeight || 0,
           groundOffset: currentSpeciesConf?.groundOffset || 0,
           frameX: activeFrame.x || 0,
           frameY: activeFrame.y || 0,
@@ -442,6 +445,7 @@ export default function App() {
       return;
     }
     sound.playEat();
+    setHudAction({ pose: 'eating', nonce: Date.now() + Math.random() });
     setPet((prev) => ({
       ...prev,
       bigMeatStock: prev.bigMeatStock - 1,
@@ -459,6 +463,7 @@ export default function App() {
       return;
     }
     sound.playMedicine();
+    setHudAction({ pose: 'eating', nonce: Date.now() + Math.random() });
     setPet((prev) => ({
       ...prev,
       vitaminStock: prev.vitaminStock - 1,
@@ -472,6 +477,7 @@ export default function App() {
 
   const handleCleanPoop = () => {
     sound.playFlush();
+    setHudAction({ pose: 'happy', nonce: Date.now() + Math.random() });
     setPet((prev) => ({
       ...prev,
       poopCount: 0,
@@ -500,6 +506,7 @@ export default function App() {
 
   const handlePetDigimon = () => {
     sound.playButton();
+    setHudAction({ pose: 'happy', nonce: Date.now() + Math.random() });
     setPet((prev) => ({
       ...prev,
       happiness: Math.min(100, prev.happiness + 15),
@@ -955,6 +962,7 @@ export default function App() {
           onEvolveTrigger={() => triggerEvolution()}
           onResetEgg={() => setIsEggModalOpen(true)}
           canEvolve={evolutionCheck.can}
+          externalAction={hudAction}
         />
 
         {/* Quick Care Actions Ribbon */}

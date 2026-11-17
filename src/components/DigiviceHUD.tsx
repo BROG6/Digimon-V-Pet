@@ -37,6 +37,7 @@ interface DigiviceHUDProps {
   onEvolveTrigger?: () => void;
   onResetEgg?: () => void;
   canEvolve: boolean;
+  externalAction?: { pose: DigimonPose; nonce: number } | null;
 }
 
 // Authentic Bandai 1997 / Digimon Color Toy Shell Colorways (Original Photo & Releases)
@@ -158,6 +159,7 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
   onEvolveTrigger,
   onResetEgg,
   canEvolve,
+  externalAction,
 }) => {
   const [shellIndex, setShellIndex] = useState<number>(0);
   const [selectedMenuIdx, setSelectedMenuIdx] = useState<number>(0);
@@ -178,6 +180,8 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
   const [facing, setFacing] = useState<'left' | 'right'>('right');
   const [internalPose, setInternalPose] = useState<DigimonPose>('standing');
   const isMovingRef = useRef<boolean>(false);
+  const isActionLockedRef = useRef<boolean>(false);
+  const actionTimersRef = useRef<number[]>([]);
 
   // Active shell theme
   const currentShell = SHELL_STYLES[shellIndex];
@@ -227,14 +231,14 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
       setInternalPose('sleeping');
       return;
     }
-    if (pet.isSick) {
+    if (pet.isSick && !isActionLockedRef.current) {
       setInternalPose('sick');
       return;
     }
     if (activeSubMenu !== 'screen') return;
 
     const moveInterval = setInterval(() => {
-      if (isMovingRef.current) return;
+      if (isMovingRef.current || isActionLockedRef.current) return;
 
       const roll = Math.random();
       if (roll < 0.45) {
@@ -246,11 +250,13 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
         isMovingRef.current = true;
 
         setTimeout(() => {
-          setMonX(targetX);
+          if (!isActionLockedRef.current) setMonX(targetX);
         }, 100);
 
         setTimeout(() => {
-          setInternalPose(Math.random() < 0.3 ? 'sitting' : 'standing');
+          if (!isActionLockedRef.current) {
+            setInternalPose(Math.random() < 0.3 ? 'sitting' : 'standing');
+          }
           isMovingRef.current = false;
         }, 1800);
       } else if (roll < 0.75) {
@@ -261,7 +267,7 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
         // Cute happy jump
         setInternalPose('happy');
         setTimeout(() => {
-          setInternalPose('standing');
+          if (!isActionLockedRef.current) setInternalPose('standing');
         }, 1400);
       }
     }, 4200);
@@ -296,30 +302,65 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
     }
   };
 
+  const playPoseSequence = (pose: DigimonPose) => {
+    actionTimersRef.current.forEach((t) => clearTimeout(t));
+    actionTimersRef.current = [];
+    isActionLockedRef.current = true;
+    isMovingRef.current = true;
+    setActiveSubMenu('screen');
+
+    if (pose === 'eating') {
+      // Center Digimon inside LCD facing right so the meat prop is never clipped at screen edge
+      setMonX(46);
+      setFacing('right');
+      setInternalPose('eating');
+
+      const t1 = window.setTimeout(() => {
+        setInternalPose('happy');
+        const t2 = window.setTimeout(() => {
+          isActionLockedRef.current = false;
+          isMovingRef.current = false;
+          setInternalPose(pet.isSleeping || pet.lightsOff ? 'sleeping' : pet.isSick ? 'sick' : 'standing');
+        }, 1150);
+        actionTimersRef.current.push(t2);
+      }, 1750);
+      actionTimersRef.current.push(t1);
+    } else {
+      setInternalPose(pose);
+      const t1 = window.setTimeout(() => {
+        isActionLockedRef.current = false;
+        isMovingRef.current = false;
+        setInternalPose(pet.isSleeping || pet.lightsOff ? 'sleeping' : pet.isSick ? 'sick' : 'standing');
+      }, 1400);
+      actionTimersRef.current.push(t1);
+    }
+  };
+
+  useEffect(() => {
+    if (externalAction?.nonce) {
+      playPoseSequence(externalAction.pose);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [externalAction?.nonce]);
+
+  useEffect(() => {
+    return () => {
+      actionTimersRef.current.forEach((t) => clearTimeout(t));
+    };
+  }, []);
+
   // Trigger animations
   const triggerFeedMeatAnimation = () => {
-    setInternalPose('eating');
     onFeedMeat();
-    setTimeout(() => {
-      setInternalPose('happy');
-      setTimeout(() => setInternalPose('standing'), 1200);
-    }, 1500);
   };
 
   const triggerFeedVitaminAnimation = () => {
-    setInternalPose('eating');
     onGiveVitamin();
-    setTimeout(() => {
-      setInternalPose('happy');
-      setTimeout(() => setInternalPose('standing'), 1200);
-    }, 1500);
   };
 
   const triggerPoopClean = () => {
     sound.playClean();
-    setInternalPose('happy');
     onCleanPoop();
-    setTimeout(() => setInternalPose('standing'), 1500);
   };
 
   const handleKeychainJingle = () => {

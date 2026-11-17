@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { PetState, DigimonSpecies, DigiEggInfo } from '../types/digimon';
 import { DigimonSprite } from './DigimonSprite';
+import { PixelMeatIcon, PixelVitaminIcon, PixelPoopIcon } from './PixelItemIcons';
 import { sound } from '../utils/audio';
 import { getBatteryStatus, DeviceBatteryInfo } from '../utils/battery';
 import { 
@@ -69,6 +70,7 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
   const [posY, setPosY] = useState<number>(window.innerHeight - 200);
   const [facing, setFacing] = useState<'left' | 'right'>('right');
   const [currentAction, setCurrentAction] = useState<'idle' | 'walk' | 'sleep' | 'sick' | 'eat' | 'happy' | 'sit' | 'poop'>('idle');
+  const [activeEatItem, setActiveEatItem] = useState<'meat' | 'vitamin'>('meat');
   const [speechBubble, setSpeechBubble] = useState<string | null>(null);
   const [isMenuOpen, setIsMenuOpen] = useState<boolean>(false);
   const [isChatInputOpen, setIsChatInputOpen] = useState<boolean>(false);
@@ -253,6 +255,7 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
       onFeedMeat();
       return;
     }
+    setActiveEatItem('meat');
     setCurrentAction('eat');
     onFeedMeat();
     setTimeout(() => {
@@ -268,6 +271,7 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
       onGiveVitamin();
       return;
     }
+    setActiveEatItem('vitamin');
     setCurrentAction('eat');
     onGiveVitamin();
     setTimeout(() => {
@@ -407,10 +411,10 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
               e.stopPropagation();
               onCleanPoop();
             }}
-            className="absolute -right-6 bottom-2 cursor-pointer text-2xl filter drop-shadow-md z-30"
+            className="absolute -right-7 bottom-2 cursor-pointer filter drop-shadow-md z-30"
             title="Clean Poop!"
           >
-            💩
+            <PixelPoopIcon className="w-7 h-7" />
           </motion.div>
         )}
 
@@ -420,6 +424,7 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
             species={species}
             egg={pet.stage === 'egg' ? egg : undefined}
             action={currentAction}
+            eatItem={activeEatItem}
             facing={facing}
             scale={0.8}
             onClick={handleSpriteClick}
@@ -454,7 +459,7 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
                 className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-800/80 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 transition-transform active:scale-90"
                 title="Feed Big Meat"
               >
-                <span className="text-base">🍖</span>
+                <PixelMeatIcon className="w-5 h-5" />
                 <span className="text-[9px] font-pixel mt-1">MEAT</span>
               </button>
 
@@ -463,7 +468,7 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
                 className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-800/80 hover:bg-purple-500/30 text-purple-300 border border-purple-500/30 transition-transform active:scale-90"
                 title="Give Vitamin"
               >
-                <span className="text-base">💊</span>
+                <PixelVitaminIcon className="w-5 h-5" />
                 <span className="text-[9px] font-pixel mt-1">VIT</span>
               </button>
 

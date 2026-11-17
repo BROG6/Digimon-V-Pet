@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { PetState, DigimonSpecies, DigiEggInfo } from '../types/digimon';
 import { DigimonSprite, DigimonPose } from './DigimonSprite';
+import { PixelMeatIcon, PixelVitaminIcon, PixelPoopIcon } from './PixelItemIcons';
 import { sound } from '../utils/audio';
 import { 
   Heart, 
@@ -37,7 +38,7 @@ interface DigiviceHUDProps {
   onEvolveTrigger?: () => void;
   onResetEgg?: () => void;
   canEvolve: boolean;
-  externalAction?: { pose: DigimonPose; nonce: number } | null;
+  externalAction?: { pose: DigimonPose | 'flushing'; nonce: number; eatItem?: 'meat' | 'vitamin' } | null;
 }
 
 // Authentic Bandai 1997 / Digimon Color Toy Shell Colorways (Original Photo & Releases)
@@ -179,9 +180,20 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
   const [monX, setMonX] = useState<number>(50); // percentage 15% to 85%
   const [facing, setFacing] = useState<'left' | 'right'>('right');
   const [internalPose, setInternalPose] = useState<DigimonPose>('standing');
+  const [activeEatItem, setActiveEatItem] = useState<'meat' | 'vitamin'>('meat');
+  const [isFlushing, setIsFlushing] = useState<boolean>(false);
+  const [flushKey, setFlushKey] = useState<number>(0);
+  const [flushedPoopCount, setFlushedPoopCount] = useState<number>(0);
+  const prevPoopCountRef = useRef<number>(pet.poopCount);
   const isMovingRef = useRef<boolean>(false);
   const isActionLockedRef = useRef<boolean>(false);
   const actionTimersRef = useRef<number[]>([]);
+
+  useEffect(() => {
+    if (pet.poopCount > 0) {
+      prevPoopCountRef.current = pet.poopCount;
+    }
+  }, [pet.poopCount]);
 
   // PROPORTIONAL UNIFORM SCALING (Preserves authentic 1997 brick aspect ratio until hitting edges)
   const BASE_WIDTH = 400;
@@ -336,17 +348,38 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
     }
   };
 
-  const playPoseSequence = (pose: DigimonPose) => {
+  const playPoseSequence = (pose: DigimonPose | 'flushing', eatItem: 'meat' | 'vitamin' = 'meat') => {
     actionTimersRef.current.forEach((t) => clearTimeout(t));
     actionTimersRef.current = [];
     isActionLockedRef.current = true;
     isMovingRef.current = true;
     setActiveSubMenu('screen');
 
-    if (pose === 'eating') {
+    if (pose === 'flushing') {
+      const poopBeforeFlush = Math.max(pet.poopCount, prevPoopCountRef.current);
+      setFlushedPoopCount(poopBeforeFlush);
+      setIsFlushing(true);
+      setFlushKey((k) => k + 1);
+      setInternalPose('standing');
+
+      const t1 = window.setTimeout(() => {
+        setIsFlushing(false);
+        setFlushedPoopCount(0);
+        prevPoopCountRef.current = 0;
+        setInternalPose('happy');
+        const t2 = window.setTimeout(() => {
+          isActionLockedRef.current = false;
+          isMovingRef.current = false;
+          setInternalPose(pet.isSleeping || pet.lightsOff ? 'sleeping' : pet.isSick ? 'sick' : 'standing');
+        }, 900);
+        actionTimersRef.current.push(t2);
+      }, 880);
+      actionTimersRef.current.push(t1);
+    } else if (pose === 'eating') {
       // Center Digimon inside LCD facing right so the meat prop is never clipped at screen edge
       setMonX(46);
       setFacing('right');
+      setActiveEatItem(eatItem);
       setInternalPose('eating');
 
       const t1 = window.setTimeout(() => {
@@ -372,7 +405,7 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
 
   useEffect(() => {
     if (externalAction?.nonce) {
-      playPoseSequence(externalAction.pose);
+      playPoseSequence(externalAction.pose, externalAction.eatItem || 'meat');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [externalAction?.nonce]);
@@ -642,17 +675,71 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
                   )}
 
                   {/* Poop on LCD screen if present */}
-                  {pet.poopCount > 0 && (
+                  {!isFlushing && pet.poopCount > 0 && (
                     <motion.div
                       animate={{ y: [-1, 1, -1] }}
                       transition={{ repeat: Infinity, duration: 0.8 }}
                       onClick={triggerPoopClean}
-                      className="absolute bottom-4 right-2 text-xl cursor-pointer z-20 filter drop-shadow"
+                      className="absolute bottom-4 right-2 cursor-pointer z-20 filter drop-shadow flex items-end gap-0.5"
                       title="Click to Flush!"
                     >
-                      💩
+                      {Array.from({ length: Math.min(3, pet.poopCount) }).map((_, i) => (
+                        <PixelPoopIcon key={i} className="w-6 h-6" />
+                      ))}
                     </motion.div>
                   )}
+
+                  {/* Classic 1997 Digivice Screen Flush Wave sweeping right-to-left */}
+                  <AnimatePresence>
+                    {isFlushing && (
+                      <motion.div
+                        key={`flush-sweep-${flushKey}`}
+                        initial={{ x: '115%' }}
+                        animate={{ x: '-135%' }}
+                        transition={{ duration: 0.85, ease: 'linear' }}
+                        className="absolute inset-y-0 left-0 w-full z-40 pointer-events-none flex items-stretch"
+                      >
+                        {/* Swept poops pushed right off the left edge ahead of the water wall */}
+                        {flushedPoopCount > 0 && (
+                          <div className="self-end mb-4 -ml-7 mr-1 flex items-end gap-0.5">
+                            {Array.from({ length: Math.min(3, flushedPoopCount) }).map((_, i) => (
+                              <PixelPoopIcon key={i} className="w-6 h-6" />
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Pixelated wavy water leading edge */}
+                        <svg
+                          viewBox="0 0 12 40"
+                          preserveAspectRatio="none"
+                          shapeRendering="crispEdges"
+                          className="h-full w-6 shrink-0 pixel-art"
+                          style={{ imageRendering: 'pixelated' }}
+                          aria-hidden="true"
+                        >
+                          <rect x="4" y="0" width="8" height="4" fill="#38bdf8" />
+                          <rect x="1" y="4" width="11" height="4" fill="#e0f2fe" />
+                          <rect x="3" y="8" width="9" height="4" fill="#0284c7" />
+                          <rect x="0" y="12" width="12" height="4" fill="#38bdf8" />
+                          <rect x="2" y="16" width="10" height="4" fill="#ffffff" />
+                          <rect x="4" y="20" width="8" height="4" fill="#0284c7" />
+                          <rect x="1" y="24" width="11" height="4" fill="#38bdf8" />
+                          <rect x="3" y="28" width="9" height="4" fill="#e0f2fe" />
+                          <rect x="0" y="32" width="12" height="4" fill="#38bdf8" />
+                          <rect x="2" y="36" width="10" height="4" fill="#0284c7" />
+                        </svg>
+
+                        {/* Trailing translucent LCD water sheet with bubbles */}
+                        <div className="flex-1 h-full bg-gradient-to-r from-sky-400/75 via-cyan-300/45 to-transparent relative overflow-hidden">
+                          <div className="absolute top-[18%] left-3 w-2 h-2 bg-white/90" />
+                          <div className="absolute top-[44%] left-8 w-2.5 h-2.5 bg-sky-100/85" />
+                          <div className="absolute top-[70%] left-4 w-2 h-2 bg-white/90" />
+                          <div className="absolute top-[30%] left-16 w-1.5 h-1.5 bg-cyan-100/80" />
+                          <div className="absolute top-[60%] left-20 w-2 h-2 bg-white/80" />
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
 
                   {/* Center stage: Digimon Sprite walking and moving across full LCD width */}
                   <div className="relative flex-1 w-full pb-0.5">
@@ -667,6 +754,7 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
                         species={species}
                         egg={pet.stage === 'egg' ? egg : undefined}
                         pose={internalPose}
+                        eatItem={activeEatItem}
                         facing={facing}
                         lcdMode={false}
                         scale={0.92}
@@ -776,7 +864,7 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
                       }}
                       className="flex flex-col items-center p-1 bg-slate-900 border border-amber-500/50 hover:bg-slate-800 rounded cursor-pointer"
                     >
-                      <span className="text-base">🍖</span>
+                      <PixelMeatIcon className="w-5 h-5" />
                       <span className="text-[7px] font-pixel text-white mt-0.5">MEAT ({pet.bigMeatStock})</span>
                     </button>
                     <button
@@ -786,7 +874,7 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
                       }}
                       className="flex flex-col items-center p-1 bg-slate-900 border border-purple-500/50 hover:bg-slate-800 rounded cursor-pointer"
                     >
-                      <span className="text-base">💊</span>
+                      <PixelVitaminIcon className="w-5 h-5" />
                       <span className="text-[7px] font-pixel text-white mt-0.5">VIT ({pet.vitaminStock})</span>
                     </button>
                   </div>

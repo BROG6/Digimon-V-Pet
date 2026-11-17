@@ -41,19 +41,44 @@ async function startServer() {
     next();
   });
 
+function readGradleVersion(): { versionName: string; versionCode: number } {
+  try {
+    const gradlePath = path.join(__dirname, 'android', 'app', 'build.gradle');
+    if (fs.existsSync(gradlePath)) {
+      const content = fs.readFileSync(gradlePath, 'utf-8');
+      const nameMatch = content.match(/versionName\s+["']([^"']+)["']/);
+      const codeMatch = content.match(/versionCode\s+(\d+)/);
+      return {
+        versionName: nameMatch?.[1]?.trim() || '1.2.2',
+        versionCode: codeMatch?.[1] ? parseInt(codeMatch[1], 10) : 122,
+      };
+    }
+  } catch {}
+  return { versionName: '1.2.2', versionCode: 122 };
+}
+
   // API: Get current app version manifest for auto-updater
   app.get('/api/app-version', (_req, res) => {
     try {
+      const gradleVer = readGradleVersion();
       const versionFile = path.join(__dirname, 'public', 'version.json');
+      res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
       if (fs.existsSync(versionFile)) {
         const content = fs.readFileSync(versionFile, 'utf-8');
-        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-        return res.json(JSON.parse(content));
+        const parsed = JSON.parse(content);
+        const resolvedVersionName = String(parsed.versionName || parsed.version || gradleVer.versionName).trim();
+        return res.json({
+          ...parsed,
+          versionName: resolvedVersionName,
+          version: resolvedVersionName,
+          versionCode: Number(parsed.versionCode) || gradleVer.versionCode,
+        });
       }
       return res.json({
-        versionName: '1.2.2',
-        versionCode: 122,
-        releaseDate: '2026-11-17',
+        versionName: gradleVer.versionName,
+        version: gradleVer.versionName,
+        versionCode: gradleVer.versionCode,
+        releaseDate: new Date().toISOString().slice(0, 10),
         changelog: [
           'Proportional Digivice scaling preserving brick aspect ratio with wider LCD roaming',
           'Upgraded Talk to Digimon AI dialogue powered by Gemini 4 with full species lore & chat history',
@@ -70,6 +95,7 @@ async function startServer() {
   // API: Download latest APK binary
   app.get('/api/download-apk', (_req, res) => {
     try {
+      const gradleVer = readGradleVersion();
       const candidates = [
         path.join(__dirname, 'public', 'assets', 'apk', 'digipet-latest.apk'),
         path.join(__dirname, 'public', 'digipet-latest.apk'),
@@ -80,7 +106,7 @@ async function startServer() {
       for (const apkPath of candidates) {
         if (fs.existsSync(apkPath) && fs.statSync(apkPath).size > 1000) {
           res.setHeader('Content-Type', 'application/vnd.android.package-archive');
-          res.setHeader('Content-Disposition', 'attachment; filename="digipet-v1.2.2.apk"');
+          res.setHeader('Content-Disposition', `attachment; filename="digipet-v${gradleVer.versionName}.apk"`);
           return res.sendFile(apkPath);
         }
       }

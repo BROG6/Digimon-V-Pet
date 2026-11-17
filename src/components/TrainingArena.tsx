@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'motion/react';
 import { DigimonSpecies, PetState } from '../types/digimon';
 import { DigimonSprite } from './DigimonSprite';
+import { PixelMeatIcon, PixelPunchingBag } from './PixelItemIcons';
 import { sound } from '../utils/audio';
 import { Dumbbell, X, Zap, Trophy, Flame, Utensils } from 'lucide-react';
 
@@ -29,11 +30,24 @@ export const TrainingArena: React.FC<TrainingArenaProps> = ({
   const [hits, setHits] = useState<number>(0);
   const [isPunching, setIsPunching] = useState<boolean>(false);
   const [actionSprite, setActionSprite] = useState<'idle' | 'attack' | 'happy'>('idle');
-  const [roundResult, setRoundResult] = useState<string | null>(null);
+  const [roundResult, setRoundResult] = useState<{ text: string; isCrit: boolean } | null>(null);
+  const [bagDented, setBagDented] = useState<boolean>(false);
+  const [bagHitState, setBagHitState] = useState<'idle' | 'critical' | 'weak'>('idle');
+  const [bagHitNonce, setBagHitNonce] = useState<number>(0);
   const meterDirectionRef = useRef<number>(1);
   const meterLoopRef = useRef<number | null>(null);
+  const timersRef = useRef<number[]>([]);
 
-  // Meter oscillation with delta-time normalization (consistent on 60Hz/90Hz/120Hz displays)
+  const clearTrainingTimers = () => {
+    timersRef.current.forEach((t) => window.clearTimeout(t));
+    timersRef.current = [];
+  };
+
+  useEffect(() => {
+    return () => clearTrainingTimers();
+  }, []);
+
+  // Meter oscillation with delta-time normalization (brisk timing across 60Hz/90Hz/120Hz displays)
   useEffect(() => {
     if (activeTab !== 'punch' || isPunching || round > 3) return;
 
@@ -42,7 +56,7 @@ export const TrainingArena: React.FC<TrainingArenaProps> = ({
     const animateMeter = (timestamp: number) => {
       const deltaMs = Math.min(50, Math.max(8, timestamp - lastTime));
       lastTime = timestamp;
-      const step = (deltaMs / 16.667) * 1.5;
+      const step = (deltaMs / 16.667) * 3.1;
 
       setMeterVal((prev) => {
         let next = prev + meterDirectionRef.current * step;
@@ -65,17 +79,22 @@ export const TrainingArena: React.FC<TrainingArenaProps> = ({
   }, [activeTab, isPunching, round]);
 
   const handleStartPunchTraining = () => {
+    clearTrainingTimers();
     sound.playButton();
     setRound(1);
     setHits(0);
     setMeterVal(0);
     setRoundResult(null);
     setIsPunching(false);
+    setActionSprite('idle');
+    setBagDented(false);
+    setBagHitState('idle');
     setActiveTab('punch');
   };
 
   const handleExecutePunch = () => {
     if (isPunching) return;
+    clearTrainingTimers();
     setIsPunching(true);
     sound.playPunch();
     setActionSprite('attack');
@@ -85,13 +104,25 @@ export const TrainingArena: React.FC<TrainingArenaProps> = ({
     if (isSuccess) {
       sound.playBlast();
       setHits((h) => h + 1);
-      setRoundResult('CRITICAL HIT! +1');
+      setRoundResult({ text: 'CRITICAL HIT! +1', isCrit: true });
+      setBagDented(true);
+      setBagHitState('critical');
     } else {
-      setRoundResult('MISS! Too weak!');
+      setRoundResult({ text: 'MISS! Too weak!', isCrit: false });
+      setBagDented(false);
+      setBagHitState('weak');
     }
+    setBagHitNonce((n) => n + 1);
 
-    setTimeout(() => {
+    // Un-dent the bag after peak strike compression while pendulum keeps swinging
+    const tDent = window.setTimeout(() => {
+      setBagDented(false);
+    }, 180);
+    timersRef.current.push(tDent);
+
+    const tRound = window.setTimeout(() => {
       setActionSprite('idle');
+      setBagHitState('idle');
       if (round < 3) {
         setRound((r) => r + 1);
         setIsPunching(false);
@@ -103,12 +134,14 @@ export const TrainingArena: React.FC<TrainingArenaProps> = ({
           sound.playVictory();
           setActionSprite('happy');
         }
-        setTimeout(() => {
+        const tDone = window.setTimeout(() => {
           onTrainingComplete(totalSuccess);
           setActiveTab('menu');
-        }, 1500);
+        }, 700);
+        timersRef.current.push(tDone);
       }
-    }, 1200);
+    }, 650);
+    timersRef.current.push(tRound);
   };
 
   if (!isOpen) return null;
@@ -193,18 +226,20 @@ export const TrainingArena: React.FC<TrainingArenaProps> = ({
               className="p-4 bg-gradient-to-r from-slate-800/90 to-slate-800/50 hover:from-amber-950/60 hover:to-slate-800 border border-slate-700 hover:border-amber-500 rounded-2xl cursor-pointer transition-all flex items-center justify-between group"
             >
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-2xl group-hover:scale-110 transition-transform">
-                  🍖
+                <div className="w-12 h-12 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center group-hover:scale-110 transition-transform">
+                  <PixelMeatIcon className="w-8 h-8" />
                 </div>
                 <div>
                   <h4 className="font-chakra font-bold text-white text-base">
                     "I'M HUNGRY!" MEAT CATCH
                   </h4>
                   <p className="text-slate-400 text-xs mt-0.5">
-                    Hellopet puzzle challenge! Catch Big Meat and apples falling from above.
+                    Catch falling Meat and Pills to build stock while dodging Bad Meat!
                   </p>
                   <div className="flex items-center gap-2 mt-1 text-[10px] font-pixel text-amber-300">
-                    <span>+MEAT STOCK</span>
+                    <span>+MEAT</span>
+                    <span>•</span>
+                    <span>+VITAMINS</span>
                     <span>•</span>
                     <span>+COINS</span>
                   </div>
@@ -225,28 +260,69 @@ export const TrainingArena: React.FC<TrainingArenaProps> = ({
               <span>HITS: {hits}</span>
             </div>
 
-            {/* Target Dummy & Digimon */}
-            <div className="relative w-full h-44 bg-slate-950 border border-slate-800 rounded-2xl flex items-center justify-around px-4 overflow-hidden">
-              <DigimonSprite species={species} action={actionSprite} scale={0.9} />
+            {/* Pixel Dojo Arena: Digimon vs Hanging Punching Bag */}
+            <div className="relative w-full h-48 bg-[#2d3640] border-2 border-slate-700 rounded-2xl overflow-hidden shadow-inner">
+              {/* Staggered Pixel Dojo Wall Blocks (matching classic Digimon gym stage) */}
+              <svg
+                viewBox="0 0 160 80"
+                preserveAspectRatio="none"
+                shapeRendering="crispEdges"
+                className="absolute inset-0 w-full h-full opacity-55 pointer-events-none"
+                aria-hidden="true"
+              >
+                <rect x="0" y="0" width="160" height="80" fill="#2d3640" />
+                <rect x="0" y="10" width="38" height="8" fill="#1e252c" />
+                <rect x="52" y="6" width="44" height="8" fill="#3c4754" />
+                <rect x="112" y="14" width="48" height="8" fill="#1e252c" />
+                <rect x="16" y="28" width="46" height="8" fill="#3c4754" />
+                <rect x="82" y="34" width="52" height="8" fill="#1e252c" />
+                <rect x="0" y="48" width="34" height="8" fill="#1e252c" />
+                <rect x="56" y="52" width="42" height="8" fill="#3c4754" />
+                <rect x="118" y="46" width="42" height="8" fill="#3c4754" />
+                <rect x="0" y="66" width="160" height="14" fill="#1b2229" />
+              </svg>
 
-              {/* Punch Bag / Dummy */}
-              <div className="flex flex-col items-center">
-                <div className="text-4xl filter drop-shadow-lg">🥊</div>
-                <div className="w-12 h-2 bg-slate-800 rounded-full mt-2" />
-              </div>
-
-              {/* Impact Callout */}
+              {/* Compact Non-Blocking Critical Hit / Miss Badge (Top-Left, never hides Digimon or Bag) */}
               {roundResult && (
-                <div className="absolute inset-0 bg-slate-950/60 flex items-center justify-center">
-                  <motion.div
-                    initial={{ scale: 0 }}
-                    animate={{ scale: 1.2 }}
-                    className="font-pixel text-xs px-4 py-2 bg-amber-400 text-slate-950 rounded-xl font-bold shadow-xl"
-                  >
-                    {roundResult}
-                  </motion.div>
-                </div>
+                <motion.div
+                  key={`res-${round}-${bagHitNonce}`}
+                  initial={{ y: 6, opacity: 0, scale: 0.85 }}
+                  animate={{ y: 0, opacity: 1, scale: 1 }}
+                  className={`absolute top-2.5 left-3 z-30 pointer-events-none font-pixel text-[10px] px-2.5 py-1 rounded-lg font-bold shadow-lg border ${
+                    roundResult.isCrit
+                      ? 'bg-amber-400 text-slate-950 border-amber-200'
+                      : 'bg-slate-800/95 text-rose-300 border-rose-500/60'
+                  }`}
+                >
+                  {roundResult.text}
+                </motion.div>
               )}
+
+              {/* Fighting Stage Content */}
+              <div className="relative z-10 w-full h-full flex items-end justify-center gap-4 pb-3 px-6">
+                {/* Attacking Digimon on Left facing Bag */}
+                <motion.div
+                  animate={
+                    isPunching
+                      ? { x: bagHitState === 'critical' ? [0, 26, 20, 0] : [0, 12, 0] }
+                      : { x: 0 }
+                  }
+                  transition={{ duration: 0.35, ease: 'easeOut' }}
+                  className="mb-1"
+                >
+                  <DigimonSprite species={species} action={actionSprite} facing="right" scale={0.95} />
+                </motion.div>
+
+                {/* Hanging Leather Punching Bag from Ceiling Pulley */}
+                <div className="self-start">
+                  <PixelPunchingBag
+                    dented={bagDented}
+                    hitState={bagHitState}
+                    hitNonce={bagHitNonce}
+                    className="w-16"
+                  />
+                </div>
+              </div>
             </div>
 
             {/* Power Meter Gauge */}

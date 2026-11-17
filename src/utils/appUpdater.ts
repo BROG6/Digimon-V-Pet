@@ -2,6 +2,7 @@ import { registerPlugin, Capacitor } from '@capacitor/core';
 
 export interface UpdateManifest {
   versionName: string;
+  version?: string;
   versionCode: number;
   releaseDate: string;
   releaseName?: string;
@@ -10,6 +11,17 @@ export interface UpdateManifest {
   apkFileName?: string;
   apkFileSize?: string;
   isMandatory?: boolean;
+}
+
+export interface UpdateCheckResult {
+  updateAvailable: boolean;
+  shouldNotify: boolean;
+  shouldShowBanner: boolean;
+  manifest: UpdateManifest | null;
+  currentInfo: AppInfo;
+  source: 'server' | 'github' | 'bundled';
+  error?: string;
+  isFallback?: boolean;
 }
 
 export interface AppInfo {
@@ -40,6 +52,8 @@ const AUTO_CHECK_KEY = 'digipet_auto_check_updates_v1';
 const CUSTOM_URL_KEY = 'digipet_custom_update_url_v1';
 const CUSTOM_APK_URL_KEY = 'digipet_custom_apk_download_url_v1';
 const LAST_CHECK_KEY = 'digipet_last_update_check_v1';
+const NOTIFIED_VERSION_KEY = 'digipet_last_notified_version_v1';
+const DISMISSED_VERSION_KEY = 'digipet_dismissed_update_version_v1';
 export const GITHUB_REPO_KEY = 'digipet_github_repo_v3';
 export const USE_GITHUB_RELEASES_KEY = 'digipet_use_github_releases_v2';
 
@@ -47,18 +61,28 @@ export const USE_GITHUB_RELEASES_KEY = 'digipet_use_github_releases_v2';
 export const DEFAULT_PRODUCTION_URL = 'https://ais-pre-hwfiiqh77iufzd3mdqoptd-750449911930.asia-northeast1.run.app';
 export const DEFAULT_GITHUB_REPO = 'BROG6/Digimon-V-Pet';
 
-// Base fallback version when running in browser or preview
+// Authoritative version read from android/app/build.gradle at Vite build/dev time
+export const GRADLE_VERSION_NAME: string =
+  typeof __GRADLE_VERSION_NAME__ !== 'undefined' && __GRADLE_VERSION_NAME__
+    ? __GRADLE_VERSION_NAME__
+    : '1.2.2';
+export const GRADLE_VERSION_CODE: number =
+  typeof __GRADLE_VERSION_CODE__ !== 'undefined' && __GRADLE_VERSION_CODE__
+    ? Number(__GRADLE_VERSION_CODE__)
+    : 122;
+
+// Base fallback version sourced from android/app/build.gradle
 export const DEFAULT_APP_INFO: AppInfo = {
-  versionName: '1.2.2',
-  versionCode: 122,
+  versionName: GRADLE_VERSION_NAME,
+  versionCode: GRADLE_VERSION_CODE,
   packageName: 'com.digipet.companion',
   isNative: false,
 };
 
 // Verified latest build release manifest
 export const DEFAULT_BUNDLED_MANIFEST: UpdateManifest = {
-  versionName: '1.2.2',
-  versionCode: 122,
+  versionName: GRADLE_VERSION_NAME,
+  versionCode: GRADLE_VERSION_CODE,
   releaseDate: '2026-11-17',
   releaseName: 'Proportional Digivice, Gemini 4 AI Chat & Mini-Game Upgrades',
   changelog: [
@@ -69,7 +93,7 @@ export const DEFAULT_BUNDLED_MANIFEST: UpdateManifest = {
     'Suppressed update banner on Web builds and automated every-2nd-change GitHub releases'
   ],
   apkDownloadUrl: `${DEFAULT_PRODUCTION_URL}/api/download-apk`,
-  apkFileName: 'digipet-v1.2.2.apk',
+  apkFileName: `digipet-v${GRADLE_VERSION_NAME}.apk`,
   apkFileSize: '19.2 MB',
   isMandatory: false,
 };
@@ -138,6 +162,7 @@ export async function getLocalAppInfo(): Promise<AppInfo> {
       if (info && info.versionName) {
         return {
           ...info,
+          versionName: String(info.versionName).trim().replace(/^[vV]/, ''),
           isNative: true,
         };
       }
@@ -173,11 +198,13 @@ export async function requestInstallPermission(): Promise<boolean> {
   }
 }
 
-// Parse semantic version string to numerical array (e.g. "1.2.0" -> [1, 2, 0])
+// Parse semantic version core string to numerical array (e.g. "v1.2.3-beta.1+45" -> [1, 2, 3])
 export function parseSemver(verStr: string): number[] {
   if (!verStr) return [0, 0, 0];
-  const clean = verStr.trim().replace(/^[vV]/, '').replace(/[^0-9.]/g, '');
-  const parts = clean.split('.').map((n) => {
+  const noBuild = String(verStr).trim().replace(/^[vV]/, '').split('+')[0];
+  const core = noBuild.split('-')[0].replace(/[^0-9.]/g, '');
+  if (!core) return [0, 0, 0];
+  const parts = core.split('.').map((n) => {
     const val = parseInt(n || '0', 10);
     return isNaN(val) ? 0 : val;
   });
@@ -187,19 +214,165 @@ export function parseSemver(verStr: string): number[] {
   return parts;
 }
 
-// Compare semantic version strings (e.g. "1.2.0" > "1.1.0")
+function parsePreRelease(verStr: string): string[] {
+  if (!verStr) return [];
+  const noBuild = String(verStr).trim().replace(/^[vV]/, '').split('+')[0];
+  const dashIdx = noBuild.indexOf('-');
+  if (dashIdx === -1) return [];
+  const raw = noBuild.slice(dashIdx + 1).trim();
+  return raw ? raw.split('.').filter(Boolean) : [];
+}
+
+/**
+ * Compares two SemVer 2.0.0 strings:
+ * Returns 1 if a > b, -1 if a < b, 0 if equal.
+ */
+export function compareSemver(a: string, b: string): number {
+  const aParts = parseSemver(a);
+  const bParts = parseSemver(b);
+  const maxLen = Math.max(aParts.length, bParts.length);
+  for (let i = 0; i < maxLen; i++) {
+    const av = aParts[i] ?? 0;
+    const bv = bParts[i] ?? 0;
+    if (av > bv) return 1;
+    if (av < bv) return -1;
+  }
+
+  const aPre = parsePreRelease(a);
+  const bPre = parsePreRelease(b);
+  if (aPre.length === 0 && bPre.length === 0) return 0;
+  if (aPre.length === 0) return 1;  // Final release > pre-release
+  if (bPre.length === 0) return -1; // Pre-release < final release
+
+  const preLen = Math.max(aPre.length, bPre.length);
+  for (let i = 0; i < preLen; i++) {
+    const ai = aPre[i];
+    const bi = bPre[i];
+    if (ai === undefined) return -1;
+    if (bi === undefined) return 1;
+    const aNum = /^\d+$/.test(ai);
+    const bNum = /^\d+$/.test(bi);
+    if (aNum && bNum) {
+      const an = parseInt(ai, 10);
+      const bn = parseInt(bi, 10);
+      if (an > bn) return 1;
+      if (an < bn) return -1;
+    } else if (aNum !== bNum) {
+      return aNum ? -1 : 1; // Numeric identifiers have lower precedence than non-numeric
+    } else if (ai !== bi) {
+      return ai > bi ? 1 : -1;
+    }
+  }
+
+  return 0;
+}
+
+// Compare semantic version strings (e.g. "1.2.3" > "1.2.2")
 export function isVersionNewer(remoteVer: string, localVer: string): boolean {
   try {
-    const rParts = parseSemver(remoteVer);
-    const lParts = parseSemver(localVer);
-    for (let i = 0; i < Math.max(rParts.length, lParts.length); i++) {
-      const r = rParts[i] ?? 0;
-      const l = lParts[i] ?? 0;
-      if (r > l) return true;
-      if (r < l) return false;
-    }
+    if (!remoteVer || !localVer) return false;
+    return compareSemver(remoteVer, localVer) > 0;
   } catch {}
   return false;
+}
+
+/**
+ * Extracts normalized versionName string from any server or GitHub manifest object.
+ */
+export function extractManifestVersion(manifest: any): string {
+  if (!manifest || typeof manifest !== 'object') return '';
+  const raw = manifest.versionName || manifest.version || manifest.tag_name || '';
+  return String(raw).trim().replace(/^[vV]/, '');
+}
+
+function normalizeManifest(raw: any): UpdateManifest | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const versionName = extractManifestVersion(raw);
+  if (!versionName) return null;
+  const parts = parseSemver(versionName);
+  const fallbackCode = parts[0] * 100 + parts[1] * 10 + parts[2];
+  return {
+    versionName,
+    version: versionName,
+    versionCode: Number(raw.versionCode) || fallbackCode || GRADLE_VERSION_CODE,
+    releaseDate: String(raw.releaseDate || new Date().toISOString().slice(0, 10)),
+    releaseName: raw.releaseName ? String(raw.releaseName) : undefined,
+    changelog: Array.isArray(raw.changelog) ? raw.changelog.map(String) : [],
+    apkDownloadUrl: String(raw.apkDownloadUrl || `${DEFAULT_PRODUCTION_URL}/api/download-apk`),
+    apkFileName: raw.apkFileName ? String(raw.apkFileName) : `digipet-v${versionName}.apk`,
+    apkFileSize: raw.apkFileSize ? String(raw.apkFileSize) : undefined,
+    isMandatory: Boolean(raw.isMandatory),
+  };
+}
+
+/**
+ * Notification & dismissal deduplication helpers to prevent redundant update alerts.
+ */
+export function syncUpdateNotificationMarkers(currentVer: string): void {
+  try {
+    const notified = localStorage.getItem(NOTIFIED_VERSION_KEY);
+    if (notified && !isVersionNewer(notified, currentVer)) {
+      localStorage.removeItem(NOTIFIED_VERSION_KEY);
+    }
+    const dismissed = localStorage.getItem(DISMISSED_VERSION_KEY);
+    if (dismissed && !isVersionNewer(dismissed, currentVer)) {
+      localStorage.removeItem(DISMISSED_VERSION_KEY);
+    }
+  } catch {}
+}
+
+export function shouldNotifyUpdate(
+  remoteVer: string,
+  currentVer: string,
+  isMandatory: boolean = false
+): boolean {
+  if (!isVersionNewer(remoteVer, currentVer)) return false;
+  try {
+    if (!isMandatory) {
+      const dismissed = localStorage.getItem(DISMISSED_VERSION_KEY);
+      if (dismissed && !isVersionNewer(remoteVer, dismissed)) {
+        return false;
+      }
+    }
+    const notified = localStorage.getItem(NOTIFIED_VERSION_KEY);
+    if (notified && !isVersionNewer(remoteVer, notified)) {
+      return false;
+    }
+  } catch {}
+  return true;
+}
+
+export function shouldShowUpdateBanner(
+  remoteVer: string,
+  currentVer: string,
+  isMandatory: boolean = false
+): boolean {
+  if (!isVersionNewer(remoteVer, currentVer)) return false;
+  if (isMandatory) return true;
+  try {
+    const dismissed = localStorage.getItem(DISMISSED_VERSION_KEY);
+    if (dismissed && !isVersionNewer(remoteVer, dismissed)) {
+      return false;
+    }
+  } catch {}
+  return true;
+}
+
+export function markUpdateNotified(version: string): void {
+  try {
+    const clean = String(version || '').trim().replace(/^[vV]/, '');
+    if (clean) localStorage.setItem(NOTIFIED_VERSION_KEY, clean);
+  } catch {}
+}
+
+export function dismissUpdateVersion(version: string): void {
+  try {
+    const clean = String(version || '').trim().replace(/^[vV]/, '');
+    if (clean) {
+      localStorage.setItem(DISMISSED_VERSION_KEY, clean);
+      localStorage.setItem(NOTIFIED_VERSION_KEY, clean);
+    }
+  } catch {}
 }
 
 export function getGitHubRepo(): string {
@@ -296,16 +469,16 @@ export async function fetchGitHubRelease(customRepo?: string): Promise<{ manifes
       const semParts = parseSemver(cleanVer);
       const computedCode = semParts[0] * 100 + semParts[1] * 10 + semParts[2];
 
-      const manifest: UpdateManifest = {
+      const manifest = normalizeManifest({
         versionName: cleanVer,
-        versionCode: computedCode || 4,
+        versionCode: computedCode || GRADLE_VERSION_CODE,
         releaseDate: (apiData.published_at || '').substring(0, 10) || new Date().toISOString().substring(0, 10),
         releaseName: apiData.name || `GitHub Release ${tag}`,
         changelog: changelogLines,
         apkDownloadUrl: downloadUrl,
         apkFileName: fileName,
         apkFileSize: fileSize,
-      };
+      });
 
       return { manifest };
     }
@@ -332,13 +505,14 @@ export async function fetchGitHubRelease(customRepo?: string): Promise<{ manifes
       }
     }
 
-    if (rawData && rawData.versionName) {
-      return {
-        manifest: {
-          ...rawData,
-          apkDownloadUrl: rawData.apkDownloadUrl || `https://github.com/${cleanRepo}/releases/latest/download/app-debug.apk`,
-        },
-      };
+    if (rawData) {
+      const normalized = normalizeManifest({
+        ...rawData,
+        apkDownloadUrl: rawData.apkDownloadUrl || `https://github.com/${cleanRepo}/releases/latest/download/app-debug.apk`,
+      });
+      if (normalized) {
+        return { manifest: normalized };
+      }
     }
   } catch (rawErr: any) {
     console.warn('GitHub raw version.json error:', rawErr);
@@ -347,147 +521,188 @@ export async function fetchGitHubRelease(customRepo?: string): Promise<{ manifes
   return { manifest: null, error: `No releases found on GitHub repo "${cleanRepo}".` };
 }
 
+async function fetchServerManifest(customUrl?: string): Promise<{ manifest: UpdateManifest | null; error?: string }> {
+  const customManifest = customUrl || getCustomUpdateUrl();
+  const targetUrl = customManifest
+    ? resolveFullUrl(customManifest)
+    : resolveFullUrl('/api/app-version');
+
+  let fetchError: string | undefined;
+
+  if (Capacitor.isNativePlatform()) {
+    try {
+      const nativeRes = await AppUpdatePlugin.fetchManifest({ url: targetUrl });
+      if (nativeRes && nativeRes.data) {
+        const parsed = normalizeManifest(JSON.parse(nativeRes.data));
+        if (parsed) return { manifest: parsed };
+      }
+    } catch (nativeErr: any) {
+      console.warn('Native fetchManifest error:', nativeErr);
+      fetchError = nativeErr.message || 'Native fetch failed';
+    }
+  }
+
+  try {
+    const res = await fetch(targetUrl, {
+      cache: 'no-store',
+      headers: { 'Cache-Control': 'no-cache' },
+    });
+    if (res.ok) {
+      const text = await res.text();
+      try {
+        const parsed = normalizeManifest(JSON.parse(text));
+        if (parsed) return { manifest: parsed };
+        fetchError = 'Server manifest missing version string';
+      } catch {
+        fetchError = 'Server returned non-JSON response';
+      }
+    } else {
+      fetchError = `Server returned status ${res.status}`;
+    }
+  } catch (webErr: any) {
+    console.warn('Web fetch error:', webErr);
+    if (!fetchError) fetchError = webErr.message || 'Failed to fetch update info';
+  }
+
+  return { manifest: null, error: fetchError };
+}
+
+let inFlightUpdateCheck: Promise<UpdateCheckResult> | null = null;
+
 export async function checkForUpdate(optionsOrCustomUrl?: string | {
   customUrl?: string;
   preferGitHub?: boolean;
   githubRepo?: string;
-}): Promise<{
-  updateAvailable: boolean;
-  manifest: UpdateManifest | null;
-  currentInfo: AppInfo;
-  source: 'server' | 'github' | 'bundled';
-  error?: string;
-  isFallback?: boolean;
-}> {
+  forceRefresh?: boolean;
+}): Promise<UpdateCheckResult> {
   const customUrl = typeof optionsOrCustomUrl === 'string' ? optionsOrCustomUrl : optionsOrCustomUrl?.customUrl;
-  const preferGitHub = typeof optionsOrCustomUrl === 'object' ? optionsOrCustomUrl.preferGitHub : false;
+  const preferGitHub = typeof optionsOrCustomUrl === 'object' ? Boolean(optionsOrCustomUrl.preferGitHub) : false;
   const githubRepo = typeof optionsOrCustomUrl === 'object' ? optionsOrCustomUrl.githubRepo : undefined;
+  const forceRefresh = typeof optionsOrCustomUrl === 'object' ? Boolean(optionsOrCustomUrl.forceRefresh) : false;
 
-  const currentInfo = await getLocalAppInfo();
-
-  // Smart check: If user accidentally pasted an APK URL in the manifest field, fix it!
-  const rawCustom = customUrl || getCustomUpdateUrl();
-  if (rawCustom && (rawCustom.endsWith('.apk') || rawCustom.includes('/download-apk'))) {
-    setCustomApkUrl(rawCustom);
-    setCustomUpdateUrl('');
+  if (!forceRefresh && !preferGitHub && !customUrl && inFlightUpdateCheck) {
+    return inFlightUpdateCheck;
   }
 
-  let manifest: UpdateManifest | null = null;
-  let fetchError: string | null = null;
-  let source: 'server' | 'github' | 'bundled' = 'server';
+  const runCheck = async (): Promise<UpdateCheckResult> => {
+    const currentInfo = await getLocalAppInfo();
 
-  // Strategy A: If preferGitHub or getUseGitHubReleases() is enabled, check GitHub Releases first!
-  if (preferGitHub || getUseGitHubReleases()) {
-    const gh = await fetchGitHubRelease(githubRepo);
-    if (gh.manifest) {
-      manifest = gh.manifest;
-      source = 'github';
+    // Smart check: If user accidentally pasted an APK URL in the manifest field, fix it!
+    const rawCustom = customUrl || getCustomUpdateUrl();
+    if (rawCustom && (rawCustom.endsWith('.apk') || rawCustom.includes('/download-apk'))) {
+      setCustomApkUrl(rawCustom);
+      setCustomUpdateUrl('');
     }
-  }
 
-  // Strategy B: If no GitHub manifest yet, query primary server endpoint (/api/app-version)
-  if (!manifest) {
-    const customManifest = getCustomUpdateUrl();
-    const targetUrl = customManifest
-      ? resolveFullUrl(customManifest)
-      : resolveFullUrl('/api/app-version');
+    let manifest: UpdateManifest | null = null;
+    let fetchError: string | null = null;
+    let source: 'server' | 'github' | 'bundled' = 'server';
 
-    // In native Android, try native HTTP connection first
-    if (Capacitor.isNativePlatform()) {
-      try {
-        const nativeRes = await AppUpdatePlugin.fetchManifest({ url: targetUrl });
-        if (nativeRes && nativeRes.data) {
-          manifest = JSON.parse(nativeRes.data);
+    if (preferGitHub) {
+      // Explicit GitHub check requested (e.g. "CHECK GITHUB")
+      const gh = await fetchGitHubRelease(githubRepo);
+      if (gh.manifest) {
+        manifest = gh.manifest;
+        source = 'github';
+      } else {
+        fetchError = gh.error || 'GitHub release lookup failed';
+        const srv = await fetchServerManifest(customUrl);
+        if (srv.manifest) {
+          manifest = srv.manifest;
           source = 'server';
+          fetchError = null;
         }
-      } catch (nativeErr: any) {
-        console.warn('Native fetchManifest error:', nativeErr);
-        fetchError = nativeErr.message || 'Native fetch failed';
+      }
+    } else {
+      // Primary: Query server manifest (/api/app-version or custom manifest URL)
+      const srv = await fetchServerManifest(customUrl);
+      if (srv.manifest) {
+        manifest = srv.manifest;
+        source = 'server';
+      } else {
+        fetchError = srv.error || 'Server manifest unavailable';
+        // Backup: If GitHub backup mirror is enabled, rescue from GitHub Releases
+        if (getUseGitHubReleases()) {
+          const gh = await fetchGitHubRelease(githubRepo);
+          if (gh.manifest) {
+            manifest = gh.manifest;
+            source = 'github';
+            fetchError = null;
+          }
+        }
       }
     }
 
+    // Local bundled version.json fallback if remote sources were unreachable
     if (!manifest) {
       try {
-        const res = await fetch(targetUrl, {
-          cache: 'no-store',
-          headers: { 'Cache-Control': 'no-cache' },
-        });
-        if (res.ok) {
-          const text = await res.text();
-          try {
-            manifest = JSON.parse(text);
-            source = 'server';
-          } catch {
-            fetchError = 'Server returned non-JSON response';
-          }
-        } else {
-          fetchError = `Server returned status ${res.status}`;
+        const localRes = await fetch('/version.json', { cache: 'no-store' });
+        if (localRes.ok) {
+          manifest = normalizeManifest(await localRes.json());
+          if (manifest) source = 'bundled';
         }
-      } catch (webErr: any) {
-        console.warn('Web fetch error:', webErr);
-        if (!fetchError) fetchError = webErr.message || 'Failed to fetch update info';
-      }
+      } catch {}
     }
-  }
 
-  // Strategy C: If server failed (e.g. 404 or offline) and we haven't tried GitHub yet, try GitHub now as backup!
-  if (!manifest && !preferGitHub && !getUseGitHubReleases()) {
-    const gh = await fetchGitHubRelease(githubRepo);
-    if (gh.manifest) {
-      manifest = gh.manifest;
-      source = 'github';
-      fetchError = null; // Successfully rescued by GitHub backup!
+    let isFallback = false;
+    // Embedded manifest fallback if network was completely unreachable
+    if (!manifest) {
+      manifest = DEFAULT_BUNDLED_MANIFEST;
+      isFallback = true;
+      source = 'bundled';
     }
-  }
 
-  // Strategy D: If remote failed, try local bundled version.json
-  if (!manifest) {
+    // If a custom direct APK URL is saved, use that as the manifest's apkDownloadUrl
+    const customApk = getCustomApkUrl();
+    if (customApk && manifest) {
+      manifest = {
+        ...manifest,
+        apkDownloadUrl: customApk,
+      };
+    }
+
     try {
-      const localRes = await fetch('/version.json', { cache: 'no-store' });
-      if (localRes.ok) {
-        manifest = await localRes.json();
-        source = 'bundled';
-      }
+      localStorage.setItem(LAST_CHECK_KEY, Date.now().toString());
     } catch {}
-  }
 
-  let isFallback = false;
-  // Strategy E: Fallback to embedded release manifest if network was unreachable
-  if (!manifest) {
-    manifest = DEFAULT_BUNDLED_MANIFEST;
-    isFallback = true;
-    source = 'bundled';
-  }
+    // Authoritative comparison: compare android/app/build.gradle versionName (or installed native versionName)
+    // strictly against the version string returned by the server manifest.
+    const currentVer = currentInfo.versionName || GRADLE_VERSION_NAME;
+    const manifestVer = extractManifestVersion(manifest);
 
-  // If a custom direct APK URL is saved, use that as the manifest's apkDownloadUrl
-  const customApk = getCustomApkUrl();
-  if (customApk && manifest) {
-    manifest = {
-      ...manifest,
-      apkDownloadUrl: customApk,
+    // Offline bundled fallbacks must never trigger an update alert
+    const updateAvailable = !isFallback && Boolean(manifestVer) && isVersionNewer(manifestVer, currentVer);
+
+    if (!updateAvailable) {
+      syncUpdateNotificationMarkers(currentVer);
+    }
+
+    const shouldNotify = updateAvailable && shouldNotifyUpdate(manifestVer, currentVer, Boolean(manifest.isMandatory));
+    const shouldShowBanner = updateAvailable && shouldShowUpdateBanner(manifestVer, currentVer, Boolean(manifest.isMandatory));
+
+    return {
+      updateAvailable,
+      shouldNotify,
+      shouldShowBanner,
+      manifest,
+      currentInfo,
+      source,
+      isFallback,
+      error: fetchError ? `Notice: Remote server check (${fetchError}). Showing release v${manifest.versionName}.` : undefined,
     };
+  };
+
+  const promise = runCheck().finally(() => {
+    if (inFlightUpdateCheck === promise) {
+      inFlightUpdateCheck = null;
+    }
+  });
+
+  if (!forceRefresh && !preferGitHub && !customUrl) {
+    inFlightUpdateCheck = promise;
   }
 
-  localStorage.setItem(LAST_CHECK_KEY, Date.now().toString());
-
-  // Compare versionCode or versionName against current installed app
-  const currentCode = Number(currentInfo.versionCode) || 1;
-  const manifestCode = Number(manifest.versionCode) || 0;
-  const currentVer = currentInfo.versionName || '1.0.0';
-  const manifestVer = manifest.versionName || '1.2.1';
-
-  const hasNewerCode = manifestCode > currentCode;
-  const hasNewerVer = isVersionNewer(manifestVer, currentVer);
-  const updateAvailable = hasNewerCode || hasNewerVer;
-
-  return {
-    updateAvailable,
-    manifest,
-    currentInfo,
-    source,
-    isFallback,
-    error: fetchError ? `Notice: Remote server check (${fetchError}). Showing release v${manifest.versionName}.` : undefined,
-  };
+  return promise;
 }
 
 export async function downloadAndInstallApk(

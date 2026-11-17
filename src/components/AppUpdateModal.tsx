@@ -21,7 +21,9 @@ import {
 import { sound } from '../utils/audio';
 import { 
   UpdateManifest, 
+  UpdateCheckResult,
   AppInfo, 
+  DEFAULT_APP_INFO,
   getLocalAppInfo, 
   checkForUpdate, 
   downloadAndInstallApk, 
@@ -32,6 +34,8 @@ import {
   resolveFullUrl,
   DEFAULT_PRODUCTION_URL,
   isVersionNewer,
+  extractManifestVersion,
+  markUpdateNotified,
   getAutoCheckEnabled, 
   setAutoCheckEnabled, 
   getCustomUpdateUrl, 
@@ -51,6 +55,7 @@ interface AppUpdateModalProps {
   onClose: () => void;
   initialManifest?: UpdateManifest | null;
   onUpdateDownloaded?: () => void;
+  onCheckComplete?: (result: UpdateCheckResult) => void;
 }
 
 export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
@@ -58,13 +63,9 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
   onClose,
   initialManifest,
   onUpdateDownloaded,
+  onCheckComplete,
 }) => {
-  const [appInfo, setAppInfo] = useState<AppInfo>({
-    versionName: '1.2.2',
-    versionCode: 122,
-    packageName: 'com.digipet.companion',
-    isNative: false,
-  });
+  const [appInfo, setAppInfo] = useState<AppInfo>(DEFAULT_APP_INFO);
   const [manifest, setManifest] = useState<UpdateManifest | null>(initialManifest || null);
   const [isChecking, setIsChecking] = useState<boolean>(false);
   const [isDownloading, setIsDownloading] = useState<boolean>(false);
@@ -126,26 +127,29 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
     try {
       const res = await checkForUpdate({
         customUrl: customManifestUrl || undefined,
-        preferGitHub: forceGitHub || useGitHubReleasesState,
+        preferGitHub: forceGitHub,
         githubRepo: githubRepoState,
+        forceRefresh: playSfx || forceGitHub,
       });
       setManifest(res.manifest);
       setAppInfo(res.currentInfo);
+      onCheckComplete?.(res);
 
       if (res.manifest?.apkDownloadUrl) {
         setCurrentResolvedUrl(resolveFullUrl(res.manifest.apkDownloadUrl));
       }
 
       if (res.error) {
-        // Show informative notice while keeping update available
+        // Show informative notice while keeping manifest details visible
         setErrorMsg(res.error);
       } else if (!Capacitor.isNativePlatform()) {
         setSuccessMsg('Web App is always up to date with the latest live release! 🌐');
-      } else if (res.updateAvailable) {
-        setSuccessMsg(`New version v${res.manifest?.versionName} is ready to install! (${res.source === 'github' ? 'From GitHub Releases' : 'From Digi-Cloud'})`);
+      } else if (res.updateAvailable && res.manifest) {
+        markUpdateNotified(res.manifest.versionName);
+        setSuccessMsg(`New version v${res.manifest.versionName} is ready to install! (${res.source === 'github' ? 'From GitHub Releases' : 'From Digi-Cloud'})`);
         if (playSfx) sound.playVictory();
       } else {
-        setSuccessMsg(`You have the newest version (v${appInfo.versionName}) installed! 🛡️`);
+        setSuccessMsg(`You have the newest version (v${res.currentInfo.versionName}) installed! 🛡️`);
       }
     } catch (e: any) {
       setErrorMsg(e.message || 'Error checking for updates');
@@ -290,10 +294,8 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
   if (!isOpen) return null;
 
   const isNative = Capacitor.isNativePlatform();
-  const isUpdateAvailable = isNative && !!(manifest && (
-    Number(manifest.versionCode) > Number(appInfo.versionCode) || 
-    isVersionNewer(manifest.versionName, appInfo.versionName)
-  ));
+  const manifestVersion = extractManifestVersion(manifest);
+  const isUpdateAvailable = isNative && Boolean(manifestVersion && isVersionNewer(manifestVersion, appInfo.versionName));
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-slate-950/90 backdrop-blur-md android-safe-modal">

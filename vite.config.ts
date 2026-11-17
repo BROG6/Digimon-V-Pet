@@ -1,11 +1,32 @@
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
+import fs from 'fs';
 import path from 'path';
 import {defineConfig} from 'vite';
 
+function readAndroidGradleVersion() {
+  try {
+    const gradlePath = path.resolve(import.meta.dirname, 'android/app/build.gradle');
+    const content = fs.readFileSync(gradlePath, 'utf-8');
+    const nameMatch = content.match(/versionName\s+["']([^"']+)["']/);
+    const codeMatch = content.match(/versionCode\s+(\d+)/);
+    return {
+      versionName: nameMatch?.[1]?.trim() || '1.2.2',
+      versionCode: codeMatch?.[1] ? parseInt(codeMatch[1], 10) : 122,
+    };
+  } catch {
+    return { versionName: '1.2.2', versionCode: 122 };
+  }
+}
+
 export default defineConfig(() => {
+  const gradleVersion = readAndroidGradleVersion();
   return {
+    define: {
+      __GRADLE_VERSION_NAME__: JSON.stringify(gradleVersion.versionName),
+      __GRADLE_VERSION_CODE__: JSON.stringify(gradleVersion.versionCode),
+    },
     plugins: [
       react(), 
       tailwindcss(),

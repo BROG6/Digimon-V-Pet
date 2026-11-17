@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { PetState, DigimonSpecies, FurnitureItem, PlacedFurniture } from '../types/digimon';
 import { FURNITURE_SHOP, ROOM_THEMES } from '../data/digidex';
 import { DigimonSprite } from './DigimonSprite';
+import { PixelMeatIcon } from './PixelItemIcons';
 import { sound } from '../utils/audio';
 import { Home, ShoppingBag, Palette, X, Sparkles, Plus, Trash2, Check } from 'lucide-react';
 
@@ -241,7 +242,11 @@ export const DigiRoom: React.FC<DigiRoomProps> = ({
                     transform: 'translate(-50%, -50%)',
                   }}
                 >
-                  <span className="text-4xl sm:text-5xl select-none pointer-events-none">{item.icon}</span>
+                  {item.id === 'meat-grill' ? (
+                    <PixelMeatIcon className="w-11 h-11 sm:w-12 sm:h-12 select-none pointer-events-none" />
+                  ) : (
+                    <span className="text-4xl sm:text-5xl select-none pointer-events-none">{item.icon}</span>
+                  )}
                   
                   {/* Item Label & Remove Button */}
                   <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-slate-900/95 text-white text-[9px] font-pixel px-2 py-0.5 rounded-full mt-1 border border-slate-700 shadow-lg">
@@ -295,8 +300,12 @@ export const DigiRoom: React.FC<DigiRoomProps> = ({
                   className="p-3.5 bg-slate-950/80 border border-slate-800 rounded-2xl flex items-center justify-between gap-3 hover:border-emerald-500/40 transition-colors"
                 >
                   <div className="flex items-center gap-3">
-                    <span className="text-3xl p-2 bg-slate-800/80 rounded-xl border border-slate-700">
-                      {item.icon}
+                    <span className="text-3xl p-2 bg-slate-800/80 rounded-xl border border-slate-700 flex items-center justify-center">
+                      {item.id === 'meat-grill' ? (
+                        <PixelMeatIcon className="w-8 h-8" />
+                      ) : (
+                        item.icon
+                      )}
                     </span>
                     <div>
                       <h4 className="font-chakra font-bold text-white text-sm">

@@ -10,6 +10,7 @@ import {
 import { DIGI_EGGS, DIGIMON_DATABASE, FURNITURE_SHOP, ROOM_THEMES, HELLOPET_QUOTES } from './data/digidex';
 import { getPersonalityProfile } from './utils/digimonPersonality';
 import { DigiviceHUD } from './components/DigiviceHUD';
+import { PixelMeatIcon, PixelVitaminIcon, PixelPoopIcon } from './components/PixelItemIcons';
 import { FloatingOverlay } from './components/FloatingOverlay';
 import { EggSelectionModal } from './components/EggSelectionModal';
 import { TrainingArena } from './components/TrainingArena';
@@ -26,7 +27,14 @@ import { DigiChat } from './components/DigiChat';
 import { DigimonTalkModal } from './components/DigimonTalkModal';
 import { DigimonGallery } from './components/DigimonGallery';
 import { AppUpdateModal } from './components/AppUpdateModal';
-import { checkForUpdate, UpdateManifest, getAutoCheckEnabled } from './utils/appUpdater';
+import {
+  checkForUpdate,
+  UpdateManifest,
+  UpdateCheckResult,
+  getAutoCheckEnabled,
+  markUpdateNotified,
+  dismissUpdateVersion,
+} from './utils/appUpdater';
 import { getHideGalleryButtonPref, syncOverridesToRepository, getEffectiveSpriteConfig } from './utils/customSpriteManager';
 import { NEW_DIGIMON_SPRITES } from './utils/newDigimonSprites';
 import { Capacitor } from '@capacitor/core';
@@ -138,17 +146,29 @@ export default function App() {
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
     if (!getAutoCheckEnabled()) return;
+    let cancelled = false;
     const timer = setTimeout(() => {
       checkForUpdate()
         .then((res) => {
+          if (cancelled) return;
           if (res.updateAvailable && res.manifest) {
             setUpdateManifest(res.manifest);
-            setHasUpdateAvailable(true);
+            setHasUpdateAvailable(res.shouldShowBanner);
+            if (res.shouldNotify) {
+              markUpdateNotified(res.manifest.versionName);
+              setStatusNotification(`New update v${res.manifest.versionName} available! Tap UPDATE NOW to install.`);
+              setTimeout(() => setStatusNotification(null), 5000);
+            }
+          } else {
+            setHasUpdateAvailable(false);
           }
         })
         .catch(() => {});
     }, 2400);
-    return () => clearTimeout(timer);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, []);
 
   // Listen for hide gallery button preference changes
@@ -186,7 +206,7 @@ export default function App() {
 
   const [isMuted, setIsMuted] = useState<boolean>(sound.getMuted());
   const [statusNotification, setStatusNotification] = useState<string | null>(null);
-  const [hudAction, setHudAction] = useState<{ pose: 'eating' | 'happy'; nonce: number } | null>(null);
+  const [hudAction, setHudAction] = useState<{ pose: 'eating' | 'happy' | 'flushing'; nonce: number; eatItem?: 'meat' | 'vitamin' } | null>(null);
 
   // Android Safe Area & Status Bar Clearance Custom Offset
   const [extraTopPad, setExtraTopPad] = useState<number>(() => {
@@ -448,7 +468,7 @@ export default function App() {
       return;
     }
     sound.playEat();
-    setHudAction({ pose: 'eating', nonce: Date.now() + Math.random() });
+    setHudAction({ pose: 'eating', nonce: Date.now() + Math.random(), eatItem: 'meat' });
     setPet((prev) => ({
       ...prev,
       bigMeatStock: prev.bigMeatStock - 1,
@@ -456,17 +476,17 @@ export default function App() {
       weight: prev.weight + 1,
       happiness: Math.min(100, prev.happiness + 10),
     }));
-    showNotification('Fed delicious Big Meat! 🍖 (+25 Hunger, +1g)');
+    showNotification('Fed delicious Big Meat! (+25 Hunger, +1g)');
   };
 
   const handleGiveVitamin = () => {
     if (pet.vitaminStock <= 0) {
       sound.playAlert();
-      showNotification('Out of Vitamins! Buy some from the Digi-Shop or catch in mini-game 💊');
+      showNotification('Out of Vitamins! Buy some from the Digi-Shop or catch in mini-game');
       return;
     }
     sound.playMedicine();
-    setHudAction({ pose: 'eating', nonce: Date.now() + Math.random() });
+    setHudAction({ pose: 'eating', nonce: Date.now() + Math.random(), eatItem: 'vitamin' });
     setPet((prev) => ({
       ...prev,
       vitaminStock: prev.vitaminStock - 1,
@@ -480,7 +500,7 @@ export default function App() {
 
   const handleCleanPoop = () => {
     sound.playFlush();
-    setHudAction({ pose: 'happy', nonce: Date.now() + Math.random() });
+    setHudAction({ pose: 'flushing', nonce: Date.now() + Math.random() });
     setPet((prev) => ({
       ...prev,
       poopCount: 0,
@@ -773,9 +793,13 @@ export default function App() {
             <div className="text-[10px] text-slate-400 flex items-center gap-1.5 truncate">
               <span className="text-amber-300 font-pixel text-[9px]">🪙 {pet.digiBits}</span>
               <span>•</span>
-              <span className="text-orange-300 font-pixel text-[9px]">🍖 {pet.bigMeatStock}</span>
+              <span className="text-orange-300 font-pixel text-[9px] inline-flex items-center gap-1">
+                <PixelMeatIcon className="w-3.5 h-3.5" /> {pet.bigMeatStock}
+              </span>
               <span>•</span>
-              <span className="text-purple-300 font-pixel text-[9px]">💊 {pet.vitaminStock}</span>
+              <span className="text-purple-300 font-pixel text-[9px] inline-flex items-center gap-1">
+                <PixelVitaminIcon className="w-3.5 h-3.5" /> {pet.vitaminStock}
+              </span>
             </div>
           </div>
         </div>
@@ -866,24 +890,42 @@ export default function App() {
         {/* Prominent Auto-Update Available Callout Banner (Native Android APK only — Web is always up-to-date) */}
         {Capacitor.isNativePlatform() && hasUpdateAvailable && updateManifest && (
           <div className="w-full px-2.5 sm:px-4">
-            <motion.button
+            <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
-              whileTap={{ scale: 0.96 }}
-              onClick={() => {
-                sound.playButton();
-                setIsUpdateModalOpen(true);
-              }}
-              className="w-full mb-2 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-500 text-slate-950 py-2.5 px-3.5 rounded-2xl font-pixel text-xs font-bold shadow-lg shadow-amber-500/25 flex items-center justify-between cursor-pointer active:scale-98 border-2 border-amber-300"
+              className="w-full mb-2 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-500 text-slate-950 py-2 px-3 rounded-2xl font-pixel text-xs font-bold shadow-lg shadow-amber-500/25 flex items-center justify-between gap-2 border-2 border-amber-300"
             >
-              <div className="flex items-center gap-2">
-                <Download className="w-4 h-4 text-slate-950 animate-bounce shrink-0" />
-                <span className="truncate">NEW UPDATE: v{updateManifest.versionName} AVAILABLE!</span>
-              </div>
-              <span className="bg-slate-950 text-amber-300 px-2.5 py-0.5 rounded-full text-[9px] shrink-0 font-bold border border-amber-400/50">
-                UPDATE NOW
-              </span>
-            </motion.button>
+              <button
+                onClick={() => {
+                  sound.playButton();
+                  markUpdateNotified(updateManifest.versionName);
+                  setIsUpdateModalOpen(true);
+                }}
+                className="flex-1 min-w-0 flex items-center justify-between gap-2 cursor-pointer text-left"
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <Download className="w-4 h-4 text-slate-950 animate-bounce shrink-0" />
+                  <span className="truncate">NEW UPDATE: v{updateManifest.versionName} AVAILABLE!</span>
+                </div>
+                <span className="bg-slate-950 text-amber-300 px-2.5 py-0.5 rounded-full text-[9px] shrink-0 font-bold border border-amber-400/50">
+                  UPDATE NOW
+                </span>
+              </button>
+              {!updateManifest.isMandatory && (
+                <button
+                  onClick={() => {
+                    sound.playButton();
+                    dismissUpdateVersion(updateManifest.versionName);
+                    setHasUpdateAvailable(false);
+                  }}
+                  className="p-1 rounded-full hover:bg-slate-950/15 text-slate-950 shrink-0 cursor-pointer"
+                  aria-label="Dismiss update notification"
+                  title="Dismiss notification for this version"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </motion.div>
           </div>
         )}
         
@@ -910,7 +952,7 @@ export default function App() {
           {/* Hunger */}
           <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-1.5 flex flex-col items-center">
             <div className="flex items-center gap-1 text-amber-300">
-              <span>🍖</span>
+              <PixelMeatIcon className="w-3.5 h-3.5" />
               <span>{pet.hunger}%</span>
             </div>
             <div className="w-full bg-slate-800 rounded-full h-1 mt-1 overflow-hidden">
@@ -983,7 +1025,7 @@ export default function App() {
             }}
             className="py-2.5 px-2 bg-slate-900/90 hover:bg-slate-800 border border-amber-500/40 rounded-2xl flex items-center justify-center gap-1.5 font-pixel text-[10px] text-amber-300 shadow-md active:scale-95 transition-all cursor-pointer"
           >
-            <span className="text-base">🍖</span>
+            <PixelMeatIcon className="w-5 h-5" />
             <span className="truncate">MEAT ({pet.bigMeatStock})</span>
           </button>
 
@@ -994,7 +1036,7 @@ export default function App() {
             }}
             className="py-2.5 px-2 bg-slate-900/90 hover:bg-slate-800 border border-purple-500/40 rounded-2xl flex items-center justify-center gap-1.5 font-pixel text-[10px] text-purple-300 shadow-md active:scale-95 transition-all cursor-pointer"
           >
-            <span className="text-base">💊</span>
+            <PixelVitaminIcon className="w-5 h-5" />
             <span className="truncate">VIT ({pet.vitaminStock})</span>
           </button>
 
@@ -1022,7 +1064,7 @@ export default function App() {
                 }}
                 className="flex-1 py-2 px-3 bg-amber-950/70 border border-amber-500 rounded-xl flex items-center justify-center gap-1.5 font-pixel text-[10px] text-amber-200 animate-pulse active:scale-95 cursor-pointer"
               >
-                <span>💩</span>
+                <PixelPoopIcon className="w-4 h-4" />
                 <span>FLUSH {pet.poopCount} POOP(S)</span>
               </button>
             )}
@@ -1063,7 +1105,7 @@ export default function App() {
               <div className="w-12 h-1 bg-slate-700 rounded-full mx-auto mb-3" />
               <div className="flex items-center justify-between mb-3">
                 <h3 className="font-pixel text-xs text-amber-300 flex items-center gap-1.5">
-                  <span>🍖</span>
+                  <PixelMeatIcon className="w-4 h-4" />
                   <span>DIGIPET CARE CENTER</span>
                 </h3>
                 <button
@@ -1082,7 +1124,7 @@ export default function App() {
                   }}
                   className="p-3 bg-slate-800 hover:bg-amber-950/60 border border-amber-500/40 rounded-2xl flex flex-col items-center gap-1 text-amber-300 active:scale-95 transition-all cursor-pointer"
                 >
-                  <span className="text-2xl">🍖</span>
+                  <PixelMeatIcon className="w-7 h-7" />
                   <span>FEED MEAT</span>
                   <span className="text-[9px] text-slate-400">Stock: {pet.bigMeatStock}</span>
                 </button>
@@ -1094,7 +1136,7 @@ export default function App() {
                   }}
                   className="p-3 bg-slate-800 hover:bg-purple-950/60 border border-purple-500/40 rounded-2xl flex flex-col items-center gap-1 text-purple-300 active:scale-95 transition-all cursor-pointer"
                 >
-                  <span className="text-2xl">💊</span>
+                  <PixelVitaminIcon className="w-7 h-7" />
                   <span>GIVE VITAMIN</span>
                   <span className="text-[9px] text-slate-400">Stock: {pet.vitaminStock}</span>
                 </button>
@@ -1103,10 +1145,11 @@ export default function App() {
                   onClick={() => {
                     handleCleanPoop();
                     triggerHaptic('medium');
+                    setIsCareSheetOpen(false);
                   }}
                   className="p-3 bg-slate-800 hover:bg-slate-700 border border-amber-500/40 rounded-2xl flex flex-col items-center gap-1 text-amber-300 active:scale-95 transition-all cursor-pointer"
                 >
-                  <span className="text-2xl">💩</span>
+                  <PixelPoopIcon className="w-7 h-7" />
                   <span>FLUSH POOP</span>
                   <span className="text-[9px] text-slate-400">{pet.poopCount > 0 ? `${pet.poopCount} on screen` : 'Clean!'}</span>
                 </button>
@@ -1217,7 +1260,7 @@ export default function App() {
                   }}
                   className="p-3 bg-slate-800 hover:bg-amber-950/60 border border-amber-500/40 rounded-2xl flex items-center gap-2.5 text-amber-300 cursor-pointer"
                 >
-                  <span className="text-xl shrink-0">🍖</span>
+                  <PixelMeatIcon className="w-5 h-5" />
                   <span className="truncate">MEAT CATCH GAME</span>
                 </button>
 
@@ -1343,7 +1386,7 @@ export default function App() {
               isCareSheetOpen ? 'bg-amber-950/80 text-amber-300 ring-1 ring-amber-400' : 'text-amber-400 hover:bg-slate-800'
             }`}
           >
-            <span className="text-lg">🍖</span>
+            <PixelMeatIcon className="w-5 h-5" />
             <span className="font-pixel text-[8px] mt-0.5">CARE</span>
             {(pet.poopCount > 0 || pet.isSick) && (
               <span className="absolute top-0 right-1 w-2 h-2 rounded-full bg-rose-500 animate-ping" />
@@ -1538,7 +1581,16 @@ export default function App() {
         isOpen={isUpdateModalOpen}
         onClose={() => setIsUpdateModalOpen(false)}
         initialManifest={updateManifest}
-        onUpdateDownloaded={() => setHasUpdateAvailable(false)}
+        onUpdateDownloaded={() => {
+          if (updateManifest?.versionName) {
+            markUpdateNotified(updateManifest.versionName);
+          }
+          setHasUpdateAvailable(false);
+        }}
+        onCheckComplete={(res: UpdateCheckResult) => {
+          setUpdateManifest(res.manifest);
+          setHasUpdateAvailable(Boolean(res.updateAvailable && res.manifest && res.shouldShowBanner));
+        }}
       />
 
     </div>

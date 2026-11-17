@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { DigimonSpecies, PetState } from '../types/digimon';
 import { DigimonSprite } from './DigimonSprite';
+import { PixelMeatIcon, PixelVitaminIcon, PixelBadMeatIcon } from './PixelItemIcons';
 import { sound } from '../utils/audio';
 import { Trophy, Clock, X, Sparkles, Heart } from 'lucide-react';
 
@@ -16,7 +17,7 @@ interface FallingItem {
   id: number;
   x: number; // percentage 5% to 90%
   y: number; // percentage 0% to 100%
-  type: 'meat' | 'vitamin' | 'rock';
+  type: 'meat' | 'vitamin' | 'badfood';
   speed: number;
 }
 
@@ -29,6 +30,7 @@ export const FoodCatchGame: React.FC<FoodCatchGameProps> = ({
   const [basketX, setBasketX] = useState<number>(50); // percentage
   const [facing, setFacing] = useState<'left' | 'right'>('right');
   const [isMoving, setIsMoving] = useState<boolean>(false);
+  const [isStunned, setIsStunned] = useState<boolean>(false);
   const [items, setItems] = useState<FallingItem[]>([]);
   const [score, setScore] = useState<number>(0);
   const [vitaminsCaught, setVitaminsCaught] = useState<number>(0);
@@ -40,14 +42,17 @@ export const FoodCatchGame: React.FC<FoodCatchGameProps> = ({
   const basketXRef = useRef<number>(50);
   const itemsRef = useRef<FallingItem[]>([]);
   const moveStopTimerRef = useRef<number | null>(null);
+  const stunUntilRef = useRef<number>(0);
+  const stunTimerRef = useRef<number | null>(null);
 
   // Keep basketXRef in sync with state
   useEffect(() => {
     basketXRef.current = basketX;
   }, [basketX]);
 
-  // Move Digimon catcher with facing direction & walking/idle state
+  // Move Digimon catcher with facing direction & walking/idle state (blocked briefly if stunned)
   const moveCatcherTo = (targetX: number) => {
+    if (performance.now() < stunUntilRef.current) return;
     const clamped = Math.max(10, Math.min(90, targetX));
     const delta = clamped - basketXRef.current;
     if (Math.abs(delta) > 0.15) {
@@ -70,6 +75,9 @@ export const FoodCatchGame: React.FC<FoodCatchGameProps> = ({
       if (moveStopTimerRef.current !== null) {
         window.clearTimeout(moveStopTimerRef.current);
       }
+      if (stunTimerRef.current !== null) {
+        window.clearTimeout(stunTimerRef.current);
+      }
     };
   }, []);
 
@@ -82,6 +90,12 @@ export const FoodCatchGame: React.FC<FoodCatchGameProps> = ({
     itemsRef.current = [];
     setItems([]);
     setIsMoving(false);
+    stunUntilRef.current = 0;
+    if (stunTimerRef.current !== null) {
+      window.clearTimeout(stunTimerRef.current);
+      stunTimerRef.current = null;
+    }
+    setIsStunned(false);
     setIsPlaying(true);
     setIsGameOver(false);
   };
@@ -120,16 +134,16 @@ export const FoodCatchGame: React.FC<FoodCatchGameProps> = ({
 
       const workingItems = [...itemsRef.current];
 
-      // Spawn an item every ~550ms
+      // Spawn an item every ~330ms (fast arcade pacing)
       spawnTimerAccumulatorRef.current += deltaMs;
-      if (spawnTimerAccumulatorRef.current >= 550) {
+      if (spawnTimerAccumulatorRef.current >= 330) {
         spawnTimerAccumulatorRef.current = 0;
-        const types: ('meat' | 'vitamin' | 'rock')[] = [
+        const types: ('meat' | 'vitamin' | 'badfood')[] = [
           'meat',
           'meat',
           'meat',
           'vitamin',
-          'rock',
+          'badfood',
         ];
         const randomType = types[Math.floor(Math.random() * types.length)];
         workingItems.push({
@@ -137,7 +151,7 @@ export const FoodCatchGame: React.FC<FoodCatchGameProps> = ({
           x: Math.random() * 80 + 10,
           y: -5,
           type: randomType,
-          speed: Math.random() * 0.15 + 0.45,
+          speed: Math.random() * 0.28 + 0.85,
         });
       }
 
@@ -146,6 +160,7 @@ export const FoodCatchGame: React.FC<FoodCatchGameProps> = ({
       const currentBasketX = basketXRef.current;
       let deltaScore = 0;
       let deltaVitamins = 0;
+      let hitBadFood = false;
 
       for (const item of workingItems) {
         const nextY = item.y + item.speed * deltaFactor;
@@ -161,9 +176,10 @@ export const FoodCatchGame: React.FC<FoodCatchGameProps> = ({
               sound.playMedicine();
               deltaScore += 25;
               deltaVitamins += 1;
-            } else if (item.type === 'rock') {
+            } else if (item.type === 'badfood') {
               sound.playPunch();
               deltaScore -= 15;
+              hitBadFood = true;
             }
             continue;
           }
@@ -183,6 +199,18 @@ export const FoodCatchGame: React.FC<FoodCatchGameProps> = ({
       if (deltaVitamins > 0) {
         setVitaminsCaught((v) => v + deltaVitamins);
       }
+      if (hitBadFood) {
+        stunUntilRef.current = performance.now() + 650;
+        setIsMoving(false);
+        setIsStunned(true);
+        if (stunTimerRef.current !== null) {
+          window.clearTimeout(stunTimerRef.current);
+        }
+        stunTimerRef.current = window.setTimeout(() => {
+          setIsStunned(false);
+          stunTimerRef.current = null;
+        }, 650);
+      }
 
       gameLoopRef.current = requestAnimationFrame(loop);
     };
@@ -196,6 +224,12 @@ export const FoodCatchGame: React.FC<FoodCatchGameProps> = ({
   const endGame = () => {
     setIsPlaying(false);
     setIsMoving(false);
+    stunUntilRef.current = 0;
+    if (stunTimerRef.current !== null) {
+      window.clearTimeout(stunTimerRef.current);
+      stunTimerRef.current = null;
+    }
+    setIsStunned(false);
     setIsGameOver(true);
     sound.playVictory();
   };
@@ -212,9 +246,9 @@ export const FoodCatchGame: React.FC<FoodCatchGameProps> = ({
     if (!isPlaying) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'ArrowLeft' || e.key === 'a') {
-        moveCatcherTo(basketXRef.current - 7);
+        moveCatcherTo(basketXRef.current - 10);
       } else if (e.key === 'ArrowRight' || e.key === 'd') {
-        moveCatcherTo(basketXRef.current + 7);
+        moveCatcherTo(basketXRef.current + 10);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -244,7 +278,7 @@ export const FoodCatchGame: React.FC<FoodCatchGameProps> = ({
         {/* Header */}
         <div className="flex items-center justify-between pb-3 border-b border-slate-800">
           <div className="flex items-center gap-2">
-            <span className="text-xl">🍖</span>
+            <PixelMeatIcon className="w-6 h-6" />
             <div>
               <h3 className="font-chakra font-bold text-white text-lg">
                 "I'M HUNGRY!" MEAT CATCH
@@ -267,7 +301,8 @@ export const FoodCatchGame: React.FC<FoodCatchGameProps> = ({
             <span>SCORE: {score}</span>
           </div>
           <div className="flex items-center gap-1.5 text-purple-300">
-            <span>💊 VIT: {vitaminsCaught}</span>
+            <PixelVitaminIcon className="w-4 h-4" />
+            <span>VIT: {vitaminsCaught}</span>
           </div>
           <div className="flex items-center gap-1.5 text-cyan-300">
             <Clock className="w-3.5 h-3.5 text-cyan-400" />
@@ -287,20 +322,20 @@ export const FoodCatchGame: React.FC<FoodCatchGameProps> = ({
           {items.map((item) => (
             <div
               key={item.id}
-              className="absolute text-2xl filter drop-shadow-md transition-none"
+              className="absolute filter drop-shadow-md transition-none flex items-center justify-center"
               style={{
                 left: `${item.x}%`,
                 top: `${item.y}%`,
                 transform: 'translate(-50%, -50%)',
               }}
             >
-              {item.type === 'meat' && '🍖'}
-              {item.type === 'vitamin' && '💊'}
-              {item.type === 'rock' && '🪨'}
+              {item.type === 'meat' && <PixelMeatIcon className="w-8 h-8" />}
+              {item.type === 'vitamin' && <PixelVitaminIcon className="w-7 h-7" />}
+              {item.type === 'badfood' && <PixelBadMeatIcon className="w-8 h-8" />}
             </div>
           ))}
 
-          {/* Player Catcher (Digimon at bottom: walking while moving, idle when still) */}
+          {/* Player Catcher (Digimon at bottom: walking while moving, idle when still, brief stun on bad meat) */}
           <div
             className="absolute bottom-2 transition-transform duration-75"
             style={{
@@ -308,26 +343,38 @@ export const FoodCatchGame: React.FC<FoodCatchGameProps> = ({
               transform: 'translateX(-50%)',
             }}
           >
-            <div className="relative flex flex-col items-center">
-              <div className="w-20 h-4 bg-amber-500/30 border border-amber-400 rounded-full mb-1 flex items-center justify-center text-[9px] font-pixel text-amber-300">
-                CATCH!
+            <motion.div
+              animate={isStunned ? { x: [-4, 4, -3, 3, 0] } : { x: 0 }}
+              transition={{ duration: 0.28 }}
+              className="relative flex flex-col items-center"
+            >
+              <div
+                className={`w-22 h-4 rounded-full mb-1 flex items-center justify-center text-[9px] font-pixel border ${
+                  isStunned
+                    ? 'bg-purple-950/90 border-purple-400 text-purple-200 animate-pulse'
+                    : 'bg-amber-500/30 border-amber-400 text-amber-300'
+                }`}
+              >
+                {isStunned ? 'YUCK! PAUSED' : 'CATCH!'}
               </div>
               <DigimonSprite
                 species={species}
-                action={isMoving ? 'walk' : 'idle'}
+                action={isStunned ? 'sick' : isMoving ? 'walk' : 'idle'}
                 facing={facing}
                 scale={0.8}
               />
-            </div>
+            </motion.div>
           </div>
 
           {/* Start Screen Overlay */}
           {!isPlaying && !isGameOver && (
             <div className="absolute inset-0 bg-slate-950/80 flex flex-col items-center justify-center p-6 text-center">
-              <span className="text-4xl mb-2">🍖</span>
+              <PixelMeatIcon className="w-11 h-11 mb-2 drop-shadow-lg" />
               <h4 className="font-chakra font-bold text-white text-xl">FEED YOUR DIGIMON!</h4>
-              <p className="text-slate-300 text-xs mt-1 mb-4 max-w-xs">
-                Catch falling Big Meat 🍖 and Vitamins 💊 to add to your stock! Dodge rocks 🪨! Drag mouse or touch to move.
+              <p className="text-slate-300 text-xs mt-1.5 mb-4 max-w-xs leading-relaxed">
+                Catch falling Meat <PixelMeatIcon className="w-4 h-4 inline align-text-bottom" /> and Pills{' '}
+                <PixelVitaminIcon className="w-4 h-4 inline align-text-bottom" /> to add to your stock! Dodge Bad Meat{' '}
+                <PixelBadMeatIcon className="w-4 h-4 inline align-text-bottom" /> or you&apos;ll pause briefly!
               </p>
               <button
                 onClick={startGame}
@@ -347,8 +394,12 @@ export const FoodCatchGame: React.FC<FoodCatchGameProps> = ({
                 FINAL SCORE: {score}
               </div>
               <div className="bg-slate-900 border border-slate-700 rounded-xl p-3 my-4 flex flex-wrap items-center justify-center gap-3 text-xs font-chakra">
-                <span className="text-amber-400">🍖 +{Math.floor(score / 30) + 1} Big Meat</span>
-                <span className="text-purple-300">💊 +{vitaminsCaught} Vitamins</span>
+                <span className="text-amber-400 inline-flex items-center gap-1">
+                  <PixelMeatIcon className="w-4 h-4" /> +{Math.floor(score / 30) + 1} Big Meat
+                </span>
+                <span className="text-purple-300 inline-flex items-center gap-1">
+                  <PixelVitaminIcon className="w-4 h-4" /> +{vitaminsCaught} Vitamins
+                </span>
                 <span className="text-emerald-400">🪙 +{score * 2} DigiBits</span>
               </div>
               <button

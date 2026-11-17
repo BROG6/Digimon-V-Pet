@@ -121,7 +121,8 @@ class SoundEngine {
     const ctx = this.getContext();
     if (!ctx) return;
     const now = ctx.currentTime;
-    const bufferSize = ctx.sampleRate * 0.3;
+    const duration = 0.65;
+    const bufferSize = Math.floor(ctx.sampleRate * duration);
     const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
     const data = buffer.getChannelData(0);
     for (let i = 0; i < bufferSize; i++) {
@@ -132,13 +133,14 @@ class SoundEngine {
     noise.buffer = buffer;
 
     const filter = ctx.createBiquadFilter();
-    filter.type = 'lowpass';
-    filter.frequency.setValueAtTime(800, now);
-    filter.frequency.linearRampToValueAtTime(200, now + 0.3);
+    filter.type = 'bandpass';
+    filter.Q.setValueAtTime(1.4, now);
+    filter.frequency.setValueAtTime(1100, now);
+    filter.frequency.linearRampToValueAtTime(280, now + duration);
 
     const gain = ctx.createGain();
-    gain.gain.setValueAtTime(0.15, now);
-    gain.gain.linearRampToValueAtTime(0.01, now + 0.3);
+    gain.gain.setValueAtTime(0.16, now);
+    gain.gain.linearRampToValueAtTime(0.01, now + duration);
 
     noise.connect(filter);
     filter.connect(gain);

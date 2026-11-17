@@ -7,6 +7,7 @@ import {
 } from '../utils/battleSpiritSprites';
 import { NEW_DIGIMON_SPRITES, SpriteFrame } from '../utils/newDigimonSprites';
 import { getEffectiveSpriteConfig } from '../utils/customSpriteManager';
+import { PixelMeatIcon, PixelVitaminIcon } from './PixelItemIcons';
 
 export type DigimonPose = 
   | 'standing' 
@@ -24,6 +25,7 @@ interface DigimonSpriteProps {
   egg?: DigiEggInfo;
   action?: 'idle' | 'walk' | 'eat' | 'sleep' | 'sick' | 'attack' | 'happy' | 'cheer' | 'sit' | 'poop' | 'train';
   pose?: DigimonPose;
+  eatItem?: 'meat' | 'vitamin';
   scale?: number;
   facing?: 'left' | 'right';
   lcdMode?: boolean;
@@ -36,6 +38,7 @@ export const DigimonSprite: React.FC<DigimonSpriteProps> = ({
   egg,
   action = 'idle',
   pose,
+  eatItem = 'meat',
   scale = 1,
   facing = 'right',
   lcdMode = false,
@@ -253,41 +256,26 @@ export const DigimonSprite: React.FC<DigimonSpriteProps> = ({
 
         {activePose === 'eating' && (
           <div className="absolute -right-5 top-[52%] -translate-y-1/2 pointer-events-none z-30 flex items-center">
-            {/* Progressive Pixel Big Meat Prop in front of mouth (4-beat chomp cycle) */}
+            {/* Progressive Pixel Meat / Vitamin Prop in front of mouth (4-beat chomp cycle) */}
             <motion.div
-              key={`meat-beat-${eatBeat}`}
+              key={`food-beat-${eatItem}-${eatBeat}`}
               initial={eatBeat === 0 ? { y: -14, opacity: 0, scale: 0.7 } : { scale: 1.18 }}
               animate={
                 eatBeat === 3
-                  ? { y: 2, opacity: 0.9, scale: 0.9, rotate: -14 }
+                  ? { y: 2, opacity: eatItem === 'vitamin' ? 0 : 0.85, scale: 0.9, rotate: -14 }
                   : { y: 0, opacity: 1, scale: 1, rotate: eatBeat % 2 === 1 ? -14 : 0 }
               }
               transition={{ duration: 0.16, ease: 'easeOut' }}
               className="relative"
             >
-              <svg viewBox="0 0 28 24" className="w-7 h-7 drop-shadow-[0_2px_3px_rgba(0,0,0,0.75)] pixel-art">
-                {/* Bone handle (always visible) */}
-                <rect x="17" y="10" width="7" height="4" rx="1" fill="#f8fafc" stroke="#0f172a" strokeWidth="1.5" />
-                <circle cx="24.5" cy="9.5" r="2.2" fill="#f8fafc" stroke="#0f172a" strokeWidth="1.3" />
-                <circle cx="24.5" cy="14.5" r="2.2" fill="#f8fafc" stroke="#0f172a" strokeWidth="1.3" />
-                {/* Meat chunk shrinks per bite beat */}
-                {eatBeat === 0 && (
-                  <>
-                    <ellipse cx="11" cy="12" rx="9" ry="7" fill="#dc2626" stroke="#0f172a" strokeWidth="1.6" />
-                    <ellipse cx="9" cy="10" rx="4" ry="2.2" fill="#fca5a5" opacity="0.7" />
-                    <circle cx="5.5" cy="12" r="2" fill="#fef3c7" stroke="#0f172a" strokeWidth="1" />
-                  </>
-                )}
-                {eatBeat === 1 && (
-                  <>
-                    <path d="M 8,5.5 C 14,5 20,7.5 20,12 C 20,16.5 14,19 8,18.5 L 10.5,15 L 7.5,12 L 10.5,9 Z" fill="#dc2626" stroke="#0f172a" strokeWidth="1.6" />
-                    <ellipse cx="13" cy="9.5" rx="3" ry="1.5" fill="#fca5a5" opacity="0.65" />
-                  </>
-                )}
-                {eatBeat === 2 && (
-                  <path d="M 13,7 C 17,7.5 20,9.5 20,12 C 20,14.5 17,16.5 13,17 L 15,14 L 12.5,12 L 15,9.5 Z" fill="#dc2626" stroke="#0f172a" strokeWidth="1.5" />
-                )}
-              </svg>
+              {eatItem === 'vitamin' ? (
+                <PixelVitaminIcon className="w-6 h-6 drop-shadow-[0_2px_3px_rgba(0,0,0,0.75)]" />
+              ) : (
+                <PixelMeatIcon
+                  biteStage={eatBeat === 0 ? 0 : eatBeat === 1 ? 1 : eatBeat === 2 ? 2 : 3}
+                  className="w-7 h-7 drop-shadow-[0_2px_3px_rgba(0,0,0,0.75)]"
+                />
+              )}
 
               {/* Flying pixel crumbs on bite beats */}
               {(eatBeat === 1 || eatBeat === 2) && (

@@ -25,21 +25,8 @@ export interface NaturalEvoTiming {
 /**
  * Duration after meeting evolution goals before natural digivolution triggers automatically.
  */
-export function getNaturalEvolutionDelayMs(stage: DigimonStage): number {
-  switch (stage) {
-    case 'fresh':
-      return 30_000;
-    case 'in-training':
-      return 20_000;
-    case 'rookie':
-      return 25_000;
-    case 'champion':
-      return 30_000;
-    case 'ultimate':
-      return 35_000;
-    default:
-      return 30_000;
-  }
+export function getNaturalEvolutionDelayMs(_stage: DigimonStage): number {
+  return 60_000;
 }
 
 export function checkEvolutionEligibility(
@@ -137,8 +124,20 @@ export function computeNaturalEvoTiming(
 
   const anchorMs =
     pet.stage === 'fresh'
-      ? pet.stageEnteredAt ?? pet.evoGoalMetAt ?? pet.birthTimestamp ?? nowMs
-      : pet.evoGoalMetAt ?? pet.stageEnteredAt ?? pet.birthTimestamp ?? nowMs;
+      ? pet.evoGoalMetAt ?? pet.stageEnteredAt
+      : pet.evoGoalMetAt;
+
+  // Wait until the goal-met timestamp is stamped so natural evolution never fires abruptly on the first render
+  if (!anchorMs) {
+    return {
+      goalsMet: true,
+      nextId: elig.nextId,
+      delayMs,
+      evolveAtMs: nowMs + delayMs,
+      remainingMs: delayMs,
+      readyToEvolve: false,
+    };
+  }
 
   const evolveAtMs = anchorMs + delayMs;
   const remainingMs = Math.max(0, evolveAtMs - nowMs);

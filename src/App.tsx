@@ -390,10 +390,12 @@ export default function App() {
   // Stamp goal-met anchor cleanly when requirements are satisfied
   useEffect(() => {
     if (evoElig.goalsMet && !pet.evoGoalMetAt) {
+      const now = Date.now();
+      setEvoNowMs(now);
       setPet((prev) => ({
         ...prev,
-        stageEnteredAt: prev.stageEnteredAt ?? prev.birthTimestamp ?? Date.now(),
-        evoGoalMetAt: Date.now(),
+        stageEnteredAt: prev.stageEnteredAt ?? prev.birthTimestamp ?? now,
+        evoGoalMetAt: now,
       }));
     } else if (!evoElig.goalsMet && pet.evoGoalMetAt) {
       setPet((prev) => ({

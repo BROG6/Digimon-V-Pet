@@ -1591,6 +1591,16 @@ export default function App() {
           setUpdateManifest(res.manifest);
           setHasUpdateAvailable(Boolean(res.updateAvailable && res.manifest && res.shouldShowBanner));
         }}
+        onSaveRestored={() => {
+          try {
+            const saved = localStorage.getItem(STORAGE_KEY);
+            if (saved) {
+              const parsed = JSON.parse(saved);
+              setPet(parsed);
+              showNotification(`Restored ${parsed.nickname || 'Digimon'} save successfully!`);
+            }
+          } catch {}
+        }}
       />
 
     </div>

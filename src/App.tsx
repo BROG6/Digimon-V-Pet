@@ -49,6 +49,7 @@ import {
   stopNativeFloatingOverlay, 
   isNativeOverlayActive,
   consumeNativeOverlayEvolution,
+  consumeNativeOverlayCareActions,
 } from './utils/nativeOverlay';
 import {
   applyEvolutionToPetState,
@@ -486,6 +487,25 @@ export default function App() {
         });
         showNotification(`⚡ ${evolvedSpecies.name} naturally Digivolved while roaming!`);
       }
+
+      const care = await consumeNativeOverlayCareActions();
+      if (care.meatUsed > 0 || care.vitUsed > 0 || care.praiseCount > 0) {
+        setPet((prev) => {
+          const usedMeat = Math.min(prev.bigMeatStock, Math.max(0, care.meatUsed));
+          const usedVit = Math.min(prev.vitaminStock, Math.max(0, care.vitUsed));
+          const praises = Math.max(0, care.praiseCount);
+          return {
+            ...prev,
+            bigMeatStock: prev.bigMeatStock - usedMeat,
+            vitaminStock: prev.vitaminStock - usedVit,
+            hunger: Math.min(100, prev.hunger + usedMeat * 25),
+            weight: prev.weight + usedMeat,
+            energy: Math.min(100, prev.energy + usedVit * 10),
+            isSick: usedVit > 0 ? false : prev.isSick,
+            happiness: Math.min(100, prev.happiness + usedMeat * 10 + usedVit * 10 + praises * 15),
+          };
+        });
+      }
     };
 
     pullNativeOverlayEvolution();
@@ -536,7 +556,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [pet.currentSpeciesId, pet.hunger, pet.happiness, pet.isSleeping, pet.lightsOff, pet.evoGoalMetAt, pet.stageEnteredAt]);
+  }, [pet.currentSpeciesId, pet.hunger, pet.happiness, pet.bigMeatStock, pet.vitaminStock, pet.isSleeping, pet.lightsOff, pet.evoGoalMetAt, pet.stageEnteredAt]);
 
   // CARE ACTIONS
   const handleFeedMeat = () => {

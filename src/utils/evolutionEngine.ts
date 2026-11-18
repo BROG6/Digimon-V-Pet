@@ -262,6 +262,8 @@ export function buildNativeOverlayPayload(params: {
     previewRowIndex: typeof previewRowIndex === 'number' ? previewRowIndex : -1,
     hunger: pet.hunger,
     happiness: pet.happiness,
+    bigMeatStock: pet.bigMeatStock,
+    vitaminStock: pet.vitaminStock,
     evolvedMessage: evolvedMessage || '',
     nextEvoTriggerMsStr,
     nextEvoPayloadJson,

@@ -95,6 +95,8 @@ public class OverlayPlugin extends Plugin {
         Integer previewRowIndex = call.getInt("previewRowIndex", -1);
         Integer hunger = call.getInt("hunger", 75);
         Integer happiness = call.getInt("happiness", 80);
+        Integer bigMeatStock = call.getInt("bigMeatStock", 0);
+        Integer vitaminStock = call.getInt("vitaminStock", 0);
         String evolvedMessage = call.getString("evolvedMessage", "");
         String nextEvoTriggerMsStr = call.getString("nextEvoTriggerMsStr", "0");
         String nextEvoPayloadJson = call.getString("nextEvoPayloadJson", "");
@@ -122,6 +124,8 @@ public class OverlayPlugin extends Plugin {
         serviceIntent.putExtra("previewRowIndex", previewRowIndex != null ? previewRowIndex : -1);
         serviceIntent.putExtra("hunger", hunger != null ? hunger : 75);
         serviceIntent.putExtra("happiness", happiness != null ? happiness : 80);
+        serviceIntent.putExtra("bigMeatStock", bigMeatStock != null ? bigMeatStock : 0);
+        serviceIntent.putExtra("vitaminStock", vitaminStock != null ? vitaminStock : 0);
         serviceIntent.putExtra("evolvedMessage", evolvedMessage != null ? evolvedMessage : "");
         serviceIntent.putExtra("nextEvoTriggerMsStr", nextEvoTriggerMsStr != null ? nextEvoTriggerMsStr : "0");
         serviceIntent.putExtra("nextEvoPayloadJson", nextEvoPayloadJson != null ? nextEvoPayloadJson : "");
@@ -176,6 +180,27 @@ public class OverlayPlugin extends Plugin {
         JSObject ret = new JSObject();
         ret.put("speciesId", speciesId);
         ret.put("evolvedAt", evolvedAt);
+        call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void consumePendingCareActions(PluginCall call) {
+        Context ctx = getActivity() != null ? getActivity() : getContext();
+        android.content.SharedPreferences prefs = ctx.getSharedPreferences("digipet_overlay_sync", Context.MODE_PRIVATE);
+        int meatUsed = prefs.getInt("pendingMeatUsed", 0);
+        int vitUsed = prefs.getInt("pendingVitUsed", 0);
+        int praiseCount = prefs.getInt("pendingPraiseCount", 0);
+        if (meatUsed != 0 || vitUsed != 0 || praiseCount != 0) {
+            prefs.edit()
+                .remove("pendingMeatUsed")
+                .remove("pendingVitUsed")
+                .remove("pendingPraiseCount")
+                .apply();
+        }
+        JSObject ret = new JSObject();
+        ret.put("meatUsed", meatUsed);
+        ret.put("vitUsed", vitUsed);
+        ret.put("praiseCount", praiseCount);
         call.resolve(ret);
     }
 

@@ -23,6 +23,8 @@ export interface OverlayLaunchParams {
   previewRowIndex?: number;
   hunger?: number;
   happiness?: number;
+  bigMeatStock?: number;
+  vitaminStock?: number;
   evolvedMessage?: string;
   nextEvoTriggerMsStr?: string;
   nextEvoPayloadJson?: string;
@@ -35,6 +37,7 @@ export interface OverlayPluginInterface {
   stopOverlay(): Promise<{ success: boolean }>;
   isOverlayActive(): Promise<{ active: boolean }>;
   consumePendingEvolution(): Promise<{ speciesId: string | null; evolvedAt: number }>;
+  consumePendingCareActions(): Promise<{ meatUsed: number; vitUsed: number; praiseCount: number }>;
   enterPip(): Promise<{ success: boolean }>;
 }
 
@@ -110,5 +113,23 @@ export async function consumeNativeOverlayEvolution(): Promise<{ speciesId: stri
     };
   } catch {
     return { speciesId: null, evolvedAt: 0 };
+  }
+}
+
+export async function consumeNativeOverlayCareActions(): Promise<{
+  meatUsed: number;
+  vitUsed: number;
+  praiseCount: number;
+}> {
+  if (!Capacitor.isNativePlatform()) return { meatUsed: 0, vitUsed: 0, praiseCount: 0 };
+  try {
+    const res = await OverlayPlugin.consumePendingCareActions();
+    return {
+      meatUsed: typeof res?.meatUsed === 'number' ? res.meatUsed : 0,
+      vitUsed: typeof res?.vitUsed === 'number' ? res.vitUsed : 0,
+      praiseCount: typeof res?.praiseCount === 'number' ? res.praiseCount : 0,
+    };
+  } catch {
+    return { meatUsed: 0, vitUsed: 0, praiseCount: 0 };
   }
 }

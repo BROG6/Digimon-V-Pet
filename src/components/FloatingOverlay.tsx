@@ -115,9 +115,12 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
   const [isMuted, setIsMuted] = useState<boolean>(sound.getMuted());
 
   const isDraggingRef = useRef<boolean>(false);
+  const isMenuOpenRef = useRef<boolean>(false);
+  isMenuOpenRef.current = isMenuOpen;
   const speechTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const carriedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const singleTapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const tapCountRef = useRef<number>(0);
   const lastTapMsRef = useRef<number>(0);
   const prevSpeciesIdRef = useRef<string | undefined>(species?.id);
   const isFlying = isFlyingSpecies(species);
@@ -431,7 +434,7 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
 
     const tick = setInterval(() => {
       const p = physicsRef.current;
-      if (isDraggingRef.current || isChatInputOpen || petVitalsRef.current.isSleeping) {
+      if (isDraggingRef.current || isMenuOpenRef.current || isChatInputOpen || petVitalsRef.current.isSleeping) {
         return;
       }
 
@@ -734,24 +737,38 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
 
   const handleSpriteClick = () => {
     const now = Date.now();
-    if (lastTapMsRef.current > 0 && now - lastTapMsRef.current <= 300) {
-      if (singleTapTimerRef.current) clearTimeout(singleTapTimerRef.current);
+    if (tapTimerRef.current) clearTimeout(tapTimerRef.current);
+
+    if (lastTapMsRef.current > 0 && now - lastTapMsRef.current <= 320) {
+      tapCountRef.current += 1;
+    } else {
+      tapCountRef.current = 1;
+    }
+    lastTapMsRef.current = now;
+
+    if (tapCountRef.current >= 3) {
+      tapCountRef.current = 0;
       lastTapMsRef.current = 0;
+      setIsMenuOpen(false);
       sound.playButton();
       onToggleOverlay();
       return;
     }
 
-    lastTapMsRef.current = now;
-    if (singleTapTimerRef.current) clearTimeout(singleTapTimerRef.current);
-    singleTapTimerRef.current = setTimeout(() => {
+    const currentTapCount = tapCountRef.current;
+    tapTimerRef.current = setTimeout(() => {
+      tapCountRef.current = 0;
       lastTapMsRef.current = 0;
-      sound.playButton();
-      setIsMenuOpen((prev) => !prev);
-      if (!speechBubble) {
-        triggerSpeech();
+      if (currentTapCount === 2) {
+        sound.playButton();
+        setIsMenuOpen((prev) => !prev);
+      } else {
+        sound.playButton();
+        if (!speechBubble) {
+          triggerSpeech();
+        }
       }
-    }, 260);
+    }, currentTapCount === 2 ? 260 : 280);
   };
 
   const handlePetDigimon = () => {
@@ -932,6 +949,10 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
         style={{ x: xMotion, y: yMotion }}
         onDragStart={() => {
           isDraggingRef.current = true;
+          if (tapTimerRef.current) clearTimeout(tapTimerRef.current);
+          tapCountRef.current = 0;
+          lastTapMsRef.current = 0;
+          setIsMenuOpen(false);
           setIsDraggingPet(true);
           setIsOverDismissZone(false);
           setCurrentAction('walk');
@@ -980,6 +1001,48 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
             : 'pointer-events-auto cursor-grab active:cursor-grabbing'
         }`}
       >
+        {/* Double-Tap Care HUD Top Bar: Hunger Hearts & Happiness Stars */}
+        <AnimatePresence>
+          {isMenuOpen && !isOffScreenHidden && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.85, y: 6 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.85, y: 6 }}
+              onClick={(e) => e.stopPropagation()}
+              className="absolute bottom-full mb-1.5 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-slate-950/95 backdrop-blur-md border border-cyan-400/50 rounded-full px-2.5 py-1 shadow-xl z-40 whitespace-nowrap pointer-events-auto"
+            >
+              <div className="flex items-center gap-0.5 text-[11px] leading-none" title={`Hunger: ${pet.hunger}%`}>
+                <span className="font-pixel text-[8px] text-amber-300 mr-0.5">H</span>
+                {Array.from({ length: 4 }).map((_, i) => {
+                  const filled = i < (pet.hunger <= 0 ? 0 : Math.min(4, Math.ceil((pet.hunger / 100) * 4)));
+                  return (
+                    <span
+                      key={`h-${i}`}
+                      className={filled ? 'text-rose-400 drop-shadow-[0_0_4px_rgba(251,113,133,0.65)]' : 'text-slate-600'}
+                    >
+                      {filled ? '♥' : '♡'}
+                    </span>
+                  );
+                })}
+              </div>
+              <div className="w-[1px] h-2.5 bg-slate-700" />
+              <div className="flex items-center gap-0.5 text-[11px] leading-none" title={`Happiness: ${pet.happiness}%`}>
+                {Array.from({ length: 4 }).map((_, i) => {
+                  const filled = i < (pet.happiness <= 0 ? 0 : Math.min(4, Math.ceil((pet.happiness / 100) * 4)));
+                  return (
+                    <span
+                      key={`s-${i}`}
+                      className={filled ? 'text-amber-300 drop-shadow-[0_0_4px_rgba(252,211,77,0.65)]' : 'text-slate-600'}
+                    >
+                      {filled ? '★' : '☆'}
+                    </span>
+                  );
+                })}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Speech Dialogue Bubble - Anchored by bottom/top edge so long messages never clip behind sprite or screen edges */}
         <AnimatePresence>
           {speechBubble && !isOffScreenHidden && (
@@ -988,7 +1051,9 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
               animate={{ scale: 1, opacity: 1, y: 0 }}
               exit={{ scale: 0, opacity: 0, y: bubblePlacement.below ? -8 : 8 }}
               className={`absolute pointer-events-none max-w-[min(260px,calc(100vw-24px))] w-max z-30 select-none ${
-                bubblePlacement.below ? 'top-full mt-2' : 'bottom-full mb-2'
+                bubblePlacement.below
+                  ? (isMenuOpen ? 'top-full mt-16' : 'top-full mt-2')
+                  : (isMenuOpen ? 'bottom-full mb-9' : 'bottom-full mb-2')
               } ${
                 bubblePlacement.align === 'left'
                   ? 'left-0'
@@ -1102,88 +1167,54 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
           />
         </div>
 
-        {/* Quick Interaction Radial / Drawer Menu on Tap */}
+        {/* Compact Double-Tap 4-Button Care HUD Below Digimon */}
         <AnimatePresence>
           {isMenuOpen && !isOffScreenHidden && (
             <motion.div
-              initial={{ opacity: 0, scale: 0.8, y: 10 }}
+              initial={{ opacity: 0, scale: 0.85, y: 6 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.8, y: 10 }}
-              className="absolute -bottom-16 bg-slate-950/95 backdrop-blur-md border border-cyan-500/40 rounded-2xl p-2 shadow-2xl flex items-center gap-1.5 z-50 text-slate-100"
+              exit={{ opacity: 0, scale: 0.85, y: 6 }}
+              onClick={(e) => e.stopPropagation()}
+              className="absolute top-full mt-1.5 left-1/2 -translate-x-1/2 bg-slate-950/95 backdrop-blur-md border border-cyan-500/40 rounded-2xl p-1.5 shadow-2xl grid grid-cols-4 gap-1 z-50 text-slate-100 w-max pointer-events-auto"
             >
+              <button
+                onClick={handleFeedMeat}
+                className="flex flex-col items-center justify-center px-2 py-1.5 rounded-xl bg-slate-800/85 hover:bg-amber-500/30 text-amber-300 border border-amber-500/35 transition-transform active:scale-90 cursor-pointer min-w-[46px]"
+                title={`Feed Big Meat (${pet.bigMeatStock})`}
+              >
+                <PixelMeatIcon className="w-4 h-4" />
+                <span className="text-[8px] font-pixel mt-0.5">MEAT</span>
+              </button>
+
+              <button
+                onClick={handleGiveVitamin}
+                className="flex flex-col items-center justify-center px-2 py-1.5 rounded-xl bg-slate-800/85 hover:bg-purple-500/30 text-purple-300 border border-purple-500/35 transition-transform active:scale-90 cursor-pointer min-w-[46px]"
+                title={`Give Vitamin (${pet.vitaminStock})`}
+              >
+                <PixelVitaminIcon className="w-4 h-4" />
+                <span className="text-[8px] font-pixel mt-0.5">VIT</span>
+              </button>
+
+              <button
+                onClick={handlePetDigimon}
+                className="flex flex-col items-center justify-center px-2 py-1.5 rounded-xl bg-slate-800/85 hover:bg-rose-500/30 text-rose-300 border border-rose-500/35 transition-transform active:scale-90 cursor-pointer min-w-[46px]"
+                title="Praise Digimon"
+              >
+                <Heart className="w-4 h-4 text-rose-400 fill-rose-400" />
+                <span className="text-[8px] font-pixel mt-0.5">PRAISE</span>
+              </button>
+
               <button
                 onClick={() => {
                   setIsMenuOpen(false);
                   setIsChatInputOpen(true);
                   sound.playButton();
                 }}
-                className="flex flex-col items-center justify-center p-2 rounded-xl bg-cyan-950/70 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 transition-transform active:scale-90"
-                title="Talk with Digimon (AI)"
+                className="flex flex-col items-center justify-center px-2 py-1.5 rounded-xl bg-cyan-950/80 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/40 transition-transform active:scale-90 cursor-pointer min-w-[46px]"
+                title="Chat with Digimon"
               >
                 <MessageSquare className="w-4 h-4 text-cyan-400" />
-                <span className="text-[9px] font-pixel mt-1">TALK</span>
-              </button>
-
-              <button
-                onClick={handleFeedMeat}
-                className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-800/80 hover:bg-amber-500/30 text-amber-300 border border-amber-500/30 transition-transform active:scale-90"
-                title="Feed Big Meat"
-              >
-                <PixelMeatIcon className="w-5 h-5" />
-                <span className="text-[9px] font-pixel mt-1">MEAT</span>
-              </button>
-
-              <button
-                onClick={handleGiveVitamin}
-                className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-800/80 hover:bg-purple-500/30 text-purple-300 border border-purple-500/30 transition-transform active:scale-90"
-                title="Give Vitamin"
-              >
-                <PixelVitaminIcon className="w-5 h-5" />
-                <span className="text-[9px] font-pixel mt-1">VIT</span>
-              </button>
-
-              <button
-                onClick={handlePetDigimon}
-                className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-800/80 hover:bg-rose-500/30 text-rose-300 border border-rose-500/30 transition-transform active:scale-90"
-                title="Pet & Praise"
-              >
-                <Heart className="w-4 h-4 text-rose-400 fill-rose-400" />
-                <span className="text-[9px] font-pixel mt-1">PET</span>
-              </button>
-
-              {pet.poopCount > 0 && (
-                <button
-                  onClick={onCleanPoop}
-                  className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-800/80 hover:bg-cyan-500/30 text-cyan-300 border border-cyan-500/30 transition-transform active:scale-90"
-                  title="Flush Poop"
-                >
-                  <span className="text-base">🧹</span>
-                  <span className="text-[9px] font-pixel mt-1">FLUSH</span>
-                </button>
-              )}
-
-              <button
-                onClick={() => {
-                  setIsMenuOpen(false);
-                  onOpenRoom();
-                }}
-                className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-800/80 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 transition-transform active:scale-90"
-                title="My Room"
-              >
-                <Home className="w-4 h-4 text-emerald-400" />
-                <span className="text-[9px] font-pixel mt-1">ROOM</span>
-              </button>
-
-              <button
-                onClick={() => {
-                  setIsMenuOpen(false);
-                  onOpenColosseum();
-                }}
-                className="flex flex-col items-center justify-center p-2 rounded-xl bg-slate-800/80 hover:bg-blue-500/30 text-blue-300 border border-blue-500/30 transition-transform active:scale-90"
-                title="Colosseum Battle"
-              >
-                <Gamepad2 className="w-4 h-4 text-blue-400" />
-                <span className="text-[9px] font-pixel mt-1">ARENA</span>
+                <span className="text-[8px] font-pixel mt-0.5">CHAT</span>
               </button>
             </motion.div>
           )}

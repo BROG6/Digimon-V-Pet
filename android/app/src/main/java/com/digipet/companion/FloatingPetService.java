@@ -5,6 +5,7 @@ import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
+import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Color;
@@ -16,16 +17,23 @@ import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import android.provider.Settings;
+import android.text.SpannableStringBuilder;
+import android.text.Spanned;
+import android.text.style.ForegroundColorSpan;
 import android.util.DisplayMetrics;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.HapticFeedbackConstants;
+import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
+import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputMethodManager;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
+import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
@@ -75,7 +83,24 @@ public class FloatingPetService extends Service {
     private boolean dismissVisible = false;
     private boolean isOverDismissZone = false;
 
-    // Double-tap detection
+    // Double-tap Care HUD (Hunger Hearts + Happiness Stars above pet, 4 care buttons below)
+    private LinearLayout hudStatsContainer;
+    private TextView hudStatsTextView;
+    private WindowManager.LayoutParams hudStatsParams;
+    private LinearLayout hudButtonsContainer;
+    private WindowManager.LayoutParams hudButtonsParams;
+    private TextView hudMeatLabel;
+    private TextView hudVitLabel;
+    private boolean hudVisible = false;
+
+    // Compact Native Floating Chat Bar
+    private LinearLayout chatContainer;
+    private EditText chatEditText;
+    private WindowManager.LayoutParams chatParams;
+    private boolean chatVisible = false;
+
+    // Multi-tap detection (1 = talk, 2 = care HUD, 3 = open app)
+    private int tapCount = 0;
     private long lastTapUpMs = 0L;
 
     private final Handler physicsHandler = new Handler(Looper.getMainLooper());
@@ -89,9 +114,25 @@ public class FloatingPetService extends Service {
     private final Runnable singleTapRunnable = new Runnable() {
         @Override
         public void run() {
+            tapCount = 0;
+            lastTapUpMs = 0L;
             if (webView != null) {
                 webView.evaluateJavascript("window.onPetTapped && window.onPetTapped();", null);
             }
+        }
+    };
+    private final Runnable doubleTapRunnable = new Runnable() {
+        @Override
+        public void run() {
+            tapCount = 0;
+            lastTapUpMs = 0L;
+            toggleCareHud();
+        }
+    };
+    private final Runnable hudAutoHideRunnable = new Runnable() {
+        @Override
+        public void run() {
+            setHudVisible(false);
         }
     };
 
@@ -124,7 +165,11 @@ public class FloatingPetService extends Service {
     private int pendingPreviewRowIndex = -1;
     private int petHunger = 80;
     private int petHappiness = 80;
+    private int petBigMeatStock = 0;
+    private int petVitaminStock = 0;
     private boolean isPetSleeping = false;
+    private String currentSpeciesName = "Digimon";
+    private String currentQuotesJson = "[]";
 
     // In-place Evolution Tracking
     private String loadedSpeciesKey = "";
@@ -230,8 +275,18 @@ public class FloatingPetService extends Service {
         pendingPreviewRowIndex = intent.getIntExtra("previewRowIndex", -1);
         petHunger = intent.getIntExtra("hunger", 80);
         petHappiness = intent.getIntExtra("happiness", 80);
+        petBigMeatStock = intent.getIntExtra("bigMeatStock", petBigMeatStock);
+        petVitaminStock = intent.getIntExtra("vitaminStock", petVitaminStock);
+        String sName = intent.getStringExtra("speciesName");
+        if (sName != null && !sName.isEmpty()) currentSpeciesName = sName;
+        String qJson = intent.getStringExtra("quotesJson");
+        if (qJson != null && !qJson.isEmpty()) currentQuotesJson = qJson;
         if (lastOffScreenAtMs == 0L) {
             lastOffScreenAtMs = System.currentTimeMillis();
+        }
+        if (hudVisible) {
+            updateHudStatsText();
+            updateCareHudPositions();
         }
 
         String evoMsg = intent.getStringExtra("evolvedMessage");
@@ -509,7 +564,11 @@ public class FloatingPetService extends Service {
                         if (!isDragging && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) {
                             isDragging = true;
                             physicsHandler.removeCallbacks(singleTapRunnable);
+                            physicsHandler.removeCallbacks(doubleTapRunnable);
+                            tapCount = 0;
                             lastTapUpMs = 0L;
+                            setHudVisible(false);
+                            setChatBarVisible(false);
                             syncVisualState("walk", dx >= 0, carriedItem, null);
                             setDismissTargetVisible(true, false);
                         }
@@ -538,6 +597,8 @@ public class FloatingPetService extends Service {
                         isOverDismissZone = false;
 
                         if (shouldCloseOverlay) {
+                            setHudVisible(false);
+                            setChatBarVisible(false);
                             hideNativeBubble();
                             stopSelf();
                             return true;
@@ -549,14 +610,24 @@ public class FloatingPetService extends Service {
 
                         if (!isDragging && duration < 320 && diffX < 20 && diffY < 20) {
                             long now = System.currentTimeMillis();
+                            physicsHandler.removeCallbacks(singleTapRunnable);
+                            physicsHandler.removeCallbacks(doubleTapRunnable);
                             if (lastTapUpMs > 0L && (now - lastTapUpMs) <= 320L) {
-                                physicsHandler.removeCallbacks(singleTapRunnable);
-                                lastTapUpMs = 0L;
-                                openMainApp();
+                                tapCount++;
                             } else {
-                                lastTapUpMs = now;
-                                physicsHandler.removeCallbacks(singleTapRunnable);
-                                physicsHandler.postDelayed(singleTapRunnable, 280L);
+                                tapCount = 1;
+                            }
+                            lastTapUpMs = now;
+                            if (tapCount >= 3) {
+                                tapCount = 0;
+                                lastTapUpMs = 0L;
+                                setHudVisible(false);
+                                setChatBarVisible(false);
+                                openMainApp();
+                            } else if (tapCount == 2) {
+                                physicsHandler.postDelayed(doubleTapRunnable, 270L);
+                            } else {
+                                physicsHandler.postDelayed(singleTapRunnable, 290L);
                             }
                         } else if (isPetSleeping) {
                             if (!isFlyingPet) {
@@ -582,6 +653,8 @@ public class FloatingPetService extends Service {
         floatingView = rootLayout;
         windowManager.addView(floatingView, params);
         setupBubbleOverlay(layoutType);
+        setupCareHudOverlay(layoutType);
+        setupChatBarOverlay(layoutType);
         setupDismissOverlay(layoutType);
         scheduleTopOffsetCalibration();
     }
@@ -801,14 +874,15 @@ public class FloatingPetService extends Service {
             if (bx < minBx) bx = minBx;
             if (bx > maxBx) bx = maxBx;
 
-            // Anchor right above the sprite's actual head inside the pet window
+            // Anchor right above the sprite's actual head inside the pet window (above stats HUD if visible)
             int spriteTopInWindow = Math.max(dpToPx(4), viewH - dpToPx(12 + bubbleSpriteHeightDp));
             int spriteTopY = petWindowY + spriteTopInWindow;
-            int by = spriteTopY - bh - dpToPx(2);
+            int hudTopGap = hudVisible ? dpToPx(36) : 0;
+            int by = spriteTopY - bh - dpToPx(2) - hudTopGap;
 
-            // If near top of screen, flip bubble below the pet so it never clips above status bar
+            // If near top of screen, flip bubble below the pet (or below buttons HUD if visible)
             if (by < dpToPx(8)) {
-                by = petWindowY + viewH - dpToPx(2);
+                by = petWindowY + viewH + (hudVisible ? dpToPx(64) : -dpToPx(2));
                 int maxBy = Math.max(dpToPx(8), screenH - bh - dpToPx(16) - topSystemOffsetPx);
                 if (by > maxBy) by = maxBy;
             }
@@ -823,6 +897,589 @@ public class FloatingPetService extends Service {
         } catch (Exception ignored) {
             // Safe guard during shutdown
         }
+    }
+
+    private void setupCareHudOverlay(int layoutType) {
+        if (windowManager == null || hudStatsContainer != null) return;
+
+        // 1. Top Stats Pill (Hunger Hearts + Happiness Stars)
+        hudStatsContainer = new LinearLayout(this);
+        hudStatsContainer.setOrientation(LinearLayout.HORIZONTAL);
+        hudStatsContainer.setGravity(Gravity.CENTER);
+        hudStatsContainer.setVisibility(View.GONE);
+        GradientDrawable statsBg = new GradientDrawable();
+        statsBg.setColor(0xEB0F172A);
+        statsBg.setCornerRadius(dpToPx(12));
+        statsBg.setStroke(dpToPx(1), 0xFF38BDF8);
+        hudStatsContainer.setBackground(statsBg);
+        hudStatsContainer.setPadding(dpToPx(10), dpToPx(4), dpToPx(10), dpToPx(4));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            hudStatsContainer.setElevation(dpToPx(6));
+        }
+
+        hudStatsTextView = new TextView(this);
+        hudStatsTextView.setTypeface(Typeface.create(Typeface.MONOSPACE, Typeface.BOLD));
+        hudStatsTextView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f);
+        hudStatsTextView.setGravity(Gravity.CENTER);
+        hudStatsTextView.setSingleLine(true);
+        hudStatsContainer.addView(hudStatsTextView, new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        ));
+
+        hudStatsParams = new WindowManager.LayoutParams(
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            layoutType,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE |
+            WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE |
+            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            PixelFormat.TRANSLUCENT
+        );
+        hudStatsParams.gravity = Gravity.TOP | Gravity.START;
+        hudStatsParams.x = 0;
+        hudStatsParams.y = 0;
+
+        try {
+            windowManager.addView(hudStatsContainer, hudStatsParams);
+        } catch (Exception ignored) {
+            hudStatsContainer = null;
+        }
+
+        // 2. Bottom 4-Button Care Bar (MEAT, VIT, PRAISE, CHAT)
+        hudButtonsContainer = new LinearLayout(this);
+        hudButtonsContainer.setOrientation(LinearLayout.HORIZONTAL);
+        hudButtonsContainer.setGravity(Gravity.CENTER);
+        hudButtonsContainer.setVisibility(View.GONE);
+        GradientDrawable barBg = new GradientDrawable();
+        barBg.setColor(0xEB0F172A);
+        barBg.setCornerRadius(dpToPx(14));
+        barBg.setStroke(dpToPx(1), 0xFF334155);
+        hudButtonsContainer.setBackground(barBg);
+        hudButtonsContainer.setPadding(dpToPx(5), dpToPx(5), dpToPx(5), dpToPx(5));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            hudButtonsContainer.setElevation(dpToPx(8));
+        }
+
+        LinearLayout meatBtn = createHudActionButton("🍖", "MEAT", 0xFFFDBA74, 0xFFEA580C, true);
+        hudMeatLabel = (TextView) meatBtn.getChildAt(1);
+        meatBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                v.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
+                onHudMeatClicked();
+            }
+        });
+
+        LinearLayout vitBtn = createHudActionButton("💊", "VIT", 0xFF7DD3FC, 0xFF0284C7, false);
+        hudVitLabel = (TextView) vitBtn.getChildAt(1);
+        vitBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                v.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
+                onHudVitClicked();
+            }
+        });
+
+        LinearLayout praiseBtn = createHudActionButton("💖", "PRAISE", 0xFFFDA4AF, 0xFFE11D48, false);
+        praiseBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                v.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
+                onHudPraiseClicked();
+            }
+        });
+
+        LinearLayout chatBtn = createHudActionButton("💬", "CHAT", 0xFF67E8F9, 0xFF0891B2, false);
+        chatBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                v.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
+                onHudChatClicked();
+            }
+        });
+
+        hudButtonsContainer.addView(meatBtn);
+        hudButtonsContainer.addView(vitBtn);
+        hudButtonsContainer.addView(praiseBtn);
+        hudButtonsContainer.addView(chatBtn);
+
+        hudButtonsParams = new WindowManager.LayoutParams(
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            layoutType,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE |
+            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL |
+            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            PixelFormat.TRANSLUCENT
+        );
+        hudButtonsParams.gravity = Gravity.TOP | Gravity.START;
+        hudButtonsParams.x = 0;
+        hudButtonsParams.y = 0;
+
+        try {
+            windowManager.addView(hudButtonsContainer, hudButtonsParams);
+        } catch (Exception ignored) {
+            hudButtonsContainer = null;
+        }
+
+        updateHudStatsText();
+    }
+
+    private LinearLayout createHudActionButton(String icon, String label, int textColor, int borderColor, boolean isFirst) {
+        LinearLayout btn = new LinearLayout(this);
+        btn.setOrientation(LinearLayout.VERTICAL);
+        btn.setGravity(Gravity.CENTER);
+        btn.setClickable(true);
+        btn.setFocusable(false);
+        GradientDrawable btnBg = new GradientDrawable();
+        btnBg.setColor(0xD91E293B);
+        btnBg.setCornerRadius(dpToPx(10));
+        btnBg.setStroke(dpToPx(1), borderColor);
+        btn.setBackground(btnBg);
+        btn.setPadding(dpToPx(7), dpToPx(4), dpToPx(7), dpToPx(4));
+
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+            dpToPx(54),
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        if (!isFirst) {
+            lp.leftMargin = dpToPx(4);
+        }
+        btn.setLayoutParams(lp);
+
+        TextView iconTv = new TextView(this);
+        iconTv.setText(icon);
+        iconTv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
+        iconTv.setGravity(Gravity.CENTER);
+        btn.addView(iconTv);
+
+        TextView labelTv = new TextView(this);
+        labelTv.setText(label);
+        labelTv.setTextColor(textColor);
+        labelTv.setTypeface(Typeface.create(Typeface.MONOSPACE, Typeface.BOLD));
+        labelTv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 8.5f);
+        labelTv.setGravity(Gravity.CENTER);
+        labelTv.setSingleLine(true);
+        btn.addView(labelTv);
+
+        return btn;
+    }
+
+    private void updateHudStatsText() {
+        int filledHearts = petHunger <= 0 ? 0 : Math.min(4, (int) Math.ceil((petHunger / 100.0) * 4.0));
+        int filledStars = petHappiness <= 0 ? 0 : Math.min(4, (int) Math.ceil((petHappiness / 100.0) * 4.0));
+
+        if (hudStatsTextView != null) {
+            SpannableStringBuilder sb = new SpannableStringBuilder();
+            int start = sb.length();
+            sb.append("H:");
+            sb.setSpan(new ForegroundColorSpan(0xFFFCD34D), start, sb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+
+            for (int i = 0; i < 4; i++) {
+                boolean f = i < filledHearts;
+                int s = sb.length();
+                sb.append(f ? "♥" : "♡");
+                sb.setSpan(new ForegroundColorSpan(f ? 0xFFFB7185 : 0xFF475569), s, sb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
+
+            int sepStart = sb.length();
+            sb.append("  ");
+            sb.setSpan(new ForegroundColorSpan(0xFF64748B), sepStart, sb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+
+            int starPrefixStart = sb.length();
+            sb.append("S:");
+            sb.setSpan(new ForegroundColorSpan(0xFF7DD3FC), starPrefixStart, sb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+
+            for (int i = 0; i < 4; i++) {
+                boolean f = i < filledStars;
+                int s = sb.length();
+                sb.append(f ? "★" : "☆");
+                sb.setSpan(new ForegroundColorSpan(f ? 0xFFFACC15 : 0xFF475569), s, sb.length(), Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+            }
+
+            hudStatsTextView.setText(sb);
+        }
+
+        if (hudMeatLabel != null) {
+            hudMeatLabel.setText(petBigMeatStock > 0 ? ("MEAT " + petBigMeatStock) : "MEAT 0");
+            hudMeatLabel.setTextColor(petBigMeatStock > 0 ? 0xFFFDBA74 : 0xFF94A3B8);
+        }
+        if (hudVitLabel != null) {
+            hudVitLabel.setText(petVitaminStock > 0 ? ("VIT " + petVitaminStock) : "VIT 0");
+            hudVitLabel.setTextColor(petVitaminStock > 0 ? 0xFF7DD3FC : 0xFF94A3B8);
+        }
+    }
+
+    private void toggleCareHud() {
+        setHudVisible(!hudVisible);
+    }
+
+    private void setHudVisible(boolean visible) {
+        if (hudStatsContainer == null || hudButtonsContainer == null) return;
+        if (visible && offScreenPhase == OffScreenPhase.HIDDEN) return;
+
+        hudVisible = visible;
+        physicsHandler.removeCallbacks(hudAutoHideRunnable);
+        if (visible) {
+            setChatBarVisible(false);
+            updateHudStatsText();
+            hudStatsContainer.setVisibility(View.VISIBLE);
+            hudButtonsContainer.setVisibility(View.VISIBLE);
+            updateCareHudPositions();
+            if (bubbleVisible) {
+                updateBubblePosition();
+            }
+            resetHudAutoHide();
+        } else {
+            hudStatsContainer.setVisibility(View.GONE);
+            hudButtonsContainer.setVisibility(View.GONE);
+            if (bubbleVisible) {
+                updateBubblePosition();
+            }
+        }
+    }
+
+    private void resetHudAutoHide() {
+        physicsHandler.removeCallbacks(hudAutoHideRunnable);
+        if (hudVisible) {
+            physicsHandler.postDelayed(hudAutoHideRunnable, 10000L);
+        }
+    }
+
+    private void updateCareHudPositions() {
+        if (!hudVisible || hudStatsContainer == null || hudButtonsContainer == null || params == null || windowManager == null) {
+            return;
+        }
+        try {
+            int maxWSpec = View.MeasureSpec.makeMeasureSpec(Math.max(dpToPx(200), screenW - dpToPx(16)), View.MeasureSpec.AT_MOST);
+            int maxHSpec = View.MeasureSpec.makeMeasureSpec(dpToPx(120), View.MeasureSpec.AT_MOST);
+
+            hudStatsContainer.measure(maxWSpec, maxHSpec);
+            int sw = Math.max(dpToPx(80), hudStatsContainer.getMeasuredWidth());
+            int sh = Math.max(dpToPx(24), hudStatsContainer.getMeasuredHeight());
+
+            hudButtonsContainer.measure(maxWSpec, maxHSpec);
+            int bw = Math.max(dpToPx(180), hudButtonsContainer.getMeasuredWidth());
+            int bh = Math.max(dpToPx(42), hudButtonsContainer.getMeasuredHeight());
+
+            int petCenterX = Math.round(params.x + viewW * 0.5f);
+            int spriteTopInWindow = Math.max(dpToPx(4), viewH - dpToPx(12 + bubbleSpriteHeightDp));
+            int spriteTopY = params.y + spriteTopInWindow;
+
+            int sx = Math.round(petCenterX - sw * 0.5f);
+            int minSx = dpToPx(6);
+            int maxSx = Math.max(minSx, screenW - sw - dpToPx(6));
+            sx = Math.max(minSx, Math.min(maxSx, sx));
+
+            int bx = Math.round(petCenterX - bw * 0.5f);
+            int minBx = dpToPx(6);
+            int maxBx = Math.max(minBx, screenW - bw - dpToPx(6));
+            bx = Math.max(minBx, Math.min(maxBx, bx));
+
+            int sy = spriteTopY - sh - dpToPx(6);
+            int by = params.y + viewH - dpToPx(2);
+
+            // Keep inside vertical screen bounds cleanly
+            if (sy < dpToPx(12)) {
+                sy = params.y + viewH - dpToPx(2);
+                by = sy + sh + dpToPx(4);
+            }
+            int maxBy = Math.max(dpToPx(16), screenH - bh - dpToPx(16) - topSystemOffsetPx);
+            if (by > maxBy) {
+                by = maxBy;
+            }
+
+            if (hudStatsParams.x != sx || hudStatsParams.y != sy) {
+                hudStatsParams.x = sx;
+                hudStatsParams.y = sy;
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT || hudStatsContainer.isAttachedToWindow()) {
+                    windowManager.updateViewLayout(hudStatsContainer, hudStatsParams);
+                }
+            }
+
+            if (hudButtonsParams.x != bx || hudButtonsParams.y != by) {
+                hudButtonsParams.x = bx;
+                hudButtonsParams.y = by;
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT || hudButtonsContainer.isAttachedToWindow()) {
+                    windowManager.updateViewLayout(hudButtonsContainer, hudButtonsParams);
+                }
+            }
+        } catch (Exception ignored) {
+            // Safe guard
+        }
+    }
+
+    private void recordCareSyncDelta(int meatDelta, int vitDelta, int praiseDelta) {
+        SharedPreferences prefs = getSharedPreferences("digipet_overlay_sync", MODE_PRIVATE);
+        SharedPreferences.Editor editor = prefs.edit();
+        if (meatDelta != 0) {
+            editor.putInt("pendingMeatUsed", prefs.getInt("pendingMeatUsed", 0) + meatDelta);
+        }
+        if (vitDelta != 0) {
+            editor.putInt("pendingVitUsed", prefs.getInt("pendingVitUsed", 0) + vitDelta);
+        }
+        if (praiseDelta != 0) {
+            editor.putInt("pendingPraiseCount", prefs.getInt("pendingPraiseCount", 0) + praiseDelta);
+        }
+        editor.apply();
+    }
+
+    private void triggerHudHopFeedback(String msg) {
+        showNativeBubble(msg, 2800, bubbleSpriteHeightDp);
+        if (webView != null) {
+            webView.evaluateJavascript(
+                "(function(){var p=document.getElementById('petWrap');if(p){p.classList.remove('hopping');void p.offsetWidth;p.classList.add('hopping');}})();",
+                null
+            );
+        }
+    }
+
+    private void onHudMeatClicked() {
+        resetHudAutoHide();
+        if (isPetSleeping) {
+            triggerHudHopFeedback("Zzz... Wake me up in the app before feeding!");
+            return;
+        }
+        if (petBigMeatStock <= 0) {
+            triggerHudHopFeedback("Out of Big Meat! Buy more in Shop.");
+            return;
+        }
+        petBigMeatStock--;
+        petHunger = Math.min(100, petHunger + 35);
+        petHappiness = Math.min(100, petHappiness + 8);
+        recordCareSyncDelta(1, 0, 0);
+        updateHudStatsText();
+        triggerHudHopFeedback("Yum!! Big Meat hits the spot! (+Hunger)");
+    }
+
+    private void onHudVitClicked() {
+        resetHudAutoHide();
+        if (isPetSleeping) {
+            triggerHudHopFeedback("Zzz... Let me sleep first!");
+            return;
+        }
+        if (petVitaminStock <= 0) {
+            triggerHudHopFeedback("Out of Vitamins! Grab some in Shop.");
+            return;
+        }
+        petVitaminStock--;
+        petHappiness = Math.min(100, petHappiness + 20);
+        recordCareSyncDelta(0, 1, 0);
+        updateHudStatsText();
+        triggerHudHopFeedback("Vitamin boost! Feeling energized! (+Happy)");
+    }
+
+    private void onHudPraiseClicked() {
+        resetHudAutoHide();
+        if (isPetSleeping) {
+            triggerHudHopFeedback("Zzz... *happy sleep noises* ♥");
+            return;
+        }
+        petHappiness = Math.min(100, petHappiness + 15);
+        recordCareSyncDelta(0, 0, 1);
+        updateHudStatsText();
+        triggerHudHopFeedback("Yay! Thanks for praising me, Tamer! ♥");
+    }
+
+    private void onHudChatClicked() {
+        setHudVisible(false);
+        setChatBarVisible(true);
+    }
+
+    private void setupChatBarOverlay(int layoutType) {
+        if (windowManager == null || chatContainer != null) return;
+
+        chatContainer = new LinearLayout(this);
+        chatContainer.setOrientation(LinearLayout.HORIZONTAL);
+        chatContainer.setGravity(Gravity.CENTER_VERTICAL);
+        chatContainer.setVisibility(View.GONE);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(0xF20F172A);
+        bg.setCornerRadius(dpToPx(16));
+        bg.setStroke(dpToPx(2), 0xFF38BDF8);
+        chatContainer.setBackground(bg);
+        chatContainer.setPadding(dpToPx(10), dpToPx(6), dpToPx(8), dpToPx(6));
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            chatContainer.setElevation(dpToPx(10));
+        }
+
+        chatEditText = new EditText(this);
+        chatEditText.setHint("Talk to " + currentSpeciesName + "...");
+        chatEditText.setHintTextColor(0xFF94A3B8);
+        chatEditText.setTextColor(0xFFFFFFFF);
+        chatEditText.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f);
+        chatEditText.setSingleLine(true);
+        chatEditText.setImeOptions(EditorInfo.IME_ACTION_SEND);
+        chatEditText.setBackgroundColor(Color.TRANSPARENT);
+        chatEditText.setPadding(dpToPx(4), dpToPx(6), dpToPx(6), dpToPx(6));
+        LinearLayout.LayoutParams editLp = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        chatContainer.addView(chatEditText, editLp);
+
+        chatEditText.setOnEditorActionListener(new TextView.OnEditorActionListener() {
+            @Override
+            public boolean onEditorAction(TextView v, int actionId, KeyEvent event) {
+                if (actionId == EditorInfo.IME_ACTION_SEND ||
+                    (event != null && event.getKeyCode() == KeyEvent.KEYCODE_ENTER && event.getAction() == KeyEvent.ACTION_DOWN)) {
+                    submitNativeChat();
+                    return true;
+                }
+                return false;
+            }
+        });
+
+        TextView sendBtn = new TextView(this);
+        sendBtn.setText("SEND");
+        sendBtn.setTextColor(0xFF0F172A);
+        sendBtn.setTypeface(Typeface.create(Typeface.MONOSPACE, Typeface.BOLD));
+        sendBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10.5f);
+        sendBtn.setGravity(Gravity.CENTER);
+        GradientDrawable sendBg = new GradientDrawable();
+        sendBg.setColor(0xFF38BDF8);
+        sendBg.setCornerRadius(dpToPx(10));
+        sendBtn.setBackground(sendBg);
+        sendBtn.setPadding(dpToPx(10), dpToPx(6), dpToPx(10), dpToPx(6));
+        LinearLayout.LayoutParams sendLp = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        sendLp.leftMargin = dpToPx(6);
+        chatContainer.addView(sendBtn, sendLp);
+        sendBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                submitNativeChat();
+            }
+        });
+
+        TextView closeBtn = new TextView(this);
+        closeBtn.setText("✕");
+        closeBtn.setTextColor(0xFF94A3B8);
+        closeBtn.setTypeface(Typeface.DEFAULT_BOLD);
+        closeBtn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14f);
+        closeBtn.setGravity(Gravity.CENTER);
+        closeBtn.setPadding(dpToPx(8), dpToPx(4), dpToPx(4), dpToPx(4));
+        LinearLayout.LayoutParams closeLp = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        closeLp.leftMargin = dpToPx(2);
+        chatContainer.addView(closeBtn, closeLp);
+        closeBtn.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                setChatBarVisible(false);
+            }
+        });
+
+        chatParams = new WindowManager.LayoutParams(
+            Math.min(dpToPx(340), Math.max(dpToPx(240), screenW - dpToPx(28))),
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            layoutType,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE |
+            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
+            PixelFormat.TRANSLUCENT
+        );
+        chatParams.softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE;
+        chatParams.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
+        chatParams.x = 0;
+        chatParams.y = dpToPx(26);
+
+        try {
+            windowManager.addView(chatContainer, chatParams);
+        } catch (Exception ignored) {
+            chatContainer = null;
+        }
+    }
+
+    private void setChatBarVisible(boolean visible) {
+        if (chatContainer == null || chatParams == null || windowManager == null) return;
+        chatVisible = visible;
+        try {
+            if (visible) {
+                if (chatEditText != null) {
+                    chatEditText.setHint("Talk to " + currentSpeciesName + "...");
+                    chatEditText.setText("");
+                }
+                chatParams.width = Math.min(dpToPx(340), Math.max(dpToPx(240), screenW - dpToPx(28)));
+                chatParams.flags &= ~WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
+                chatContainer.setVisibility(View.VISIBLE);
+                windowManager.updateViewLayout(chatContainer, chatParams);
+                if (chatEditText != null) {
+                    chatEditText.requestFocus();
+                    chatEditText.postDelayed(new Runnable() {
+                        @Override
+                        public void run() {
+                            if (chatEditText != null && chatVisible) {
+                                InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+                                if (imm != null) {
+                                    imm.showSoftInput(chatEditText, InputMethodManager.SHOW_IMPLICIT);
+                                }
+                            }
+                        }
+                    }, 80L);
+                }
+            } else {
+                chatParams.flags |= WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE;
+                if (chatEditText != null) {
+                    InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+                    if (imm != null) {
+                        imm.hideSoftInputFromWindow(chatEditText.getWindowToken(), 0);
+                    }
+                    chatEditText.clearFocus();
+                }
+                chatContainer.setVisibility(View.GONE);
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT || chatContainer.isAttachedToWindow()) {
+                    windowManager.updateViewLayout(chatContainer, chatParams);
+                }
+            }
+        } catch (Exception ignored) {
+            // Safe guard
+        }
+    }
+
+    private void submitNativeChat() {
+        if (chatEditText == null) return;
+        String input = chatEditText.getText() != null ? chatEditText.getText().toString().trim() : "";
+        setChatBarVisible(false);
+        if (input.isEmpty()) return;
+
+        String reply = buildNativeChatReply(input);
+        triggerHudHopFeedback(reply);
+    }
+
+    private String buildNativeChatReply(String userText) {
+        if (isPetSleeping) {
+            return "Zzz... " + currentSpeciesName + " heard you in a dream...";
+        }
+        String lower = userText.toLowerCase();
+        if (lower.contains("meat") || lower.contains("food") || lower.contains("hungry") || lower.contains("eat")) {
+            if (petHunger < 50) return "Yes please!! My tummy is rumbling! 🍖";
+            return "I could always go for a Big Meat snack, Tamer!";
+        }
+        if (lower.contains("love") || lower.contains("good") || lower.contains("cute") || lower.contains("praise")) {
+            return "Hehe! Being your partner is the best, Tamer! ♥";
+        }
+        if (lower.contains("battle") || lower.contains("fight") || lower.contains("train") || lower.contains("attack")) {
+            return "Ready anytime! Triple-tap me to jump into the Arena!";
+        }
+        if (lower.contains("how are") || lower.contains("feeling") || lower.contains("status")) {
+            if (petHunger < 40) return "A little hungry... could use some Meat! 🍖";
+            if (petHappiness < 45) return "Could use a vitamin or some praise, Tamer!";
+            return "Feeling awesome right here on your home screen! ★";
+        }
+        if (lower.contains("hello") || lower.contains("hi") || lower.contains("hey")) {
+            return "Hey Tamer! Exploring your home screen with you!";
+        }
+        try {
+            JSONArray arr = new JSONArray(currentQuotesJson);
+            if (arr.length() > 0) {
+                return arr.optString(random.nextInt(arr.length()), "I'm right here with you, Tamer!");
+            }
+        } catch (Exception ignored) {
+            // Fallback
+        }
+        return "Roger that, Tamer! Let's keep growing stronger together!";
     }
 
     private void snapGroundedToNearestRow() {
@@ -1050,6 +1707,12 @@ public class FloatingPetService extends Service {
             carriedItem = "";
             clearItemAtMs = 0L;
             syncVisualState("sleep", facingRight, "", null);
+            return;
+        }
+
+        // Hold position steady while Care HUD or Chat Bar is open so buttons don't walk away
+        if (hudVisible || chatVisible) {
+            syncVisualState("idle", facingRight, carriedItem, null);
             return;
         }
 
@@ -1344,6 +2007,8 @@ public class FloatingPetService extends Service {
     private void setOverlayHidden(boolean hidden) {
         if (floatingView == null || params == null) return;
         if (hidden) {
+            setHudVisible(false);
+            setChatBarVisible(false);
             hideNativeBubble();
             setDismissTargetVisible(false, false);
             floatingView.setVisibility(View.INVISIBLE);
@@ -1370,6 +2035,9 @@ public class FloatingPetService extends Service {
             }
             if (bubbleVisible) {
                 updateBubblePosition();
+            }
+            if (hudVisible) {
+                updateCareHudPositions();
             }
         } catch (Exception ignored) {
             // Safe guard during shutdown
@@ -1690,6 +2358,30 @@ public class FloatingPetService extends Service {
         isRunning = false;
         physicsStarted = false;
         physicsHandler.removeCallbacksAndMessages(null);
+        if (chatContainer != null && windowManager != null) {
+            try {
+                windowManager.removeView(chatContainer);
+            } catch (Exception ignored) {
+                // safe ignore
+            }
+            chatContainer = null;
+        }
+        if (hudButtonsContainer != null && windowManager != null) {
+            try {
+                windowManager.removeView(hudButtonsContainer);
+            } catch (Exception ignored) {
+                // safe ignore
+            }
+            hudButtonsContainer = null;
+        }
+        if (hudStatsContainer != null && windowManager != null) {
+            try {
+                windowManager.removeView(hudStatsContainer);
+            } catch (Exception ignored) {
+                // safe ignore
+            }
+            hudStatsContainer = null;
+        }
         if (dismissContainer != null && windowManager != null) {
             try {
                 windowManager.removeView(dismissContainer);

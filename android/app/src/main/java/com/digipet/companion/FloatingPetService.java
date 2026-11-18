@@ -6,6 +6,7 @@ import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Intent;
+import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.PixelFormat;
 import android.os.Build;
@@ -24,6 +25,7 @@ import android.widget.FrameLayout;
 import androidx.core.app.NotificationCompat;
 import java.util.Random;
 import org.json.JSONArray;
+import org.json.JSONObject;
 
 public class FloatingPetService extends Service {
     public static boolean isRunning = false;
@@ -68,6 +70,12 @@ public class FloatingPetService extends Service {
     private int currentRowIndex = 4; // Start at bottom dock
     private int petHunger = 80;
     private int petHappiness = 80;
+
+    // In-place Evolution Tracking
+    private String loadedSpeciesKey = "";
+    private String pendingEvolvedMessage = "";
+    private long nextEvoTriggerMs = 0L;
+    private String nextEvoPayloadJson = "";
 
     // 5-State Machine Variables
     private PetState petState = PetState.IDLE;
@@ -162,6 +170,23 @@ public class FloatingPetService extends Service {
         isFlyingPet = intent.getBooleanExtra("isFlying", false);
         petHunger = intent.getIntExtra("hunger", 80);
         petHappiness = intent.getIntExtra("happiness", 80);
+
+        String evoMsg = intent.getStringExtra("evolvedMessage");
+        pendingEvolvedMessage = evoMsg != null ? evoMsg : "";
+
+        String triggerStr = intent.getStringExtra("nextEvoTriggerMsStr");
+        if (triggerStr != null && !triggerStr.isEmpty()) {
+            try {
+                nextEvoTriggerMs = Long.parseLong(triggerStr);
+            } catch (Exception ignored) {
+                nextEvoTriggerMs = 0L;
+            }
+        } else {
+            nextEvoTriggerMs = 0L;
+        }
+
+        String evoPayload = intent.getStringExtra("nextEvoPayloadJson");
+        nextEvoPayloadJson = evoPayload != null ? evoPayload : "";
 
         String ratiosJson = intent.getStringExtra("gridRowRatiosJson");
         if (ratiosJson != null && !ratiosJson.isEmpty()) {
@@ -343,7 +368,8 @@ public class FloatingPetService extends Service {
         webView.setVerticalScrollBarEnabled(false);
         webView.setHorizontalScrollBarEnabled(false);
 
-        loadWebViewHtml(intent);
+        loadWebViewFromIntent(intent, pendingEvolvedMessage);
+        pendingEvolvedMessage = "";
 
         rootLayout.addView(webView, new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
@@ -404,25 +430,7 @@ public class FloatingPetService extends Service {
                             }
                         } else if (!isFlyingPet) {
                             // Snap grounded pet feet onto nearest surface row
-                            refreshScreenMetrics();
-                            int minX = -dpToPx(12);
-                            int maxX = screenW - viewW + dpToPx(12);
-                            posX = Math.max(minX, Math.min(maxX, params.x));
-                            float footY = getFootYForTopY(params.y);
-                            int bestIdx = 0;
-                            float bestDist = Math.abs(footY - rowYs[0]);
-                            for (int i = 1; i < rowYs.length; i++) {
-                                float d = Math.abs(footY - rowYs[i]);
-                                if (d < bestDist) {
-                                    bestDist = d;
-                                    bestIdx = i;
-                                }
-                            }
-                            currentRowIndex = bestIdx;
-                            posY = getTopYForFootY(rowYs[currentRowIndex]);
-                            params.x = Math.round(posX);
-                            params.y = Math.round(posY);
-                            safeUpdateWindowLayout();
+                            snapGroundedToNearestRow();
                             petState = PetState.IDLE;
                             stateUntilMs = System.currentTimeMillis() + 1200L;
                         } else {
@@ -439,26 +447,153 @@ public class FloatingPetService extends Service {
         windowManager.addView(floatingView, params);
     }
 
-    private void updateFloatingView(Intent intent) {
-        if (webView != null) {
-            lastJsAnimMode = "";
-            loadWebViewHtml(intent);
+    private void snapGroundedToNearestRow() {
+        refreshScreenMetrics();
+        int minX = -dpToPx(12);
+        int maxX = screenW - viewW + dpToPx(12);
+        posX = Math.max(minX, Math.min(maxX, params.x));
+        float footY = getFootYForTopY(params.y);
+        int bestIdx = 0;
+        float bestDist = Math.abs(footY - rowYs[0]);
+        for (int i = 1; i < rowYs.length; i++) {
+            float d = Math.abs(footY - rowYs[i]);
+            if (d < bestDist) {
+                bestDist = d;
+                bestIdx = i;
+            }
         }
-        setOverlayHidden(false);
-        offScreenPhase = OffScreenPhase.NONE;
-        if (isFlyingPet) {
-            petState = PetState.FLYING;
-            pickNextFlyWaypoint();
-        } else {
+        currentRowIndex = bestIdx;
+        posY = getTopYForFootY(rowYs[currentRowIndex]);
+        params.x = Math.round(posX);
+        params.y = Math.round(posY);
+        safeUpdateWindowLayout();
+    }
+
+    /**
+     * In-place update when the React side evolves the Digimon or changes settings,
+     * keeping the floating window open smoothly at its exact current position!
+     */
+    private void updateFloatingView(Intent intent) {
+        if (intent == null || webView == null) return;
+
+        // Clear any pending native-side evo marker since app pushed authoritative state
+        getSharedPreferences("digipet_overlay_sync", MODE_PRIVATE)
+            .edit()
+            .remove("pendingSpeciesId")
+            .remove("pendingEvolvedAt")
+            .apply();
+
+        String sName = intent.getStringExtra("speciesName") != null
+            ? intent.getStringExtra("speciesName")
+            : "Digimon";
+        String sUrl = intent.getStringExtra("spriteUrl") != null
+            ? intent.getStringExtra("spriteUrl")
+            : "assets/digidestined/agumon.png";
+        String newKey = sName + "|" + sUrl;
+        boolean hasEvoMessage = pendingEvolvedMessage != null && !pendingEvolvedMessage.isEmpty();
+
+        if (!newKey.equals(loadedSpeciesKey) || hasEvoMessage) {
+            lastJsAnimMode = "";
+            loadWebViewFromIntent(intent, pendingEvolvedMessage);
+            pendingEvolvedMessage = "";
+            // Ensure visible when evolving in-place unless actively hidden off-screen
+            if (offScreenPhase == OffScreenPhase.HIDDEN && hasEvoMessage) {
+                setOverlayHidden(false);
+                offScreenPhase = OffScreenPhase.NONE;
+            }
+            if (isFlyingPet && petState != PetState.OFF_SCREEN) {
+                petState = PetState.FLYING;
+                pickNextFlyWaypoint();
+            } else if (!isFlyingPet && petState == PetState.FLYING) {
+                snapGroundedToNearestRow();
+                petState = PetState.IDLE;
+                stateUntilMs = System.currentTimeMillis() + 1400L;
+            }
+        } else if (!isFlyingPet && petState != PetState.OFF_SCREEN && petState != PetState.JUMPING) {
+            // Grid preset ratios may have updated
             currentRowIndex = Math.max(0, Math.min(currentRowIndex, rowYs.length - 1));
             posY = getTopYForFootY(rowYs[currentRowIndex]);
-            petState = PetState.IDLE;
-            stateUntilMs = System.currentTimeMillis() + 1200L;
+            applyWindowPosition();
+        }
+    }
+
+    private void performNativeBackgroundEvolution(long nowMs) {
+        String rawPayload = nextEvoPayloadJson;
+        nextEvoTriggerMs = 0L;
+        nextEvoPayloadJson = "";
+        if (rawPayload == null || rawPayload.isEmpty()) return;
+
+        try {
+            JSONObject obj = new JSONObject(rawPayload);
+            String targetSpeciesId = obj.optString("speciesId", "");
+            String targetName = obj.optString("speciesName", "Digimon");
+            String spriteUrl = obj.optString("spriteUrl", "assets/digidestined/agumon.png");
+            String evolvedMsg = obj.optString("evolvedMessage", "Digivolved into " + targetName + "!");
+            boolean nextFlying = obj.optBoolean("isFlying", isFlyingPet);
+
+            if (!targetSpeciesId.isEmpty()) {
+                SharedPreferences prefs = getSharedPreferences("digipet_overlay_sync", MODE_PRIVATE);
+                prefs.edit()
+                    .putString("pendingSpeciesId", targetSpeciesId)
+                    .putLong("pendingEvolvedAt", nowMs)
+                    .apply();
+            }
+
+            isFlyingPet = nextFlying;
+            lastJsAnimMode = "";
+            loadedSpeciesKey = targetName + "|" + spriteUrl;
+
+            loadWebViewFromFields(
+                spriteUrl,
+                obj.optInt("sheetWidth", 200),
+                obj.optInt("sheetHeight", 200),
+                obj.optInt("stageWidth", 0),
+                obj.optInt("stageHeight", 0),
+                obj.optInt("groundOffset", 0),
+                obj.optInt("frameX", 2),
+                obj.optInt("frameY", 2),
+                obj.optInt("frameW", 48),
+                obj.optInt("frameH", 48),
+                obj.optInt("frameRotate", 0),
+                obj.optString("standingFramesJson", "[]"),
+                obj.optString("walkingFramesJson", "[]"),
+                obj.optString("quotesJson", "[]"),
+                evolvedMsg
+            );
+
+            if (offScreenPhase == OffScreenPhase.HIDDEN) {
+                setOverlayHidden(false);
+                offScreenPhase = OffScreenPhase.NONE;
+                posX = Math.max(dpToPx(20), (screenW - viewW) * 0.5f);
+                if (isFlyingPet) {
+                    posY = screenH * 0.42f;
+                } else {
+                    currentRowIndex = Math.max(0, rowYs.length - 1);
+                    posY = getTopYForFootY(rowYs[currentRowIndex]);
+                }
+                applyWindowPosition();
+            }
+
+            if (isFlyingPet) {
+                petState = PetState.FLYING;
+                pickNextFlyWaypoint();
+            } else {
+                snapGroundedToNearestRow();
+                petState = PetState.IDLE;
+                stateUntilMs = nowMs + 2600L;
+            }
+        } catch (Exception ignored) {
+            // Non-fatal guard
         }
     }
 
     private void stepPhysics(long nowMs) {
         if (isUserDragging) return;
+
+        // Check autonomous natural evolution timer even when main app is backgrounded
+        if (nextEvoTriggerMs > 0L && nowMs >= nextEvoTriggerMs && nextEvoPayloadJson != null && !nextEvoPayloadJson.isEmpty()) {
+            performNativeBackgroundEvolution(nowMs);
+        }
 
         // Clear carried forage item badge cleanly after arrival showcase
         if (!carriedItem.isEmpty() && clearItemAtMs > 0L && nowMs >= clearItemAtMs) {
@@ -557,7 +692,6 @@ public class FloatingPetService extends Service {
 
     private void onActionCycleComplete(long nowMs) {
         cyclesSinceForage++;
-        // Intermittent / hunger / boredom check for off-screen foraging & friend visits
         boolean shouldForage = false;
         if (petHunger < 45 && cyclesSinceForage >= 3 && random.nextFloat() < 0.45f) {
             shouldForage = true;
@@ -575,7 +709,6 @@ public class FloatingPetService extends Service {
             return;
         }
 
-        // Rest briefly or continue roaming
         if (random.nextFloat() < 0.45f) {
             petState = PetState.IDLE;
             stateUntilMs = nowMs + 1800L + random.nextInt(2400);
@@ -595,7 +728,6 @@ public class FloatingPetService extends Service {
             return;
         }
 
-        // Grounded Pet: decide between horizontal grid walk along current row vs jumping to adjacent row
         if (rowYs.length > 1 && random.nextFloat() < 0.42f) {
             int nextRow = currentRowIndex;
             if (currentRowIndex == 0) {
@@ -659,7 +791,6 @@ public class FloatingPetService extends Service {
                 boolean exitedLeft = !exitToRight && posX <= -viewW - dpToPx(8);
                 if (exitedRight || exitedLeft) {
                     offScreenPhase = OffScreenPhase.HIDDEN;
-                    // Invisible off-screen foraging duration: 30 to 60 seconds
                     offScreenWakeMs = nowMs + 30000L + random.nextInt(30001);
                     setOverlayHidden(true);
                 }
@@ -685,7 +816,7 @@ public class FloatingPetService extends Service {
                             targetY = getTopYForFootY(rowYs[currentRowIndex]);
                         }
                     } else {
-                        boolean enterFromLeft = exitToRight; // Re-enter from opposite edge
+                        boolean enterFromLeft = exitToRight;
                         posX = enterFromLeft ? (-viewW - dpToPx(6)) : (screenW + dpToPx(6));
                         if (isFlyingPet) {
                             posY = screenH * (0.25f + random.nextFloat() * 0.45f);
@@ -796,12 +927,58 @@ public class FloatingPetService extends Service {
         webView.evaluateJavascript(js, null);
     }
 
-    private void loadWebViewHtml(Intent intent) {
+    private void loadWebViewFromIntent(Intent intent, String evolvedMessage) {
+        String speciesName = intent != null && intent.getStringExtra("speciesName") != null
+            ? intent.getStringExtra("speciesName")
+            : "Digimon";
         String rawSpriteUrl = intent != null && intent.getStringExtra("spriteUrl") != null
             ? intent.getStringExtra("spriteUrl")
             : "assets/digidestined/agumon.png";
+        loadedSpeciesKey = speciesName + "|" + rawSpriteUrl;
 
-        String relSpriteUrl = rawSpriteUrl;
+        loadWebViewFromFields(
+            rawSpriteUrl,
+            intent != null ? intent.getIntExtra("sheetWidth", 200) : 200,
+            intent != null ? intent.getIntExtra("sheetHeight", 200) : 200,
+            intent != null ? intent.getIntExtra("stageWidth", 0) : 0,
+            intent != null ? intent.getIntExtra("stageHeight", 0) : 0,
+            intent != null ? intent.getIntExtra("groundOffset", 0) : 0,
+            intent != null ? intent.getIntExtra("frameX", 2) : 2,
+            intent != null ? intent.getIntExtra("frameY", 2) : 2,
+            intent != null ? intent.getIntExtra("frameW", 48) : 48,
+            intent != null ? intent.getIntExtra("frameH", 48) : 48,
+            intent != null ? intent.getIntExtra("frameRotate", 0) : 0,
+            intent != null && intent.getStringExtra("standingFramesJson") != null
+                ? intent.getStringExtra("standingFramesJson")
+                : "[]",
+            intent != null && intent.getStringExtra("walkingFramesJson") != null
+                ? intent.getStringExtra("walkingFramesJson")
+                : "[]",
+            intent != null && intent.getStringExtra("quotesJson") != null
+                ? intent.getStringExtra("quotesJson")
+                : "[]",
+            evolvedMessage
+        );
+    }
+
+    private void loadWebViewFromFields(
+        String rawSpriteUrl,
+        int sheetWidth,
+        int sheetHeight,
+        int stageWidth,
+        int stageHeight,
+        int groundOffset,
+        int frameX,
+        int frameY,
+        int frameW,
+        int frameH,
+        int frameRotate,
+        String standingFramesJson,
+        String walkingFramesJson,
+        String quotesJson,
+        String evolvedMessage
+    ) {
+        String relSpriteUrl = rawSpriteUrl != null ? rawSpriteUrl : "assets/digidestined/agumon.png";
         if (relSpriteUrl.startsWith("file:///android_asset/public/")) {
             relSpriteUrl = relSpriteUrl.substring("file:///android_asset/public/".length());
         } else if (relSpriteUrl.startsWith("/")) {
@@ -809,26 +986,9 @@ public class FloatingPetService extends Service {
         }
         String absSpriteUrl = "file:///android_asset/public/" + relSpriteUrl;
 
-        int sheetWidth = intent != null ? intent.getIntExtra("sheetWidth", 200) : 200;
-        int sheetHeight = intent != null ? intent.getIntExtra("sheetHeight", 200) : 200;
-        int stageWidth = intent != null ? intent.getIntExtra("stageWidth", 0) : 0;
-        int stageHeight = intent != null ? intent.getIntExtra("stageHeight", 0) : 0;
-        int groundOffset = intent != null ? intent.getIntExtra("groundOffset", 0) : 0;
-        int frameX = intent != null ? intent.getIntExtra("frameX", 2) : 2;
-        int frameY = intent != null ? intent.getIntExtra("frameY", 2) : 2;
-        int frameW = intent != null ? intent.getIntExtra("frameW", 48) : 48;
-        int frameH = intent != null ? intent.getIntExtra("frameH", 48) : 48;
-        int frameRotate = intent != null ? intent.getIntExtra("frameRotate", 0) : 0;
-
-        String standingFramesJson = intent != null && intent.getStringExtra("standingFramesJson") != null
-            ? intent.getStringExtra("standingFramesJson")
-            : "[]";
-        String walkingFramesJson = intent != null && intent.getStringExtra("walkingFramesJson") != null
-            ? intent.getStringExtra("walkingFramesJson")
-            : "[]";
-        String quotesJson = intent != null && intent.getStringExtra("quotesJson") != null
-            ? intent.getStringExtra("quotesJson")
-            : "[]";
+        String safeEvoJs = (evolvedMessage != null && !evolvedMessage.isEmpty())
+            ? "'" + evolvedMessage.replace("\\", "\\\\").replace("'", "\\'").replace("\n", " ") + "'"
+            : "''";
 
         String html = "<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width, initial-scale=1.0'>" +
             "<style>" +
@@ -839,6 +999,11 @@ public class FloatingPetService extends Service {
             "#bubble::after { content:''; position:absolute; bottom:-5px; left:50%; transform:translateX(-50%); width:0; height:0; border-left:4px solid transparent; border-right:4px solid transparent; border-top:5px solid #ffffff; }" +
             "#bubble::before { content:''; position:absolute; bottom:-7px; left:50%; transform:translateX(-50%); width:0; height:0; border-left:5px solid transparent; border-right:5px solid transparent; border-top:6px solid #0f172a; z-index:-1; }" +
             "#petWrap { position:absolute; bottom:6px; left:50%; transform:translateX(-50%); display:flex; flex-direction:column; align-items:center; overflow:visible; }" +
+            "#evoAura { display:none; position:absolute; inset:-14px; border-radius:999px; background:radial-gradient(circle, rgba(250,204,21,0.85) 0%, rgba(56,189,248,0.45) 55%, rgba(255,255,255,0) 75%); z-index:5; pointer-events:none; }" +
+            "#petWrap.evolving #evoAura { display:block; animation:evoBurst 1.3s ease-out forwards; }" +
+            "#petWrap.evolving #spriteBox { animation:evoFlash 1.3s ease-in-out; }" +
+            "@keyframes evoBurst { 0% { transform:scale(0.4); opacity:0; } 30% { transform:scale(1.45); opacity:1; } 100% { transform:scale(1.9); opacity:0; } }" +
+            "@keyframes evoFlash { 0%, 100% { filter:brightness(1); transform:scale(1); } 25% { filter:brightness(2.8) drop-shadow(0 0 12px #fde047); transform:scale(1.18); } 60% { filter:brightness(2.0) drop-shadow(0 0 10px #38bdf8); transform:scale(1.08); } }" +
             "#carryBadge { display:none; position:absolute; top:-16px; right:-18px; z-index:20; background:#1e1b4b; border:1.5px solid #fbbf24; border-radius:8px; padding:2px; box-shadow:0 2px 6px rgba(0,0,0,0.5); }" +
             "#carryBadge.show { display:block; }" +
             "#spriteBox { position:relative; overflow:visible; z-index:10; }" +
@@ -851,6 +1016,7 @@ public class FloatingPetService extends Service {
             "</style></head><body>" +
             "<div id='stage'>" +
             "  <div id='petWrap'>" +
+            "    <div id='evoAura'></div>" +
             "    <div id='bubble'>Ready!</div>" +
             "    <div id='carryBadge'>" +
             "      <svg viewBox='0 0 16 16' width='16' height='16' shape-rendering='crispEdges'>" +
@@ -879,6 +1045,7 @@ public class FloatingPetService extends Service {
             "var stageBoxH = " + stageHeight + ";" +
             "var groundOffset = " + groundOffset + ";" +
             "var fallbackFrame = { x: " + frameX + ", y: " + frameY + ", w: " + frameW + ", h: " + frameH + ", rotate: " + frameRotate + " };" +
+            "var initialEvoMsg = " + safeEvoJs + ";" +
             "var standingFrames = [];" +
             "var walkingFrames = [];" +
             "var quotes = [];" +
@@ -950,12 +1117,20 @@ public class FloatingPetService extends Service {
             "  sheetImg.style.top = '-' + (frame.y * scale) + 'px';" +
             "}" +
 
-            "function showSpeech(text) {" +
+            "function showSpeech(text, ms) {" +
             "  if (!text) text = quotes[Math.floor(Math.random() * quotes.length)];" +
             "  bubble.innerText = text;" +
             "  bubble.classList.add('show');" +
             "  if (bubbleTimeout) clearTimeout(bubbleTimeout);" +
-            "  bubbleTimeout = setTimeout(function() { bubble.classList.remove('show'); }, 3500);" +
+            "  bubbleTimeout = setTimeout(function() { bubble.classList.remove('show'); }, ms || 3500);" +
+            "}" +
+
+            "function playEvolutionEffect(msg) {" +
+            "  petWrap.classList.remove('evolving');" +
+            "  void petWrap.offsetWidth;" +
+            "  petWrap.classList.add('evolving');" +
+            "  showSpeech(msg, 4800);" +
+            "  setTimeout(function() { petWrap.classList.remove('evolving'); }, 1400);" +
             "}" +
 
             "window.onPetTapped = function() {" +
@@ -984,7 +1159,11 @@ public class FloatingPetService extends Service {
             "}, 62);" +
 
             "renderFrame(standingFrames[0]);" +
-            "setTimeout(function() { showSpeech(); }, 600);" +
+            "if (initialEvoMsg) {" +
+            "  setTimeout(function() { playEvolutionEffect(initialEvoMsg); }, 120);" +
+            "} else {" +
+            "  setTimeout(function() { showSpeech(); }, 600);" +
+            "}" +
             "</script></body></html>";
 
         webView.loadDataWithBaseURL("file:///android_asset/public/", html, "text/html", "utf-8", null);

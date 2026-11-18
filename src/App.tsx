@@ -7,8 +7,7 @@ import {
   FurnitureItem, 
   DigimonStage 
 } from './types/digimon';
-import { DIGI_EGGS, DIGIMON_DATABASE, FURNITURE_SHOP, ROOM_THEMES, HELLOPET_QUOTES } from './data/digidex';
-import { getPersonalityProfile } from './utils/digimonPersonality';
+import { DIGI_EGGS, DIGIMON_DATABASE, FURNITURE_SHOP, ROOM_THEMES } from './data/digidex';
 import { DigiviceHUD } from './components/DigiviceHUD';
 import { PixelMeatIcon, PixelVitaminIcon, PixelPoopIcon } from './components/PixelItemIcons';
 import { FloatingOverlay } from './components/FloatingOverlay';
@@ -35,17 +34,22 @@ import {
   markUpdateNotified,
   dismissUpdateVersion,
 } from './utils/appUpdater';
-import { getHideGalleryButtonPref, syncOverridesToRepository, getEffectiveSpriteConfig } from './utils/customSpriteManager';
-import { NEW_DIGIMON_SPRITES } from './utils/newDigimonSprites';
+import { getHideGalleryButtonPref, syncOverridesToRepository } from './utils/customSpriteManager';
 import { Capacitor } from '@capacitor/core';
 import { 
   checkOverlayPermission, 
   requestOverlayPermission, 
   startNativeFloatingOverlay, 
   stopNativeFloatingOverlay, 
-  isNativeOverlayActive 
+  isNativeOverlayActive,
+  consumeNativeOverlayEvolution,
 } from './utils/nativeOverlay';
-import { getGridRowRatios, isFlyingSpecies } from './utils/petOverlayEngine';
+import {
+  applyEvolutionToPetState,
+  buildNativeOverlayPayload,
+  checkEvolutionEligibility,
+  computeNaturalEvoTiming,
+} from './utils/evolutionEngine';
 import { sound, triggerHaptic } from './utils/audio';
 import { 
   Sparkles, 
@@ -267,42 +271,12 @@ export default function App() {
           return;
         }
 
-        const currentSpeciesConf = getEffectiveSpriteConfig(pet.currentSpeciesId) || NEW_DIGIMON_SPRITES[pet.currentSpeciesId] || NEW_DIGIMON_SPRITES['agumon'];
-        const standingFrames = currentSpeciesConf?.frames?.standing || [];
-        const walkingFrames = currentSpeciesConf?.frames?.walking || standingFrames;
-        const activeFrame = walkingFrames[0] || standingFrames[0] || { x: 2, y: 2, w: 48, h: 48 };
-
-        const profile = getPersonalityProfile(currentSpecies?.id);
-        const speciesQuotes = [
-          ...profile.catchphrases,
-          ...profile.idleQuotes,
-          ...profile.happyQuotes,
-          ...profile.hungryQuotes,
-          ...profile.battleQuotes,
-          ...HELLOPET_QUOTES,
-        ];
-
-        const ok = await startNativeFloatingOverlay({
-          speciesName: currentSpecies?.name || 'Digimon',
-          spriteUrl: currentSpeciesConf?.sheetPath || '/assets/digidestined/agumon.png',
-          sheetWidth: currentSpeciesConf?.sheetWidth || 200,
-          sheetHeight: currentSpeciesConf?.sheetHeight || 200,
-          stageWidth: currentSpeciesConf?.stageWidth || 0,
-          stageHeight: currentSpeciesConf?.stageHeight || 0,
-          groundOffset: currentSpeciesConf?.groundOffset || 0,
-          frameX: activeFrame.x || 0,
-          frameY: activeFrame.y || 0,
-          frameW: activeFrame.w || 48,
-          frameH: activeFrame.h || 48,
-          frameRotate: activeFrame.rotate || 0,
-          standingFramesJson: JSON.stringify(standingFrames),
-          walkingFramesJson: JSON.stringify(walkingFrames),
-          quotesJson: JSON.stringify(speciesQuotes),
-          isFlying: isFlyingSpecies(currentSpecies),
-          gridRowRatiosJson: JSON.stringify(getGridRowRatios()),
-          hunger: pet.hunger,
-          happiness: pet.happiness,
-        });
+        const ok = await startNativeFloatingOverlay(
+          buildNativeOverlayPayload({
+            pet,
+            species: currentSpecies,
+          })
+        );
 
         if (ok) {
           setStatusNotification(`✓ ${currentSpecies?.name || 'Digimon'} is now floating over all apps! Drag to move.`);
@@ -393,77 +367,159 @@ export default function App() {
     return () => clearInterval(careInterval);
   }, []);
 
-  // Determine if ready to evolve
-  const checkCanEvolve = (): { can: boolean; nextId?: string } => {
-    if (!currentSpecies || !currentSpecies.nextEvolutions || currentSpecies.nextEvolutions.length === 0) {
-      return { can: false };
+  const [evoNowMs, setEvoNowMs] = useState<number>(() => Date.now());
+  const evoElig = checkEvolutionEligibility(pet, currentSpecies);
+  const evoTiming = computeNaturalEvoTiming(pet, currentSpecies, evoNowMs);
+  const evolutionCheck = { can: evoElig.goalsMet, nextId: evoElig.nextId };
+
+  // Stamp goal-met anchor cleanly when requirements are satisfied
+  useEffect(() => {
+    if (evoElig.goalsMet && !pet.evoGoalMetAt) {
+      setPet((prev) => ({
+        ...prev,
+        stageEnteredAt: prev.stageEnteredAt ?? prev.birthTimestamp ?? Date.now(),
+        evoGoalMetAt: Date.now(),
+      }));
+    } else if (!evoElig.goalsMet && pet.evoGoalMetAt) {
+      setPet((prev) => ({
+        ...prev,
+        evoGoalMetAt: undefined,
+      }));
     }
+  }, [evoElig.goalsMet, pet.evoGoalMetAt, pet.currentSpeciesId]);
 
-    const nextOption = currentSpecies.nextEvolutions[0];
-    const targetSpecies = DIGIMON_DATABASE[nextOption.speciesId];
-    if (!targetSpecies) return { can: false };
+  // 1s clock tick while counting down toward natural digivolution
+  useEffect(() => {
+    if (!evoElig.goalsMet) return;
+    setEvoNowMs(Date.now());
+    const id = setInterval(() => {
+      setEvoNowMs(Date.now());
+    }, 1000);
+    return () => clearInterval(id);
+  }, [evoElig.goalsMet, pet.currentSpeciesId]);
 
-    // Stage evolution criteria
-    if (pet.stage === 'fresh') {
-      return { can: true, nextId: nextOption.speciesId };
-    }
-
-    if (pet.stage === 'in-training') {
-      const minTrain = nextOption.minTraining || 1;
-      if (pet.trainingCount >= minTrain) {
-        return { can: true, nextId: nextOption.speciesId };
-      }
-    }
-
-    if (pet.stage === 'rookie') {
-      const minBattles = nextOption.minBattles || 2;
-      const minTraining = nextOption.minTraining || 4;
-      if (pet.battlesWon >= minBattles && pet.trainingCount >= minTraining) {
-        return { can: true, nextId: nextOption.speciesId };
-      }
-    }
-
-    if (pet.stage === 'champion') {
-      const minBattles = nextOption.minBattles || 5;
-      const minTraining = nextOption.minTraining || 8;
-      if (pet.battlesWon >= minBattles && pet.trainingCount >= minTraining) {
-        return { can: true, nextId: nextOption.speciesId };
-      }
-    }
-
-    if (pet.stage === 'ultimate') {
-      const minBattles = nextOption.minBattles || 10;
-      const minTraining = nextOption.minTraining || 15;
-      if (pet.battlesWon >= minBattles && pet.trainingCount >= minTraining) {
-        return { can: true, nextId: nextOption.speciesId };
-      }
-    }
-
-    return { can: false, nextId: nextOption.speciesId };
-  };
-
-  const evolutionCheck = checkCanEvolve();
-
-  // Evolution Trigger
-  const triggerEvolution = (targetSpeciesId?: string) => {
+  // Evolution Trigger (supports silent in-place updates while overlay is active)
+  const triggerEvolution = (targetSpeciesId?: string, opts?: { silentForOverlay?: boolean }) => {
     const targetId = targetSpeciesId || evolutionCheck.nextId;
     if (!targetId || !DIGIMON_DATABASE[targetId]) return;
 
+    const prevName = currentSpecies?.name || pet.nickname || 'Digimon';
     const target = DIGIMON_DATABASE[targetId];
-    setPrevEvoSpecies(currentSpecies);
-    setNextEvoSpecies(target);
-    setIsEvolutionModalOpen(true);
 
-    setPet((prev) => ({
-      ...prev,
-      currentSpeciesId: target.id,
-      stage: target.stage,
-      weight: prev.weight + 8,
-      strength: prev.strength + 30,
-      dpPoints: prev.dpPoints + 40,
-      happiness: 100,
-    }));
+    if (opts?.silentForOverlay) {
+      sound.playEvolution();
+      showNotification(`⚡ ${prevName} naturally Digivolved into ${target.name}!`);
+    } else {
+      setPrevEvoSpecies(currentSpecies);
+      setNextEvoSpecies(target);
+      setIsEvolutionModalOpen(true);
+    }
+
+    setPet((prev) => applyEvolutionToPetState(prev, target));
   };
+
+  // Automatic natural evolution over time once goals are met
+  useEffect(() => {
+    if (!evoTiming.readyToEvolve || !evoTiming.nextId) return;
+    if (
+      pet.isSleeping ||
+      isTrainingOpen ||
+      isFoodGameOpen ||
+      isColosseumOpen ||
+      isEvolutionModalOpen ||
+      isEggModalOpen ||
+      isDigidexOpen ||
+      isShopOpen ||
+      isRoomOpen
+    ) {
+      return;
+    }
+
+    triggerEvolution(evoTiming.nextId, { silentForOverlay: isOverlayMode });
+  }, [
+    evoTiming.readyToEvolve,
+    evoTiming.nextId,
+    pet.isSleeping,
+    isOverlayMode,
+    isTrainingOpen,
+    isFoodGameOpen,
+    isColosseumOpen,
+    isEvolutionModalOpen,
+    isEggModalOpen,
+    isDigidexOpen,
+    isShopOpen,
+    isRoomOpen,
+  ]);
+
+  // Native Android Overlay: sync evolutions done in background & push live updates in-place
+  const lastNativeSpeciesRef = useRef<string>(pet.currentSpeciesId);
+  const skipNativeEvoBubbleForRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+
+    const pullNativeOverlayEvolution = async () => {
+      const pending = await consumeNativeOverlayEvolution();
+      if (pending.speciesId && DIGIMON_DATABASE[pending.speciesId]) {
+        const evolvedSpecies = DIGIMON_DATABASE[pending.speciesId];
+        skipNativeEvoBubbleForRef.current = pending.speciesId;
+        setPet((prev) => {
+          if (prev.currentSpeciesId === evolvedSpecies.id) return prev;
+          return applyEvolutionToPetState(prev, evolvedSpecies, pending.evolvedAt || Date.now());
+        });
+        showNotification(`⚡ ${evolvedSpecies.name} naturally Digivolved while roaming!`);
+      }
+    };
+
+    pullNativeOverlayEvolution();
+    const onFocusOrVisible = () => {
+      if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+        pullNativeOverlayEvolution();
+      }
+    };
+    window.addEventListener('focus', onFocusOrVisible);
+    document.addEventListener('visibilitychange', onFocusOrVisible);
+    return () => {
+      window.removeEventListener('focus', onFocusOrVisible);
+      document.removeEventListener('visibilitychange', onFocusOrVisible);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) {
+      lastNativeSpeciesRef.current = pet.currentSpeciesId;
+      return;
+    }
+
+    const prevSpeciesId = lastNativeSpeciesRef.current;
+    const speciesChanged = prevSpeciesId !== pet.currentSpeciesId;
+    lastNativeSpeciesRef.current = pet.currentSpeciesId;
+
+    let evolvedMessage: string | undefined;
+    if (speciesChanged) {
+      if (skipNativeEvoBubbleForRef.current === pet.currentSpeciesId) {
+        skipNativeEvoBubbleForRef.current = null;
+      } else {
+        evolvedMessage = `Digivolved into ${currentSpecies?.name || 'Digimon'}!`;
+      }
+    }
+
+    let cancelled = false;
+    isNativeOverlayActive().then((active) => {
+      if (cancelled || !active) return;
+      startNativeFloatingOverlay(
+        buildNativeOverlayPayload({
+          pet,
+          species: currentSpecies,
+          evolvedMessage,
+        })
+      ).catch(() => {});
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pet.currentSpeciesId, pet.hunger, pet.happiness, pet.evoGoalMetAt, pet.stageEnteredAt]);
 
   // CARE ACTIONS
   const handleFeedMeat = () => {
@@ -712,6 +768,8 @@ export default function App() {
       stage: 'fresh',
       nickname,
       birthTimestamp: Date.now(),
+      stageEnteredAt: Date.now(),
+      evoGoalMetAt: undefined,
       hunger: 90,
       energy: 100,
       happiness: 100,
@@ -963,7 +1021,11 @@ export default function App() {
               className="w-full mb-2.5 bg-gradient-to-r from-amber-400 via-orange-400 to-amber-300 text-slate-950 py-2.5 px-4 rounded-2xl font-pixel text-xs font-bold shadow-xl shadow-amber-500/30 border-2 border-amber-300 cursor-pointer flex items-center justify-center gap-2 active:scale-95 transition-transform"
             >
               <Sparkles className="w-4 h-4 text-slate-950 animate-spin" />
-              <span>⚡ DIGIVOLUTION READY! (TAP TO EVOLVE) ⚡</span>
+              <span>
+                {evoTiming.remainingMs > 0
+                  ? `⚡ DIGIVOLVING IN ${Math.ceil(evoTiming.remainingMs / 1000)}S (OR TAP NOW!) ⚡`
+                  : '⚡ DIGIVOLUTION READY! (TAP TO EVOLVE) ⚡'}
+              </span>
             </motion.button>
           </div>
         )}

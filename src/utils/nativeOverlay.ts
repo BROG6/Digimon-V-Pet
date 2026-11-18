@@ -20,6 +20,9 @@ export interface OverlayLaunchParams {
   gridRowRatiosJson?: string;
   hunger?: number;
   happiness?: number;
+  evolvedMessage?: string;
+  nextEvoTriggerMsStr?: string;
+  nextEvoPayloadJson?: string;
 }
 
 export interface OverlayPluginInterface {
@@ -28,6 +31,7 @@ export interface OverlayPluginInterface {
   startOverlay(options: OverlayLaunchParams): Promise<{ success: boolean }>;
   stopOverlay(): Promise<{ success: boolean }>;
   isOverlayActive(): Promise<{ active: boolean }>;
+  consumePendingEvolution(): Promise<{ speciesId: string | null; evolvedAt: number }>;
   enterPip(): Promise<{ success: boolean }>;
 }
 
@@ -90,5 +94,18 @@ export async function isNativeOverlayActive(): Promise<boolean> {
     return !!res?.active;
   } catch {
     return false;
+  }
+}
+
+export async function consumeNativeOverlayEvolution(): Promise<{ speciesId: string | null; evolvedAt: number }> {
+  if (!Capacitor.isNativePlatform()) return { speciesId: null, evolvedAt: 0 };
+  try {
+    const res = await OverlayPlugin.consumePendingEvolution();
+    return {
+      speciesId: res?.speciesId || null,
+      evolvedAt: typeof res?.evolvedAt === 'number' ? res.evolvedAt : 0,
+    };
+  } catch {
+    return { speciesId: null, evolvedAt: 0 };
   }
 }

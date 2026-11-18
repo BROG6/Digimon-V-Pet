@@ -96,6 +96,7 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
   const [speechBubble, setSpeechBubble] = useState<string | null>(null);
   const [carriedItem, setCarriedItem] = useState<'meat' | null>(null);
   const [isOffScreenHidden, setIsOffScreenHidden] = useState<boolean>(false);
+  const [isEvolvingFlash, setIsEvolvingFlash] = useState<boolean>(false);
 
   const [isMenuOpen, setIsMenuOpen] = useState<boolean>(false);
   const [isChatInputOpen, setIsChatInputOpen] = useState<boolean>(false);
@@ -109,6 +110,7 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
   const isDraggingRef = useRef<boolean>(false);
   const speechTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const carriedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const prevSpeciesIdRef = useRef<string | undefined>(species?.id);
   const isFlying = isFlyingSpecies(species);
 
   const petVitalsRef = useRef({
@@ -523,6 +525,48 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
     };
   }, [isOverlayActive, isFlying, gridPreset, pet.isSleeping, isChatInputOpen, xMotion, yMotion]);
 
+  // Live in-place evolution reaction while overlay remains open
+  useEffect(() => {
+    const nextId = species?.id;
+    const prevId = prevSpeciesIdRef.current;
+    prevSpeciesIdRef.current = nextId;
+
+    if (!isOverlayActive || !nextId || !prevId || nextId === prevId) return;
+
+    sound.playEvolution();
+    setIsOffScreenHidden(false);
+    setIsEvolvingFlash(true);
+    setCurrentAction('happy');
+    showShortSpeech(`⚡ Digivolved into ${species?.name || 'Digimon'}!`, 5200);
+
+    const p = physicsRef.current;
+    p.offScreenPhase = 'none';
+    if (isFlyingSpecies(species)) {
+      p.petState = 'FLYING';
+      const w = typeof window !== 'undefined' ? window.innerWidth : 380;
+      const h = typeof window !== 'undefined' ? window.innerHeight : 760;
+      p.targetX = 24 + Math.random() * Math.max(60, w - SPRITE_BOX_WIDTH - 48);
+      p.targetY = 90 + Math.random() * Math.max(80, h - 220);
+      setFacing(p.targetX >= p.posX ? 'right' : 'left');
+    } else if (p.petState === 'FLYING') {
+      const h = typeof window !== 'undefined' ? window.innerHeight : 760;
+      const rowYs = computeSurfaceRowYs(h, getGridRowRatios(gridPreset));
+      const snapped = snapToNearestSurfaceRow(p.posY + SPRITE_FOOT_OFFSET, rowYs);
+      p.rowIndex = snapped.rowIndex;
+      p.posY = snapped.y - SPRITE_FOOT_OFFSET;
+      yMotion.set(p.posY);
+      p.petState = 'IDLE';
+      p.stateUntilMs = Date.now() + 2000;
+    }
+
+    const flashTimer = setTimeout(() => {
+      setIsEvolvingFlash(false);
+      setCurrentAction(petVitalsRef.current.isSick ? 'sick' : 'idle');
+    }, 1600);
+
+    return () => clearTimeout(flashTimer);
+  }, [species?.id, isOverlayActive]);
+
   // Safety watchdog to prevent talk function from ever getting stuck
   useEffect(() => {
     if (!isAiThinking) return;
@@ -857,8 +901,19 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
           </motion.div>
         )}
 
-        {/* Digimon Sprite */}
-        <div className="relative z-20">
+        {/* Digimon Sprite (with in-place evolution aura) */}
+        <div className={`relative z-20 transition-all duration-300 ${isEvolvingFlash ? 'scale-125 brightness-150 drop-shadow-[0_0_16px_rgba(250,204,21,0.95)]' : ''}`}>
+          <AnimatePresence>
+            {isEvolvingFlash && (
+              <motion.div
+                initial={{ scale: 0.4, opacity: 0 }}
+                animate={{ scale: [0.6, 1.5, 1.9], opacity: [0.95, 0.75, 0] }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 1.4, ease: 'easeOut' }}
+                className="absolute -inset-6 rounded-full bg-radial from-amber-300/80 via-cyan-400/40 to-transparent pointer-events-none z-0"
+              />
+            )}
+          </AnimatePresence>
           <DigimonSprite
             species={species}
             egg={pet.stage === 'egg' ? egg : undefined}

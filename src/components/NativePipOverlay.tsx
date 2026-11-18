@@ -12,8 +12,6 @@ import {
 } from '../utils/nativeOverlay';
 import { getEffectiveSpriteConfig } from '../utils/customSpriteManager';
 import { DigimonSpriteConfig, SpriteFrame } from '../utils/newDigimonSprites';
-import { HELLOPET_QUOTES } from '../data/digidex';
-import { getPersonalityProfile } from '../utils/digimonPersonality';
 import {
   GridLayoutPresetId,
   GRID_LAYOUT_PRESETS,
@@ -25,6 +23,7 @@ import {
   computeParabolicJumpPoint,
   stepWaypointFlight,
 } from '../utils/petOverlayEngine';
+import { buildNativeOverlayPayload } from '../utils/evolutionEngine';
 
 interface NativePipOverlayProps {
   pet: PetState;
@@ -428,42 +427,13 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
           return;
         }
 
-        const config = configRef.current;
-        const standingFrames = config?.frames?.standing || [];
-        const walkingFrames = config?.frames?.walking || standingFrames;
-        const activeFrame = walkingFrames[0] || standingFrames[0] || { x: 2, y: 2, w: 48, h: 48 };
-
-        const profile = getPersonalityProfile(species?.id);
-        const speciesQuotes = [
-          ...profile.catchphrases,
-          ...profile.idleQuotes,
-          ...profile.happyQuotes,
-          ...profile.hungryQuotes,
-          ...profile.battleQuotes,
-          ...HELLOPET_QUOTES,
-        ];
-
-        const ok = await startNativeFloatingOverlay({
-          speciesName: species?.name || 'Digimon',
-          spriteUrl: config?.sheetPath || '/assets/digidestined/agumon.png',
-          sheetWidth: config?.sheetWidth || 200,
-          sheetHeight: config?.sheetHeight || 200,
-          stageWidth: config?.stageWidth || 0,
-          stageHeight: config?.stageHeight || 0,
-          groundOffset: config?.groundOffset || 0,
-          frameX: activeFrame.x || 0,
-          frameY: activeFrame.y || 0,
-          frameW: activeFrame.w || 48,
-          frameH: activeFrame.h || 48,
-          frameRotate: activeFrame.rotate || 0,
-          standingFramesJson: JSON.stringify(standingFrames),
-          walkingFramesJson: JSON.stringify(walkingFrames),
-          quotesJson: JSON.stringify(speciesQuotes),
-          isFlying,
-          gridRowRatiosJson: JSON.stringify(getGridRowRatios(gridPreset)),
-          hunger: pet?.hunger ?? 80,
-          happiness: pet?.happiness ?? 80,
-        });
+        const ok = await startNativeFloatingOverlay(
+          buildNativeOverlayPayload({
+            pet,
+            species,
+            presetId: gridPreset,
+          })
+        );
 
         if (ok) {
           setIsPipActive(true);

@@ -106,6 +106,8 @@ export interface PetState {
   activeRoomTheme: string;
   placedFurniture: PlacedFurniture[];
   lastCareCheck: number;
+  stageEnteredAt?: number;
+  evoGoalMetAt?: number;
 }
 
 export interface BattleFighter {

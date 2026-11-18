@@ -92,6 +92,9 @@ public class OverlayPlugin extends Plugin {
         String gridRowRatiosJson = call.getString("gridRowRatiosJson", "[0.34,0.48,0.62,0.76,0.90]");
         Integer hunger = call.getInt("hunger", 75);
         Integer happiness = call.getInt("happiness", 80);
+        String evolvedMessage = call.getString("evolvedMessage", "");
+        String nextEvoTriggerMsStr = call.getString("nextEvoTriggerMsStr", "0");
+        String nextEvoPayloadJson = call.getString("nextEvoPayloadJson", "");
 
         Intent serviceIntent = new Intent(ctx, FloatingPetService.class);
         serviceIntent.putExtra("speciesName", speciesName);
@@ -113,6 +116,9 @@ public class OverlayPlugin extends Plugin {
         serviceIntent.putExtra("gridRowRatiosJson", gridRowRatiosJson);
         serviceIntent.putExtra("hunger", hunger != null ? hunger : 75);
         serviceIntent.putExtra("happiness", happiness != null ? happiness : 80);
+        serviceIntent.putExtra("evolvedMessage", evolvedMessage != null ? evolvedMessage : "");
+        serviceIntent.putExtra("nextEvoTriggerMsStr", nextEvoTriggerMsStr != null ? nextEvoTriggerMsStr : "0");
+        serviceIntent.putExtra("nextEvoPayloadJson", nextEvoPayloadJson != null ? nextEvoPayloadJson : "");
 
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -149,6 +155,21 @@ public class OverlayPlugin extends Plugin {
     public void isOverlayActive(PluginCall call) {
         JSObject ret = new JSObject();
         ret.put("active", FloatingPetService.isRunning);
+        call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void consumePendingEvolution(PluginCall call) {
+        Context ctx = getActivity() != null ? getActivity() : getContext();
+        android.content.SharedPreferences prefs = ctx.getSharedPreferences("digipet_overlay_sync", Context.MODE_PRIVATE);
+        String speciesId = prefs.getString("pendingSpeciesId", null);
+        long evolvedAt = prefs.getLong("pendingEvolvedAt", 0L);
+        if (speciesId != null && !speciesId.isEmpty()) {
+            prefs.edit().remove("pendingSpeciesId").remove("pendingEvolvedAt").apply();
+        }
+        JSObject ret = new JSObject();
+        ret.put("speciesId", speciesId);
+        ret.put("evolvedAt", evolvedAt);
         call.resolve(ret);
     }
 

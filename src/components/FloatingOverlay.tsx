@@ -27,6 +27,7 @@ import {
   OverlayPetState,
   GridLayoutPresetId,
   GRID_LAYOUT_PRESETS,
+  GRID_RATIOS_CHANGED_EVENT,
   getSavedGridPreset,
   setSavedGridPreset,
   getGridRowRatios,
@@ -204,6 +205,24 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
       yMotion.set(p.posY);
     }
   };
+
+  useEffect(() => {
+    const handleGridUpdated = () => {
+      const nextPreset = getSavedGridPreset();
+      setGridPreset(nextPreset);
+      if (!isFlying) {
+        const h = typeof window !== 'undefined' ? window.innerHeight : 760;
+        const rowYs = computeSurfaceRowYs(h, getGridRowRatios(nextPreset));
+        const p = physicsRef.current;
+        const idx = Math.max(0, Math.min(p.rowIndex, rowYs.length - 1));
+        p.rowIndex = idx;
+        p.posY = (rowYs[idx] ?? h - 120) - SPRITE_FOOT_OFFSET;
+        yMotion.set(p.posY);
+      }
+    };
+    window.addEventListener(GRID_RATIOS_CHANGED_EVENT, handleGridUpdated);
+    return () => window.removeEventListener(GRID_RATIOS_CHANGED_EVENT, handleGridUpdated);
+  }, [isFlying, yMotion]);
 
   // Show speech helper for state engine & user interactions
   const showShortSpeech = (msg: string, durationMs: number = 4500) => {

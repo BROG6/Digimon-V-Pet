@@ -70,6 +70,7 @@ public class FloatingPetService extends Service {
     private double[] rowRatios = new double[] { 0.365, 0.497, 0.629, 0.76, 0.92 };
     private int[] rowYs = new int[] { 740, 1050, 1360, 1670, 2020 };
     private int currentRowIndex = 4; // Start at bottom dock
+    private int pendingPreviewRowIndex = -1;
     private int petHunger = 80;
     private int petHappiness = 80;
 
@@ -170,6 +171,7 @@ public class FloatingPetService extends Service {
     private void parseConfigFromIntent(Intent intent) {
         if (intent == null) return;
         isFlyingPet = intent.getBooleanExtra("isFlying", false);
+        pendingPreviewRowIndex = intent.getIntExtra("previewRowIndex", -1);
         petHunger = intent.getIntExtra("hunger", 80);
         petHappiness = intent.getIntExtra("happiness", 80);
 
@@ -545,8 +547,15 @@ public class FloatingPetService extends Service {
                 stateUntilMs = System.currentTimeMillis() + 1400L;
             }
         } else if (!isFlyingPet && petState != PetState.OFF_SCREEN && petState != PetState.JUMPING) {
-            // Grid preset ratios may have updated
-            currentRowIndex = Math.max(0, Math.min(currentRowIndex, rowYs.length - 1));
+            // Grid preset ratios or manual line adjustment updated
+            if (pendingPreviewRowIndex >= 0 && pendingPreviewRowIndex < rowYs.length) {
+                currentRowIndex = pendingPreviewRowIndex;
+                pendingPreviewRowIndex = -1;
+                petState = PetState.IDLE;
+                stateUntilMs = System.currentTimeMillis() + 2600L;
+            } else {
+                currentRowIndex = Math.max(0, Math.min(currentRowIndex, rowYs.length - 1));
+            }
             posY = getTopYForFootY(rowYs[currentRowIndex]);
             applyWindowPosition();
         }

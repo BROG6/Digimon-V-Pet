@@ -90,6 +90,7 @@ public class OverlayPlugin extends Plugin {
         Integer frameRotate = call.getInt("frameRotate", 0);
         Boolean isFlying = call.getBoolean("isFlying", false);
         String gridRowRatiosJson = call.getString("gridRowRatiosJson", "[0.365,0.497,0.629,0.76,0.92]");
+        Integer previewRowIndex = call.getInt("previewRowIndex", -1);
         Integer hunger = call.getInt("hunger", 75);
         Integer happiness = call.getInt("happiness", 80);
         String evolvedMessage = call.getString("evolvedMessage", "");
@@ -114,6 +115,7 @@ public class OverlayPlugin extends Plugin {
         serviceIntent.putExtra("frameRotate", frameRotate);
         serviceIntent.putExtra("isFlying", isFlying != null ? isFlying : false);
         serviceIntent.putExtra("gridRowRatiosJson", gridRowRatiosJson);
+        serviceIntent.putExtra("previewRowIndex", previewRowIndex != null ? previewRowIndex : -1);
         serviceIntent.putExtra("hunger", hunger != null ? hunger : 75);
         serviceIntent.putExtra("happiness", happiness != null ? happiness : 80);
         serviceIntent.putExtra("evolvedMessage", evolvedMessage != null ? evolvedMessage : "");

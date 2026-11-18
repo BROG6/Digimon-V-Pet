@@ -18,6 +18,7 @@ export interface OverlayLaunchParams {
   quotesJson?: string;
   isFlying?: boolean;
   gridRowRatiosJson?: string;
+  previewRowIndex?: number;
   hunger?: number;
   happiness?: number;
   evolvedMessage?: string;

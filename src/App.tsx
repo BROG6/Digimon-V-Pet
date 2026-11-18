@@ -26,6 +26,12 @@ import { DigiChat } from './components/DigiChat';
 import { DigimonTalkModal } from './components/DigimonTalkModal';
 import { DigimonGallery } from './components/DigimonGallery';
 import { AppUpdateModal } from './components/AppUpdateModal';
+import { GridAlignmentModal } from './components/GridAlignmentModal';
+import {
+  GRID_RATIOS_CHANGED_EVENT,
+  getSavedGridPreset,
+  hasCustomRowRatios,
+} from './utils/petOverlayEngine';
 import {
   checkForUpdate,
   UpdateManifest,
@@ -74,7 +80,8 @@ import {
   ChevronUp,
   Utensils,
   ExternalLink,
-  Download
+  Download,
+  SlidersHorizontal
 } from 'lucide-react';
 
 const STORAGE_KEY = 'digipet_vpet_save_v1';
@@ -143,9 +150,17 @@ export default function App() {
   const [isGalleryHidden, setIsGalleryHidden] = useState<boolean>(() => getHideGalleryButtonPref());
   const [isCareSheetOpen, setIsCareSheetOpen] = useState<boolean>(false);
   const [isMoreSheetOpen, setIsMoreSheetOpen] = useState<boolean>(false);
+  const [isGridModalOpen, setIsGridModalOpen] = useState<boolean>(false);
+  const [isGridCustom, setIsGridCustom] = useState<boolean>(() => hasCustomRowRatios(getSavedGridPreset()));
   const [isUpdateModalOpen, setIsUpdateModalOpen] = useState<boolean>(false);
   const [updateManifest, setUpdateManifest] = useState<UpdateManifest | null>(null);
   const [hasUpdateAvailable, setHasUpdateAvailable] = useState<boolean>(false);
+
+  useEffect(() => {
+    const syncGridFlag = () => setIsGridCustom(hasCustomRowRatios(getSavedGridPreset()));
+    window.addEventListener(GRID_RATIOS_CHANGED_EVENT, syncGridFlag);
+    return () => window.removeEventListener(GRID_RATIOS_CHANGED_EVENT, syncGridFlag);
+  }, []);
 
   // Background Auto-Updater check on startup (Native APK builds only — Web app is always up to date)
   useEffect(() => {
@@ -1414,6 +1429,20 @@ export default function App() {
 
                 <button
                   onClick={() => {
+                    sound.playButton();
+                    setIsMoreSheetOpen(false);
+                    setIsGridModalOpen(true);
+                  }}
+                  className="p-3 bg-slate-800 hover:bg-cyan-950/60 border border-cyan-500/40 rounded-2xl flex items-center gap-2.5 text-cyan-300 cursor-pointer relative"
+                >
+                  <SlidersHorizontal className="w-5 h-5 text-cyan-400 shrink-0" />
+                  <span className="truncate text-xs">
+                    GRID LINES{isGridCustom ? ' • CUSTOM' : ''}
+                  </span>
+                </button>
+
+                <button
+                  onClick={() => {
                     toggleExtraTopPad();
                   }}
                   className="p-3 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-2xl flex items-center gap-2.5 text-slate-300 cursor-pointer"
@@ -1626,10 +1655,22 @@ export default function App() {
         species={currentSpecies}
         isOpen={isNativePipOpen}
         onClose={() => setIsNativePipOpen(false)}
+        onOpenGridAlignment={() => {
+          setIsNativePipOpen(false);
+          setIsGridModalOpen(true);
+        }}
         onStartInAppOverlay={() => {
           setIsOverlayMode(true);
           showNotification(`✨ ${currentSpecies?.name || 'Digimon'} is now roaming on screen! Drag to move.`);
         }}
+      />
+
+      <GridAlignmentModal
+        isOpen={isGridModalOpen}
+        onClose={() => setIsGridModalOpen(false)}
+        pet={pet}
+        species={currentSpecies}
+        onNotify={showNotification}
       />
 
       <DigiChat

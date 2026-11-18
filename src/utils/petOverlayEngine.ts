@@ -39,6 +39,33 @@ export const GRID_LAYOUT_PRESETS: Record<GridLayoutPresetId, GridLayoutPreset> =
 };
 
 const GRID_PRESET_STORAGE_KEY = 'digipet_overlay_grid_preset_v1';
+const CUSTOM_GRID_RATIOS_STORAGE_KEY = 'digipet_overlay_custom_grid_ratios_v1';
+export const GRID_RATIOS_CHANGED_EVENT = 'digipet-grid-ratios-changed';
+
+function dispatchGridRatiosChanged(): void {
+  if (typeof window !== 'undefined') {
+    try {
+      window.dispatchEvent(new CustomEvent(GRID_RATIOS_CHANGED_EVENT));
+    } catch {}
+  }
+}
+
+function clampGridRatio(value: number): number {
+  const safe = Number.isFinite(value) ? value : 0.5;
+  const clamped = Math.max(0.12, Math.min(0.96, safe));
+  return Math.round(clamped * 1000) / 1000;
+}
+
+function readCustomGridRatiosMap(): Partial<Record<GridLayoutPresetId, number[]>> {
+  try {
+    const raw = localStorage.getItem(CUSTOM_GRID_RATIOS_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
 
 export function getSavedGridPreset(): GridLayoutPresetId {
   try {
@@ -52,13 +79,61 @@ export function setSavedGridPreset(id: GridLayoutPresetId): void {
   try {
     if (id in GRID_LAYOUT_PRESETS) {
       localStorage.setItem(GRID_PRESET_STORAGE_KEY, id);
+      dispatchGridRatiosChanged();
     }
   } catch {}
 }
 
+export function getDefaultGridRowRatios(presetId?: GridLayoutPresetId): number[] {
+  const id = presetId || getSavedGridPreset();
+  return [...(GRID_LAYOUT_PRESETS[id] || GRID_LAYOUT_PRESETS['asus-4row']).rowRatios];
+}
+
+export function getSavedCustomRowRatios(presetId?: GridLayoutPresetId): number[] | null {
+  const id = presetId || getSavedGridPreset();
+  const preset = GRID_LAYOUT_PRESETS[id] || GRID_LAYOUT_PRESETS['asus-4row'];
+  const map = readCustomGridRatiosMap();
+  const saved = map[id];
+  if (!Array.isArray(saved) || saved.length !== preset.rowRatios.length) {
+    return null;
+  }
+  return saved.map((n) => clampGridRatio(Number(n)));
+}
+
+export function setSavedCustomRowRatios(presetId: GridLayoutPresetId, ratios: number[]): number[] {
+  const preset = GRID_LAYOUT_PRESETS[presetId] || GRID_LAYOUT_PRESETS['asus-4row'];
+  const normalized = preset.rowRatios.map((def, idx) =>
+    clampGridRatio(typeof ratios[idx] === 'number' ? ratios[idx] : def)
+  );
+  try {
+    const map = readCustomGridRatiosMap();
+    map[presetId] = normalized;
+    localStorage.setItem(CUSTOM_GRID_RATIOS_STORAGE_KEY, JSON.stringify(map));
+    dispatchGridRatiosChanged();
+  } catch {}
+  return normalized;
+}
+
+export function resetCustomRowRatios(presetId: GridLayoutPresetId): void {
+  try {
+    const map = readCustomGridRatiosMap();
+    if (presetId in map) {
+      delete map[presetId];
+      localStorage.setItem(CUSTOM_GRID_RATIOS_STORAGE_KEY, JSON.stringify(map));
+    }
+    dispatchGridRatiosChanged();
+  } catch {}
+}
+
+export function hasCustomRowRatios(presetId?: GridLayoutPresetId): boolean {
+  return getSavedCustomRowRatios(presetId) !== null;
+}
+
 export function getGridRowRatios(presetId?: GridLayoutPresetId): number[] {
   const id = presetId || getSavedGridPreset();
-  return (GRID_LAYOUT_PRESETS[id] || GRID_LAYOUT_PRESETS['asus-4row']).rowRatios;
+  const custom = getSavedCustomRowRatios(id);
+  if (custom) return custom;
+  return getDefaultGridRowRatios(id);
 }
 
 const AERIAL_SPECIES_IDS = new Set<string>([

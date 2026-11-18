@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { PetState, DigimonSpecies } from '../types/digimon';
 import { sound } from '../utils/audio';
-import { ExternalLink, Sparkles, AlertCircle, Smartphone, Zap, X, ShieldCheck, CheckCircle2, LayoutGrid } from 'lucide-react';
+import { ExternalLink, Sparkles, AlertCircle, Smartphone, Zap, X, ShieldCheck, CheckCircle2, LayoutGrid, SlidersHorizontal } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 import { 
   checkOverlayPermission, 
@@ -15,6 +15,7 @@ import { DigimonSpriteConfig, SpriteFrame } from '../utils/newDigimonSprites';
 import {
   GridLayoutPresetId,
   GRID_LAYOUT_PRESETS,
+  GRID_RATIOS_CHANGED_EVENT,
   getSavedGridPreset,
   setSavedGridPreset,
   getGridRowRatios,
@@ -31,6 +32,7 @@ interface NativePipOverlayProps {
   isOpen: boolean;
   onClose: () => void;
   onStartInAppOverlay?: () => void;
+  onOpenGridAlignment?: () => void;
 }
 
 export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
@@ -39,6 +41,7 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
   isOpen,
   onClose,
   onStartInAppOverlay,
+  onOpenGridAlignment,
 }) => {
   const [isPipActive, setIsPipActive] = useState<boolean>(false);
   const [wakeLockActive, setWakeLockActive] = useState<boolean>(false);
@@ -47,6 +50,7 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
   const [hasAndroidPermission, setHasAndroidPermission] = useState<boolean | null>(null);
   const [isCheckingPerm, setIsCheckingPerm] = useState<boolean>(false);
   const [gridPreset, setGridPreset] = useState<GridLayoutPresetId>(() => getSavedGridPreset());
+  const [gridRevision, setGridRevision] = useState<number>(0);
 
   const isFlying = isFlyingSpecies(species);
 
@@ -164,14 +168,23 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
     };
   }, [isOpen]);
 
-  // Re-check permission when window regains focus (e.g. user returned from Android Settings)
+  // Re-check permission and sync grid preset/ratios when window regains focus or grid changes
   useEffect(() => {
     if (!isOpen) return;
+    setGridPreset(getSavedGridPreset());
     const handleFocus = () => {
       checkPermStatus();
     };
+    const handleGridChange = () => {
+      setGridPreset(getSavedGridPreset());
+      setGridRevision((v) => v + 1);
+    };
     window.addEventListener('focus', handleFocus);
-    return () => window.removeEventListener('focus', handleFocus);
+    window.addEventListener(GRID_RATIOS_CHANGED_EVENT, handleGridChange);
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener(GRID_RATIOS_CHANGED_EVENT, handleGridChange);
+    };
   }, [isOpen]);
 
   // Canvas drawing loop for Video PiP fallback
@@ -401,7 +414,7 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
       isCancelled = true;
       cancelAnimationFrame(animFrameRef.current);
     };
-  }, [isOpen, pet, species, isImgLoaded, gridPreset, isFlying]);
+  }, [isOpen, pet, species, isImgLoaded, gridPreset, gridRevision, isFlying]);
 
   if (!isOpen) return null;
 
@@ -681,9 +694,24 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
                 <LayoutGrid className="w-4 h-4 text-cyan-400" />
                 <span>LAUNCHER GRID NAVIGATION</span>
               </div>
-              <span className="text-[9px] font-pixel px-2 py-0.5 rounded-full bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
-                {isFlying ? '360° FLIGHT' : 'GRID PLATFORMING'}
-              </span>
+              <div className="flex items-center gap-1.5">
+                {onOpenGridAlignment && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      sound.playButton();
+                      onOpenGridAlignment();
+                    }}
+                    className="text-[9px] font-pixel px-2 py-0.5 rounded-full bg-amber-500/20 hover:bg-amber-500/35 text-amber-200 border border-amber-400/40 flex items-center gap-1 cursor-pointer"
+                  >
+                    <SlidersHorizontal className="w-2.5 h-2.5" />
+                    <span>ADJUST</span>
+                  </button>
+                )}
+                <span className="text-[9px] font-pixel px-2 py-0.5 rounded-full bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
+                  {isFlying ? '360° FLIGHT' : 'GRID'}
+                </span>
+              </div>
             </div>
 
             <div className="grid grid-cols-3 gap-1.5">

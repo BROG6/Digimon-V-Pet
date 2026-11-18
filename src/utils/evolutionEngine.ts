@@ -215,10 +215,11 @@ export function buildNativeOverlayPayload(params: {
   pet: PetState;
   species?: DigimonSpecies;
   presetId?: GridLayoutPresetId;
+  previewRowIndex?: number;
   nowMs?: number;
   evolvedMessage?: string;
 }): OverlayLaunchParams {
-  const { pet, species, presetId, nowMs = Date.now(), evolvedMessage } = params;
+  const { pet, species, presetId, previewRowIndex, nowMs = Date.now(), evolvedMessage } = params;
   const base = buildSpeciesOverlayVisualFields(species);
   const timing = computeNaturalEvoTiming(pet, species, nowMs);
 
@@ -255,6 +256,7 @@ export function buildNativeOverlayPayload(params: {
     quotesJson: base.quotesJson,
     isFlying: base.isFlying,
     gridRowRatiosJson: JSON.stringify(getGridRowRatios(presetId)),
+    previewRowIndex: typeof previewRowIndex === 'number' ? previewRowIndex : -1,
     hunger: pet.hunger,
     happiness: pet.happiness,
     evolvedMessage: evolvedMessage || '',

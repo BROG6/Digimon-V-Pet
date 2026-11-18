@@ -67,7 +67,7 @@ public class FloatingPetService extends Service {
 
     // Pet & Grid Configuration
     private boolean isFlyingPet = false;
-    private double[] rowRatios = new double[] { 0.34, 0.48, 0.62, 0.76, 0.92 };
+    private double[] rowRatios = new double[] { 0.365, 0.497, 0.629, 0.76, 0.92 };
     private int[] rowYs = new int[] { 740, 1050, 1360, 1670, 2020 };
     private int currentRowIndex = 4; // Start at bottom dock
     private int petHunger = 80;
@@ -265,7 +265,7 @@ public class FloatingPetService extends Service {
                 int[] loc = new int[2];
                 floatingView.getLocationOnScreen(loc);
                 int measured = loc[1] - params.y;
-                if (measured >= 0 && measured <= dpToPx(68) && params.y > 0) {
+                if (measured >= 0 && measured <= dpToPx(84) && params.y > 0) {
                     if (measured != topSystemOffsetPx) {
                         topSystemOffsetPx = measured;
                         if (!isFlyingPet && petState != PetState.OFF_SCREEN && petState != PetState.JUMPING) {

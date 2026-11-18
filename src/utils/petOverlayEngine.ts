@@ -22,7 +22,7 @@ export const GRID_LAYOUT_PRESETS: Record<GridLayoutPresetId, GridLayoutPreset> =
     id: 'asus-4row',
     label: '4-Row + Dock (ASUS / Android)',
     description: 'Snaps to 4 home-screen icon rows plus the bottom dock shelf',
-    rowRatios: [0.34, 0.48, 0.62, 0.76, 0.92],
+    rowRatios: [0.365, 0.497, 0.629, 0.76, 0.92],
   },
   'compact-5row': {
     id: 'compact-5row',

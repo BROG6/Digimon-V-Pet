@@ -89,7 +89,7 @@ public class OverlayPlugin extends Plugin {
         Integer frameH = call.getInt("frameH", 48);
         Integer frameRotate = call.getInt("frameRotate", 0);
         Boolean isFlying = call.getBoolean("isFlying", false);
-        String gridRowRatiosJson = call.getString("gridRowRatiosJson", "[0.34,0.48,0.62,0.76,0.92]");
+        String gridRowRatiosJson = call.getString("gridRowRatiosJson", "[0.365,0.497,0.629,0.76,0.92]");
         Integer hunger = call.getInt("hunger", 75);
         Integer happiness = call.getInt("happiness", 80);
         String evolvedMessage = call.getString("evolvedMessage", "");

@@ -476,39 +476,51 @@ export default function App() {
   useEffect(() => {
     if (!Capacitor.isNativePlatform()) return;
 
+    let isPulling = false;
     const pullNativeOverlayEvolution = async () => {
-      const pending = await consumeNativeOverlayEvolution();
-      if (pending.speciesId && DIGIMON_DATABASE[pending.speciesId]) {
-        const evolvedSpecies = DIGIMON_DATABASE[pending.speciesId];
-        skipNativeEvoBubbleForRef.current = pending.speciesId;
-        setPet((prev) => {
-          if (prev.currentSpeciesId === evolvedSpecies.id) return prev;
-          return applyEvolutionToPetState(prev, evolvedSpecies, pending.evolvedAt || Date.now());
-        });
-        showNotification(`⚡ ${evolvedSpecies.name} naturally Digivolved while roaming!`);
-      }
+      if (isPulling) return;
+      isPulling = true;
+      try {
+        const pending = await consumeNativeOverlayEvolution();
+        if (pending.speciesId && DIGIMON_DATABASE[pending.speciesId]) {
+          const evolvedSpecies = DIGIMON_DATABASE[pending.speciesId];
+          skipNativeEvoBubbleForRef.current = pending.speciesId;
+          setPet((prev) => {
+            if (prev.currentSpeciesId === evolvedSpecies.id) return prev;
+            return applyEvolutionToPetState(prev, evolvedSpecies, pending.evolvedAt || Date.now());
+          });
+          showNotification(`⚡ ${evolvedSpecies.name} naturally Digivolved while roaming!`);
+        }
 
-      const care = await consumeNativeOverlayCareActions();
-      if (care.meatUsed > 0 || care.vitUsed > 0 || care.praiseCount > 0) {
-        setPet((prev) => {
-          const usedMeat = Math.min(prev.bigMeatStock, Math.max(0, care.meatUsed));
-          const usedVit = Math.min(prev.vitaminStock, Math.max(0, care.vitUsed));
-          const praises = Math.max(0, care.praiseCount);
-          return {
-            ...prev,
-            bigMeatStock: prev.bigMeatStock - usedMeat,
-            vitaminStock: prev.vitaminStock - usedVit,
-            hunger: Math.min(100, prev.hunger + usedMeat * 25),
-            weight: prev.weight + usedMeat,
-            energy: Math.min(100, prev.energy + usedVit * 10),
-            isSick: usedVit > 0 ? false : prev.isSick,
-            happiness: Math.min(100, prev.happiness + usedMeat * 10 + usedVit * 10 + praises * 15),
-          };
-        });
+        const care = await consumeNativeOverlayCareActions();
+        if (care.meatUsed > 0 || care.vitUsed > 0 || care.praiseCount > 0) {
+          setPet((prev) => {
+            const usedMeat = Math.min(prev.bigMeatStock, Math.max(0, care.meatUsed));
+            const usedVit = Math.min(prev.vitaminStock, Math.max(0, care.vitUsed));
+            const praises = Math.max(0, care.praiseCount);
+            return {
+              ...prev,
+              bigMeatStock: prev.bigMeatStock - usedMeat,
+              vitaminStock: prev.vitaminStock - usedVit,
+              hunger: Math.min(100, prev.hunger + usedMeat * 35),
+              weight: prev.weight + usedMeat,
+              energy: Math.min(100, prev.energy + usedVit * 10),
+              isSick: usedVit > 0 ? false : prev.isSick,
+              happiness: Math.min(100, prev.happiness + usedMeat * 8 + usedVit * 20 + praises * 15),
+            };
+          });
+        }
+      } finally {
+        isPulling = false;
       }
     };
 
     pullNativeOverlayEvolution();
+    const syncTimer = setInterval(() => {
+      if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+        pullNativeOverlayEvolution();
+      }
+    }, 2500);
     const onFocusOrVisible = () => {
       if (typeof document === 'undefined' || document.visibilityState === 'visible') {
         pullNativeOverlayEvolution();
@@ -517,6 +529,7 @@ export default function App() {
     window.addEventListener('focus', onFocusOrVisible);
     document.addEventListener('visibilitychange', onFocusOrVisible);
     return () => {
+      clearInterval(syncTimer);
       window.removeEventListener('focus', onFocusOrVisible);
       document.removeEventListener('visibilitychange', onFocusOrVisible);
     };

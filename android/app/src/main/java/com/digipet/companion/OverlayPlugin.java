@@ -16,6 +16,24 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 @CapacitorPlugin(name = "OverlayPlugin")
 public class OverlayPlugin extends Plugin {
 
+    private int readIntOption(PluginCall call, String key, int fallback) {
+        if (call == null || call.getData() == null || !call.getData().has(key)) {
+            return fallback;
+        }
+        Object val = call.getData().opt(key);
+        if (val == null || val == org.json.JSONObject.NULL) {
+            return fallback;
+        }
+        if (val instanceof Number) {
+            return (int) Math.round(((Number) val).doubleValue());
+        }
+        try {
+            return (int) Math.round(Double.parseDouble(String.valueOf(val).trim()));
+        } catch (Exception ignored) {
+            return fallback;
+        }
+    }
+
     @PluginMethod
     public void checkPermission(PluginCall call) {
         JSObject ret = new JSObject();
@@ -93,13 +111,29 @@ public class OverlayPlugin extends Plugin {
         Boolean isSleeping = call.getBoolean("isSleeping", false);
         String gridRowRatiosJson = call.getString("gridRowRatiosJson", "[0.365,0.497,0.629,0.76,0.92]");
         Integer previewRowIndex = call.getInt("previewRowIndex", -1);
-        Integer hunger = call.getInt("hunger", 75);
-        Integer happiness = call.getInt("happiness", 80);
-        Integer bigMeatStock = call.getInt("bigMeatStock", 0);
-        Integer vitaminStock = call.getInt("vitaminStock", 0);
+        int hunger = readIntOption(call, "hunger", 75);
+        int happiness = readIntOption(call, "happiness", 80);
+        int bigMeatStock = readIntOption(call, "bigMeatStock", -1);
+        int vitaminStock = readIntOption(call, "vitaminStock", -1);
         String evolvedMessage = call.getString("evolvedMessage", "");
         String nextEvoTriggerMsStr = call.getString("nextEvoTriggerMsStr", "0");
         String nextEvoPayloadJson = call.getString("nextEvoPayloadJson", "");
+
+        android.content.SharedPreferences syncPrefs = ctx.getSharedPreferences("digipet_overlay_sync", Context.MODE_PRIVATE);
+        if (bigMeatStock < 0) {
+            bigMeatStock = syncPrefs.getInt("lastKnownMeatStock", 0);
+        } else {
+            syncPrefs.edit().putInt("lastKnownMeatStock", bigMeatStock).apply();
+        }
+        if (vitaminStock < 0) {
+            vitaminStock = syncPrefs.getInt("lastKnownVitStock", 0);
+        } else {
+            syncPrefs.edit().putInt("lastKnownVitStock", vitaminStock).apply();
+        }
+        syncPrefs.edit()
+            .putInt("lastKnownHunger", hunger)
+            .putInt("lastKnownHappiness", happiness)
+            .apply();
 
         Intent serviceIntent = new Intent(ctx, FloatingPetService.class);
         serviceIntent.putExtra("speciesName", speciesName);
@@ -122,10 +156,10 @@ public class OverlayPlugin extends Plugin {
         serviceIntent.putExtra("isSleeping", isSleeping != null ? isSleeping : false);
         serviceIntent.putExtra("gridRowRatiosJson", gridRowRatiosJson);
         serviceIntent.putExtra("previewRowIndex", previewRowIndex != null ? previewRowIndex : -1);
-        serviceIntent.putExtra("hunger", hunger != null ? hunger : 75);
-        serviceIntent.putExtra("happiness", happiness != null ? happiness : 80);
-        serviceIntent.putExtra("bigMeatStock", bigMeatStock != null ? bigMeatStock : 0);
-        serviceIntent.putExtra("vitaminStock", vitaminStock != null ? vitaminStock : 0);
+        serviceIntent.putExtra("hunger", hunger);
+        serviceIntent.putExtra("happiness", happiness);
+        serviceIntent.putExtra("bigMeatStock", bigMeatStock);
+        serviceIntent.putExtra("vitaminStock", vitaminStock);
         serviceIntent.putExtra("evolvedMessage", evolvedMessage != null ? evolvedMessage : "");
         serviceIntent.putExtra("nextEvoTriggerMsStr", nextEvoTriggerMsStr != null ? nextEvoTriggerMsStr : "0");
         serviceIntent.putExtra("nextEvoPayloadJson", nextEvoPayloadJson != null ? nextEvoPayloadJson : "");

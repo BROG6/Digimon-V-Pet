@@ -269,14 +269,34 @@ public class FloatingPetService extends Service {
     }
 
     private void parseConfigFromIntent(Intent intent) {
-        if (intent == null) return;
+        SharedPreferences syncPrefs = getSharedPreferences("digipet_overlay_sync", MODE_PRIVATE);
+        if (intent == null) {
+            int pendingMeat = Math.max(0, syncPrefs.getInt("pendingMeatUsed", 0));
+            int pendingVit = Math.max(0, syncPrefs.getInt("pendingVitUsed", 0));
+            petHunger = syncPrefs.getInt("lastKnownHunger", petHunger);
+            petHappiness = syncPrefs.getInt("lastKnownHappiness", petHappiness);
+            petBigMeatStock = Math.max(0, syncPrefs.getInt("lastKnownMeatStock", petBigMeatStock) - pendingMeat);
+            petVitaminStock = Math.max(0, syncPrefs.getInt("lastKnownVitStock", petVitaminStock) - pendingVit);
+            updateHudStatsText();
+            return;
+        }
         isFlyingPet = intent.getBooleanExtra("isFlying", false);
         isPetSleeping = intent.getBooleanExtra("isSleeping", false);
         pendingPreviewRowIndex = intent.getIntExtra("previewRowIndex", -1);
-        petHunger = intent.getIntExtra("hunger", 80);
-        petHappiness = intent.getIntExtra("happiness", 80);
-        petBigMeatStock = intent.getIntExtra("bigMeatStock", petBigMeatStock);
-        petVitaminStock = intent.getIntExtra("vitaminStock", petVitaminStock);
+        petHunger = intent.getIntExtra("hunger", syncPrefs.getInt("lastKnownHunger", 80));
+        petHappiness = intent.getIntExtra("happiness", syncPrefs.getInt("lastKnownHappiness", 80));
+        if (intent.hasExtra("bigMeatStock")) {
+            petBigMeatStock = Math.max(0, intent.getIntExtra("bigMeatStock", petBigMeatStock));
+        } else {
+            int pendingMeat = Math.max(0, syncPrefs.getInt("pendingMeatUsed", 0));
+            petBigMeatStock = Math.max(0, syncPrefs.getInt("lastKnownMeatStock", petBigMeatStock) - pendingMeat);
+        }
+        if (intent.hasExtra("vitaminStock")) {
+            petVitaminStock = Math.max(0, intent.getIntExtra("vitaminStock", petVitaminStock));
+        } else {
+            int pendingVit = Math.max(0, syncPrefs.getInt("pendingVitUsed", 0));
+            petVitaminStock = Math.max(0, syncPrefs.getInt("lastKnownVitStock", petVitaminStock) - pendingVit);
+        }
         String sName = intent.getStringExtra("speciesName");
         if (sName != null && !sName.isEmpty()) currentSpeciesName = sName;
         String qJson = intent.getStringExtra("quotesJson");
@@ -284,8 +304,8 @@ public class FloatingPetService extends Service {
         if (lastOffScreenAtMs == 0L) {
             lastOffScreenAtMs = System.currentTimeMillis();
         }
+        updateHudStatsText();
         if (hudVisible) {
-            updateHudStatsText();
             updateCareHudPositions();
         }
 

@@ -1179,20 +1179,20 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
             >
               <button
                 onClick={handleFeedMeat}
-                className="flex flex-col items-center justify-center px-2 py-1.5 rounded-xl bg-slate-800/85 hover:bg-amber-500/30 text-amber-300 border border-amber-500/35 transition-transform active:scale-90 cursor-pointer min-w-[46px]"
+                className="flex flex-col items-center justify-center px-2 py-1.5 rounded-xl bg-slate-800/85 hover:bg-amber-500/30 text-amber-300 border border-amber-500/35 transition-transform active:scale-90 cursor-pointer min-w-[52px]"
                 title={`Feed Big Meat (${pet.bigMeatStock})`}
               >
                 <PixelMeatIcon className="w-4 h-4" />
-                <span className="text-[8px] font-pixel mt-0.5">MEAT</span>
+                <span className="text-[8px] font-pixel mt-0.5">MEAT {pet.bigMeatStock}</span>
               </button>
 
               <button
                 onClick={handleGiveVitamin}
-                className="flex flex-col items-center justify-center px-2 py-1.5 rounded-xl bg-slate-800/85 hover:bg-purple-500/30 text-purple-300 border border-purple-500/35 transition-transform active:scale-90 cursor-pointer min-w-[46px]"
+                className="flex flex-col items-center justify-center px-2 py-1.5 rounded-xl bg-slate-800/85 hover:bg-purple-500/30 text-purple-300 border border-purple-500/35 transition-transform active:scale-90 cursor-pointer min-w-[52px]"
                 title={`Give Vitamin (${pet.vitaminStock})`}
               >
                 <PixelVitaminIcon className="w-4 h-4" />
-                <span className="text-[8px] font-pixel mt-0.5">VIT</span>
+                <span className="text-[8px] font-pixel mt-0.5">VIT {pet.vitaminStock}</span>
               </button>
 
               <button

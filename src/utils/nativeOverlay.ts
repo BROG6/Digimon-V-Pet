@@ -16,6 +16,10 @@ export interface OverlayLaunchParams {
   standingFramesJson?: string;
   walkingFramesJson?: string;
   quotesJson?: string;
+  isFlying?: boolean;
+  gridRowRatiosJson?: string;
+  hunger?: number;
+  happiness?: number;
 }
 
 export interface OverlayPluginInterface {

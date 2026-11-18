@@ -88,6 +88,10 @@ public class OverlayPlugin extends Plugin {
         Integer frameW = call.getInt("frameW", 48);
         Integer frameH = call.getInt("frameH", 48);
         Integer frameRotate = call.getInt("frameRotate", 0);
+        Boolean isFlying = call.getBoolean("isFlying", false);
+        String gridRowRatiosJson = call.getString("gridRowRatiosJson", "[0.34,0.48,0.62,0.76,0.90]");
+        Integer hunger = call.getInt("hunger", 75);
+        Integer happiness = call.getInt("happiness", 80);
 
         Intent serviceIntent = new Intent(ctx, FloatingPetService.class);
         serviceIntent.putExtra("speciesName", speciesName);
@@ -105,6 +109,10 @@ public class OverlayPlugin extends Plugin {
         serviceIntent.putExtra("frameW", frameW);
         serviceIntent.putExtra("frameH", frameH);
         serviceIntent.putExtra("frameRotate", frameRotate);
+        serviceIntent.putExtra("isFlying", isFlying != null ? isFlying : false);
+        serviceIntent.putExtra("gridRowRatiosJson", gridRowRatiosJson);
+        serviceIntent.putExtra("hunger", hunger != null ? hunger : 75);
+        serviceIntent.putExtra("happiness", happiness != null ? happiness : 80);
 
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

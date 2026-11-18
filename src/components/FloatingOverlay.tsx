@@ -1,33 +1,42 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence, useMotionValue } from 'motion/react';
 import { PetState, DigimonSpecies, DigiEggInfo } from '../types/digimon';
 import { DigimonSprite } from './DigimonSprite';
 import { PixelMeatIcon, PixelVitaminIcon, PixelPoopIcon } from './PixelItemIcons';
 import { sound } from '../utils/audio';
 import { getBatteryStatus, DeviceBatteryInfo } from '../utils/battery';
-import { 
-  Battery, 
-  BatteryCharging, 
-  Clock, 
-  Sparkles, 
-  Heart, 
-  Zap, 
-  Maximize2, 
-  Minimize2, 
-  Volume2, 
-  VolumeX, 
-  ChevronRight,
-  ShieldAlert,
+import {
+  Battery,
+  BatteryCharging,
+  Clock,
+  Sparkles,
+  Heart,
+  Minimize2,
+  Volume2,
+  VolumeX,
   Gamepad2,
   Home,
-  Menu,
-  Activity,
   Smartphone,
   MessageSquare,
   Send,
+  LayoutGrid,
   X
 } from 'lucide-react';
 import { fetchDigimonAiDialogue, getContextualQuote, DigimonChatTurn } from '../utils/digimonPersonality';
+import {
+  OverlayPetState,
+  GridLayoutPresetId,
+  GRID_LAYOUT_PRESETS,
+  getSavedGridPreset,
+  setSavedGridPreset,
+  getGridRowRatios,
+  isFlyingSpecies,
+  computeSurfaceRowYs,
+  snapToNearestSurfaceRow,
+  computeParabolicJumpPoint,
+  stepWaypointFlight,
+  pickOffScreenTrigger,
+} from '../utils/petOverlayEngine';
 
 interface FloatingOverlayProps {
   pet: PetState;
@@ -37,6 +46,7 @@ interface FloatingOverlayProps {
   onGiveVitamin: () => void;
   onCleanPoop: () => void;
   onPet: () => void;
+  onForageReward?: (reward: 'meat' | 'friends') => void;
   onOpenRoom: () => void;
   onOpenColosseum: () => void;
   onOpenDigivice: () => void;
@@ -47,6 +57,12 @@ interface FloatingOverlayProps {
   onToggleOverlay: () => void;
 }
 
+const SPRITE_FOOT_OFFSET = 86;
+const SPRITE_BOX_WIDTH = 96;
+const JUMP_DURATION_MS = 560;
+
+const PRESET_ORDER: GridLayoutPresetId[] = ['asus-4row', 'compact-5row', 'dock-only'];
+
 export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
   pet,
   species,
@@ -55,23 +71,32 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
   onGiveVitamin,
   onCleanPoop,
   onPet,
+  onForageReward,
   onOpenRoom,
   onOpenColosseum,
-  onOpenDigivice,
-  onOpenTraining,
-  onOpenStats,
+  onOpenTraining: _onOpenTraining,
   onOpenNativePip,
   isOverlayActive,
   onToggleOverlay,
 }) => {
+  const winW = typeof window !== 'undefined' ? window.innerWidth : 380;
+  const winH = typeof window !== 'undefined' ? window.innerHeight : 760;
 
-  // Coordinates for the roaming Digimon
-  const [posX, setPosX] = useState<number>(window.innerWidth / 2 - 60);
-  const [posY, setPosY] = useState<number>(window.innerHeight - 200);
+  const [gridPreset, setGridPreset] = useState<GridLayoutPresetId>(() => getSavedGridPreset());
+  const initialRowYs = computeSurfaceRowYs(winH, getGridRowRatios(getSavedGridPreset()));
+  const initialY = (initialRowYs[initialRowYs.length - 1] ?? winH - 120) - SPRITE_FOOT_OFFSET;
+  const initialX = Math.max(16, winW / 2 - 48);
+
+  const xMotion = useMotionValue(initialX);
+  const yMotion = useMotionValue(initialY);
+
   const [facing, setFacing] = useState<'left' | 'right'>('right');
   const [currentAction, setCurrentAction] = useState<'idle' | 'walk' | 'sleep' | 'sick' | 'eat' | 'happy' | 'sit' | 'poop'>('idle');
   const [activeEatItem, setActiveEatItem] = useState<'meat' | 'vitamin'>('meat');
   const [speechBubble, setSpeechBubble] = useState<string | null>(null);
+  const [carriedItem, setCarriedItem] = useState<'meat' | null>(null);
+  const [isOffScreenHidden, setIsOffScreenHidden] = useState<boolean>(false);
+
   const [isMenuOpen, setIsMenuOpen] = useState<boolean>(false);
   const [isChatInputOpen, setIsChatInputOpen] = useState<boolean>(false);
   const [chatInputText, setChatInputText] = useState<string>('');
@@ -80,8 +105,71 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
   const [battery, setBattery] = useState<DeviceBatteryInfo>({ level: 85, charging: false, supported: false });
   const [currentTimeStr, setCurrentTimeStr] = useState<string>('');
   const [isMuted, setIsMuted] = useState<boolean>(sound.getMuted());
+
   const isDraggingRef = useRef<boolean>(false);
-  const speechTimerRef = useRef<any>(null);
+  const speechTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const carriedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isFlying = isFlyingSpecies(species);
+
+  const petVitalsRef = useRef({
+    hunger: pet.hunger,
+    happiness: pet.happiness,
+    isSick: pet.isSick,
+    isSleeping: pet.isSleeping,
+  });
+  petVitalsRef.current = {
+    hunger: pet.hunger,
+    happiness: pet.happiness,
+    isSick: pet.isSick,
+    isSleeping: pet.isSleeping,
+  };
+
+  const onForageRewardRef = useRef(onForageReward);
+  onForageRewardRef.current = onForageReward;
+
+  const physicsRef = useRef<{
+    petState: OverlayPetState;
+    offScreenPhase: 'none' | 'exiting' | 'hidden' | 'entering';
+    posX: number;
+    posY: number;
+    targetX: number;
+    targetY: number;
+    rowIndex: number;
+    jumpStartX: number;
+    jumpStartY: number;
+    jumpEndX: number;
+    jumpEndY: number;
+    jumpTargetRow: number;
+    jumpStartMs: number;
+    stateUntilMs: number;
+    offScreenWakeMs: number;
+    exitToRight: boolean;
+    enterFromTop: boolean;
+    forageKind: 'forage_meat' | 'visit_friends';
+    cyclesSinceForage: number;
+    hoverPhase: number;
+  }>({
+    petState: isFlying ? 'FLYING' : 'IDLE',
+    offScreenPhase: 'none',
+    posX: initialX,
+    posY: initialY,
+    targetX: initialX,
+    targetY: initialY,
+    rowIndex: Math.max(0, initialRowYs.length - 1),
+    jumpStartX: initialX,
+    jumpStartY: initialY,
+    jumpEndX: initialX,
+    jumpEndY: initialY,
+    jumpTargetRow: Math.max(0, initialRowYs.length - 1),
+    jumpStartMs: 0,
+    stateUntilMs: Date.now() + 1400,
+    offScreenWakeMs: 0,
+    exitToRight: true,
+    enterFromTop: false,
+    forageKind: 'forage_meat',
+    cyclesSinceForage: 0,
+    hoverPhase: 0,
+  });
 
   // Initialize battery and clock
   useEffect(() => {
@@ -96,42 +184,344 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
     return () => clearInterval(timer);
   }, []);
 
-  // Autonomous wandering behavior (Hellopet mechanic)
+  // Re-snap grounded pet immediately when grid preset changes
+  const handleCycleGridPreset = () => {
+    sound.playButton();
+    const nextIdx = (PRESET_ORDER.indexOf(gridPreset) + 1) % PRESET_ORDER.length;
+    const nextPreset = PRESET_ORDER[nextIdx];
+    setSavedGridPreset(nextPreset);
+    setGridPreset(nextPreset);
+
+    if (!isFlying) {
+      const h = typeof window !== 'undefined' ? window.innerHeight : 760;
+      const rowYs = computeSurfaceRowYs(h, getGridRowRatios(nextPreset));
+      const p = physicsRef.current;
+      const snapped = snapToNearestSurfaceRow(p.posY + SPRITE_FOOT_OFFSET, rowYs);
+      p.rowIndex = snapped.rowIndex;
+      p.posY = snapped.y - SPRITE_FOOT_OFFSET;
+      yMotion.set(p.posY);
+    }
+  };
+
+  // Show speech helper for state engine & user interactions
+  const showShortSpeech = (msg: string, durationMs: number = 4500) => {
+    if (speechTimerRef.current) clearTimeout(speechTimerRef.current);
+    setSpeechBubble(msg);
+    speechTimerRef.current = setTimeout(() => {
+      setSpeechBubble(null);
+    }, durationMs);
+  };
+
+  // Main 5-State Overlay Engine Loop (~30fps)
   useEffect(() => {
-    if (!isOverlayActive || pet.isSleeping) {
-      if (pet.isSleeping) setCurrentAction('sleep');
+    if (!isOverlayActive) return;
+
+    if (pet.isSleeping) {
+      physicsRef.current.petState = 'IDLE';
+      setCurrentAction('sleep');
       return;
     }
 
-    const wanderInterval = setInterval(() => {
-      if (isDraggingRef.current || isChatInputOpen) return;
+    const getBounds = () => {
+      const w = typeof window !== 'undefined' ? window.innerWidth : 380;
+      const h = typeof window !== 'undefined' ? window.innerHeight : 760;
+      const rowYs = computeSurfaceRowYs(h, getGridRowRatios(gridPreset));
+      const minX = 12;
+      const maxX = Math.max(minX + 40, w - SPRITE_BOX_WIDTH - 12);
+      const minSkyY = 76;
+      const maxSkyY = Math.max(minSkyY + 100, h - 130);
+      return { w, h, rowYs, minX, maxX, minSkyY, maxSkyY };
+    };
 
-      // Random chance to wander, say something, sit, or stay idle
-      const roll = Math.random();
-      if (roll < 0.75) {
-        // Walk somewhere along the bottom screen boundary
-        const maxX = window.innerWidth - 100;
-        const targetX = Math.max(15, Math.min(maxX, posX + (Math.random() * 240 - 120)));
-        setFacing(targetX > posX ? 'right' : 'left');
+    const pickFlyWaypoint = (p: typeof physicsRef.current) => {
+      const { minX, maxX, minSkyY, maxSkyY } = getBounds();
+      p.targetX = minX + Math.random() * (maxX - minX);
+      p.targetY = minSkyY + Math.random() * (maxSkyY - minSkyY);
+      setFacing(p.targetX >= p.posX ? 'right' : 'left');
+    };
+
+    const chooseNextBehavior = (now: number) => {
+      const p = physicsRef.current;
+      const { w, rowYs, minX, maxX } = getBounds();
+
+      if (isFlying) {
+        p.petState = 'FLYING';
+        pickFlyWaypoint(p);
         setCurrentAction('walk');
-        setPosX(targetX);
-
-        setTimeout(() => {
-          if (!isDraggingRef.current) {
-            setCurrentAction(pet.isSick ? 'sick' : Math.random() < 0.35 ? 'sit' : 'idle');
-          }
-        }, 1100);
-      } else if (roll < 0.88) {
-        // Hellopet dialogue bubble
-        triggerSpeech();
-      } else {
-        // Sit down relaxed
-        setCurrentAction(pet.isSick ? 'sick' : 'sit');
+        return;
       }
-    }, 2200);
 
-    return () => clearInterval(wanderInterval);
-  }, [isOverlayActive, posX, pet.isSleeping, pet.isSick, isChatInputOpen]);
+      p.rowIndex = Math.max(0, Math.min(p.rowIndex, rowYs.length - 1));
+
+      if (rowYs.length > 1 && Math.random() < 0.42) {
+        let nextRow = p.rowIndex;
+        if (p.rowIndex === 0) {
+          nextRow = 1;
+        } else if (p.rowIndex === rowYs.length - 1) {
+          nextRow = p.rowIndex - 1;
+        } else {
+          nextRow = Math.random() < 0.5 ? p.rowIndex - 1 : p.rowIndex + 1;
+        }
+        p.jumpStartX = p.posX;
+        p.jumpStartY = p.posY;
+        p.jumpTargetRow = nextRow;
+        p.jumpEndX = minX + Math.random() * (maxX - minX);
+        p.jumpEndY = rowYs[nextRow] - SPRITE_FOOT_OFFSET;
+        p.jumpStartMs = now;
+        p.petState = 'JUMPING';
+        setFacing(p.jumpEndX >= p.jumpStartX ? 'right' : 'left');
+        setCurrentAction('walk');
+      } else {
+        p.petState = 'WALKING_GRID';
+        let nextX = minX + Math.random() * (maxX - minX);
+        if (Math.abs(nextX - p.posX) < 36) {
+          nextX = p.posX < w * 0.45 ? maxX - 10 : minX + 10;
+        }
+        p.targetX = nextX;
+        p.targetY = rowYs[p.rowIndex] - SPRITE_FOOT_OFFSET;
+        setFacing(p.targetX >= p.posX ? 'right' : 'left');
+        setCurrentAction('walk');
+      }
+    };
+
+    const startOffScreen = (kind: 'forage_meat' | 'visit_friends') => {
+      const p = physicsRef.current;
+      const { w } = getBounds();
+      p.cyclesSinceForage = 0;
+      p.petState = 'OFF_SCREEN';
+      p.offScreenPhase = 'exiting';
+      p.forageKind = kind;
+      p.exitToRight = p.posX > w * 0.4;
+      p.targetX = p.exitToRight ? w + 120 : -140;
+      setFacing(p.exitToRight ? 'right' : 'left');
+      setCurrentAction('walk');
+      setIsMenuOpen(false);
+      showShortSpeech(
+        kind === 'forage_meat' ? 'Going foraging for food! 🍖' : 'Visiting Digi-friends! 👋',
+        2600
+      );
+    };
+
+    const completeCycle = (now: number) => {
+      const p = physicsRef.current;
+      p.cyclesSinceForage += 1;
+      const decision = pickOffScreenTrigger({
+        hunger: petVitalsRef.current.hunger,
+        happiness: petVitalsRef.current.happiness,
+        cyclesSinceForage: p.cyclesSinceForage,
+      });
+
+      if (decision.trigger) {
+        startOffScreen(decision.kind);
+        return;
+      }
+
+      if (Math.random() < 0.45) {
+        p.petState = 'IDLE';
+        p.stateUntilMs = now + 1800 + Math.random() * 2400;
+        setCurrentAction(
+          petVitalsRef.current.isSick
+            ? 'sick'
+            : Math.random() < 0.35
+            ? 'sit'
+            : 'idle'
+        );
+      } else {
+        chooseNextBehavior(now);
+      }
+    };
+
+    const finishReEntry = (now: number) => {
+      const p = physicsRef.current;
+      p.offScreenPhase = 'none';
+      p.petState = 'IDLE';
+      p.stateUntilMs = now + 2200;
+      setCurrentAction(petVitalsRef.current.isSick ? 'sick' : 'happy');
+
+      if (p.forageKind === 'forage_meat') {
+        setCarriedItem('meat');
+        showShortSpeech('Found Big Meat! 🍖 (+1 Stock)', 5200);
+        onForageRewardRef.current?.('meat');
+        if (carriedTimerRef.current) clearTimeout(carriedTimerRef.current);
+        carriedTimerRef.current = setTimeout(() => {
+          setCarriedItem(null);
+        }, 6500);
+      } else {
+        showShortSpeech('Back from visiting friends! 🤝', 5000);
+        onForageRewardRef.current?.('friends');
+      }
+      sound.playAlert();
+    };
+
+    // Ensure grounded pet starts cleanly snapped onto a row
+    if (!isFlying) {
+      const { rowYs } = getBounds();
+      const snapped = snapToNearestSurfaceRow(physicsRef.current.posY + SPRITE_FOOT_OFFSET, rowYs);
+      physicsRef.current.rowIndex = snapped.rowIndex;
+      physicsRef.current.posY = snapped.y - SPRITE_FOOT_OFFSET;
+      yMotion.set(physicsRef.current.posY);
+    } else if (physicsRef.current.petState !== 'FLYING') {
+      physicsRef.current.petState = 'FLYING';
+      pickFlyWaypoint(physicsRef.current);
+    }
+
+    const tick = setInterval(() => {
+      const p = physicsRef.current;
+      if (isDraggingRef.current || isChatInputOpen || petVitalsRef.current.isSleeping) {
+        return;
+      }
+
+      const now = Date.now();
+      const { w, h, rowYs, minX, maxX } = getBounds();
+
+      switch (p.petState) {
+        case 'WALKING_GRID': {
+          const speed = 2.4;
+          const dx = p.targetX - p.posX;
+          if (Math.abs(dx) <= speed) {
+            p.posX = p.targetX;
+            p.posY = rowYs[Math.min(p.rowIndex, rowYs.length - 1)] - SPRITE_FOOT_OFFSET;
+            xMotion.set(p.posX);
+            yMotion.set(p.posY);
+            completeCycle(now);
+          } else {
+            p.posX += dx > 0 ? speed : -speed;
+            p.posY = rowYs[Math.min(p.rowIndex, rowYs.length - 1)] - SPRITE_FOOT_OFFSET;
+            xMotion.set(p.posX);
+            yMotion.set(p.posY);
+          }
+          break;
+        }
+
+        case 'JUMPING': {
+          const t = (now - p.jumpStartMs) / JUMP_DURATION_MS;
+          if (t >= 1) {
+            p.posX = p.jumpEndX;
+            p.posY = p.jumpEndY;
+            p.rowIndex = p.jumpTargetRow;
+            xMotion.set(p.posX);
+            yMotion.set(p.posY);
+            completeCycle(now);
+          } else {
+            const pt = computeParabolicJumpPoint(
+              p.jumpStartX,
+              p.jumpStartY,
+              p.jumpEndX,
+              p.jumpEndY,
+              t,
+              58
+            );
+            p.posX = pt.x;
+            p.posY = pt.y;
+            xMotion.set(p.posX);
+            yMotion.set(p.posY);
+          }
+          break;
+        }
+
+        case 'FLYING': {
+          const res = stepWaypointFlight(p.posX, p.posY, p.targetX, p.targetY, 2.7);
+          p.hoverPhase += 0.14;
+          const hoverY = Math.sin(p.hoverPhase) * 5;
+          p.posX = res.x;
+          p.posY = res.y;
+          xMotion.set(p.posX);
+          yMotion.set(p.posY + hoverY);
+          if (res.arrived) {
+            completeCycle(now);
+          }
+          break;
+        }
+
+        case 'IDLE': {
+          if (isFlying) {
+            p.hoverPhase += 0.1;
+            yMotion.set(p.posY + Math.sin(p.hoverPhase) * 4);
+          }
+          if (now >= p.stateUntilMs) {
+            chooseNextBehavior(now);
+          }
+          break;
+        }
+
+        case 'OFF_SCREEN': {
+          const speed = 3.6;
+          if (p.offScreenPhase === 'exiting') {
+            p.posX += p.exitToRight ? speed : -speed;
+            xMotion.set(p.posX);
+            if ((p.exitToRight && p.posX >= w + 90) || (!p.exitToRight && p.posX <= -120)) {
+              p.offScreenPhase = 'hidden';
+              p.offScreenWakeMs = now + 30000 + Math.random() * 30000;
+              setIsOffScreenHidden(true);
+            }
+          } else if (p.offScreenPhase === 'hidden') {
+            if (now >= p.offScreenWakeMs) {
+              setIsOffScreenHidden(false);
+              p.offScreenPhase = 'entering';
+              p.enterFromTop = Math.random() < 0.38;
+
+              if (p.enterFromTop) {
+                p.posX = minX + Math.random() * (maxX - minX);
+                p.posY = -110;
+                p.targetX = p.posX;
+                if (isFlying) {
+                  p.targetY = h * (0.28 + Math.random() * 0.36);
+                } else {
+                  p.rowIndex = Math.floor(Math.random() * rowYs.length);
+                  p.targetY = rowYs[p.rowIndex] - SPRITE_FOOT_OFFSET;
+                }
+              } else {
+                const fromLeft = p.exitToRight;
+                p.posX = fromLeft ? -110 : w + 30;
+                if (isFlying) {
+                  p.posY = h * (0.28 + Math.random() * 0.42);
+                  p.targetY = p.posY;
+                } else {
+                  p.rowIndex = Math.floor(Math.random() * rowYs.length);
+                  p.posY = rowYs[p.rowIndex] - SPRITE_FOOT_OFFSET;
+                  p.targetY = p.posY;
+                }
+                p.targetX = fromLeft ? 48 : Math.max(48, maxX - 36);
+                setFacing(fromLeft ? 'right' : 'left');
+              }
+
+              xMotion.set(p.posX);
+              yMotion.set(p.posY);
+              setCurrentAction('walk');
+            }
+          } else if (p.offScreenPhase === 'entering') {
+            if (p.enterFromTop) {
+              p.posY += 4.5;
+              if (p.posY >= p.targetY) {
+                p.posY = p.targetY;
+                yMotion.set(p.posY);
+                finishReEntry(now);
+              } else {
+                yMotion.set(p.posY);
+              }
+            } else {
+              const dx = p.targetX - p.posX;
+              if (Math.abs(dx) <= speed) {
+                p.posX = p.targetX;
+                xMotion.set(p.posX);
+                finishReEntry(now);
+              } else {
+                setFacing(dx > 0 ? 'right' : 'left');
+                p.posX += dx > 0 ? speed : -speed;
+                xMotion.set(p.posX);
+              }
+            }
+          }
+          break;
+        }
+      }
+    }, 33);
+
+    return () => {
+      clearInterval(tick);
+      if (carriedTimerRef.current) clearTimeout(carriedTimerRef.current);
+    };
+  }, [isOverlayActive, isFlying, gridPreset, pet.isSleeping, isChatInputOpen, xMotion, yMotion]);
 
   // Safety watchdog to prevent talk function from ever getting stuck
   useEffect(() => {
@@ -147,7 +537,6 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
     if (speechTimerRef.current) clearTimeout(speechTimerRef.current);
 
     if (customMessage) {
-      // User directly talked to Digimon -> use Gemini AI with species lore & conversation history!
       setSpeechBubble('💭 ...');
       setIsAiThinking(true);
       sound.playButton();
@@ -206,7 +595,6 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
       return;
     }
 
-    // Contextual autonomous or tapped line
     const msg = getContextualQuote(pet.currentSpeciesId, {
       isSick: pet.isSick,
       hunger: pet.hunger,
@@ -220,7 +608,6 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
     setSpeechBubble(msg);
     sound.playAlert();
 
-    // Auto-dismiss after 5 seconds
     speechTimerRef.current = setTimeout(() => {
       setSpeechBubble(null);
     }, 5000);
@@ -289,57 +676,78 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
 
   if (!isOverlayActive) return null;
 
+  const shortPresetLabel =
+    gridPreset === 'asus-4row'
+      ? '4-ROW'
+      : gridPreset === 'compact-5row'
+      ? '5-ROW'
+      : 'DOCK';
+
   return (
     <div className="fixed inset-0 pointer-events-none z-50 overflow-hidden font-display">
-      {/* Floating System HUD (Hellopet device status bar) */}
+      {/* Floating System HUD Bar */}
       <motion.div
         initial={{ y: -50, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
-        className="absolute top-[max(calc(env(safe-area-inset-top,0px)+0.75rem),3rem)] sm:top-4 left-1/2 -translate-x-1/2 pointer-events-auto bg-slate-900/95 backdrop-blur-md border border-cyan-500/30 shadow-2xl shadow-cyan-950/50 rounded-full px-4 py-1.5 flex items-center gap-4 text-xs text-slate-200"
+        className="absolute top-[max(calc(env(safe-area-inset-top,0px)+0.75rem),3rem)] sm:top-4 left-1/2 -translate-x-1/2 pointer-events-auto bg-slate-900/95 backdrop-blur-md border border-cyan-500/30 shadow-2xl shadow-cyan-950/50 rounded-full px-3.5 py-1.5 flex items-center gap-2.5 sm:gap-3 text-xs text-slate-200 max-w-[95vw] overflow-x-auto"
       >
-        <div className="flex items-center gap-1.5 text-cyan-400 font-pixel text-[10px]">
+        <div className="flex items-center gap-1.5 text-cyan-400 font-pixel text-[10px] shrink-0">
           <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-          <span>HELLOPET OVERLAY</span>
+          <span>{isFlying ? 'FLIGHT' : 'GRID'}</span>
         </div>
 
-        <div className="h-3 w-[1px] bg-slate-700" />
+        {!isFlying && (
+          <>
+            <div className="h-3 w-[1px] bg-slate-700 shrink-0" />
+            <button
+              onClick={handleCycleGridPreset}
+              className="flex items-center gap-1 text-[10px] font-pixel text-amber-300 hover:text-amber-200 transition-colors cursor-pointer shrink-0"
+              title={`Launcher Grid: ${GRID_LAYOUT_PRESETS[gridPreset].label} (tap to cycle)`}
+            >
+              <LayoutGrid className="w-3.5 h-3.5" />
+              <span>{shortPresetLabel}</span>
+            </button>
+          </>
+        )}
+
+        <div className="h-3 w-[1px] bg-slate-700 shrink-0" />
 
         {/* Battery Monitor */}
-        <div className="flex items-center gap-1 text-slate-300">
+        <div className="flex items-center gap-1 text-slate-300 shrink-0">
           {battery.charging ? (
-            <BatteryCharging className="w-4 h-4 text-emerald-400 animate-pulse" />
+            <BatteryCharging className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
           ) : (
-            <Battery className="w-4 h-4 text-amber-400" />
+            <Battery className="w-3.5 h-3.5 text-amber-400" />
           )}
           <span>{battery.level}%</span>
         </div>
 
-        <div className="h-3 w-[1px] bg-slate-700" />
+        <div className="h-3 w-[1px] bg-slate-700 shrink-0" />
 
         {/* Clock */}
-        <div className="flex items-center gap-1 text-slate-300">
+        <div className="flex items-center gap-1 text-slate-300 shrink-0">
           <Clock className="w-3.5 h-3.5 text-sky-400" />
           <span>{currentTimeStr}</span>
         </div>
 
-        <div className="h-3 w-[1px] bg-slate-700" />
+        <div className="h-3 w-[1px] bg-slate-700 shrink-0" />
 
         {/* Mute button */}
         <button
           onClick={toggleSound}
-          className="p-1 hover:text-cyan-400 transition-colors"
+          className="p-1 hover:text-cyan-400 transition-colors shrink-0 cursor-pointer"
           title={isMuted ? 'Unmute Sound' : 'Mute Sound'}
         >
           {isMuted ? <VolumeX className="w-4 h-4 text-rose-400" /> : <Volume2 className="w-4 h-4 text-cyan-400" />}
         </button>
 
-        {/* Pop out to Native Android PiP (Float over other apps) */}
+        {/* Pop out to Native Android Overlay */}
         {onOpenNativePip && (
           <>
-            <div className="h-3 w-[1px] bg-slate-700" />
+            <div className="h-3 w-[1px] bg-slate-700 shrink-0" />
             <button
               onClick={onOpenNativePip}
-              className="bg-purple-500/25 hover:bg-purple-500/40 text-purple-200 border border-purple-500/40 px-2.5 py-0.5 rounded-full flex items-center gap-1 text-[11px] font-medium transition-all cursor-pointer shadow-sm shadow-purple-500/20 active:scale-95"
+              className="bg-purple-500/25 hover:bg-purple-500/40 text-purple-200 border border-purple-500/40 px-2.5 py-0.5 rounded-full flex items-center gap-1 text-[11px] font-medium transition-all cursor-pointer shadow-sm shadow-purple-500/20 active:scale-95 shrink-0"
               title="Pop out to Native Android Floating Window (over all apps)"
             >
               <Smartphone className="w-3.5 h-3.5 text-purple-400" />
@@ -348,44 +756,61 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
           </>
         )}
 
-        <div className="h-3 w-[1px] bg-slate-700" />
+        <div className="h-3 w-[1px] bg-slate-700 shrink-0" />
 
-        {/* Switch back to Main Studio */}
+        {/* Switch back to Main Digivice */}
         <button
           onClick={onToggleOverlay}
-          className="bg-cyan-500/20 hover:bg-cyan-500/40 text-cyan-300 border border-cyan-500/40 px-2.5 py-0.5 rounded-full flex items-center gap-1 text-[11px] font-medium transition-all cursor-pointer"
+          className="bg-cyan-500/20 hover:bg-cyan-500/40 text-cyan-300 border border-cyan-500/40 px-2.5 py-0.5 rounded-full flex items-center gap-1 text-[11px] font-medium transition-all cursor-pointer shrink-0"
         >
           <Minimize2 className="w-3 h-3" />
-          <span>Dock Digivice</span>
+          <span>Dock</span>
         </button>
-
       </motion.div>
 
-      {/* Floating Digimon Companion */}
+      {/* Floating Digimon Companion Hitbox */}
       <motion.div
-        drag
+        drag={!isOffScreenHidden}
         dragMomentum={false}
+        style={{ x: xMotion, y: yMotion }}
         onDragStart={() => {
           isDraggingRef.current = true;
           setCurrentAction('walk');
         }}
-        onDragEnd={(_, info) => {
+        onDragEnd={() => {
           isDraggingRef.current = false;
-          const offsetX = info?.offset?.x || 0;
-          const offsetY = info?.offset?.y || 0;
-          const winW = typeof window !== 'undefined' ? window.innerWidth : 360;
-          const winH = typeof window !== 'undefined' ? window.innerHeight : 640;
-          setPosX((prev) => Math.max(10, Math.min(winW - 100, (Number.isFinite(prev) ? prev : 100) + offsetX)));
-          setPosY((prev) => Math.max(70, Math.min(winH - 120, (Number.isFinite(prev) ? prev : 300) + offsetY)));
+          const screenW = typeof window !== 'undefined' ? window.innerWidth : 380;
+          const screenH = typeof window !== 'undefined' ? window.innerHeight : 760;
+          const clampedX = Math.max(10, Math.min(screenW - SPRITE_BOX_WIDTH - 10, xMotion.get()));
+          let droppedY = Math.max(70, Math.min(screenH - 110, yMotion.get()));
+
+          const p = physicsRef.current;
+          if (!isFlying) {
+            const rowYs = computeSurfaceRowYs(screenH, getGridRowRatios(gridPreset));
+            const snapped = snapToNearestSurfaceRow(droppedY + SPRITE_FOOT_OFFSET, rowYs);
+            p.rowIndex = snapped.rowIndex;
+            droppedY = snapped.y - SPRITE_FOOT_OFFSET;
+            p.petState = 'IDLE';
+            p.stateUntilMs = Date.now() + 1200;
+          } else {
+            p.petState = 'FLYING';
+          }
+
+          p.posX = clampedX;
+          p.posY = droppedY;
+          xMotion.set(clampedX);
+          yMotion.set(droppedY);
           setCurrentAction(pet.isSick ? 'sick' : 'idle');
         }}
-        animate={{ x: Number.isFinite(posX) ? posX : 100, y: Number.isFinite(posY) ? posY : 300 }}
-        transition={{ type: 'spring', damping: 25, stiffness: 120 }}
-        className="absolute top-0 left-0 pointer-events-auto cursor-grab active:cursor-grabbing flex flex-col items-center select-none"
+        className={`absolute top-0 left-0 flex flex-col items-center select-none transition-opacity duration-200 ${
+          isOffScreenHidden
+            ? 'opacity-0 pointer-events-none'
+            : 'pointer-events-auto cursor-grab active:cursor-grabbing'
+        }`}
       >
-        {/* Hellopet Speech Dialogue Bubble - Landing HIGHER and BEHIND the head of the Digimon */}
+        {/* Speech Dialogue Bubble - Above and behind Digimon head */}
         <AnimatePresence>
-          {speechBubble && (
+          {speechBubble && !isOffScreenHidden && (
             <motion.div
               initial={{ scale: 0, opacity: 0, y: 8 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
@@ -394,7 +819,6 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
             >
               <div className="relative bg-white/95 backdrop-blur-md text-slate-900 border-2 border-slate-950 rounded-2xl px-3.5 py-2 shadow-2xl text-xs font-bold text-center filter drop-shadow-xl leading-snug">
                 <span>{speechBubble}</span>
-                {/* Bubble tail dipping down behind the head */}
                 <div className="absolute -bottom-2.5 left-1/2 -translate-x-1/2 w-0 h-0 border-x-8 border-x-transparent border-t-8 border-t-white" />
                 <div className="absolute -bottom-3.5 left-1/2 -translate-x-1/2 w-0 h-0 border-x-[9px] border-x-transparent border-t-[9px] border-t-slate-950 -z-10" />
               </div>
@@ -402,8 +826,23 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
           )}
         </AnimatePresence>
 
+        {/* Carried Forage Item Badge (Meat found off-screen) */}
+        <AnimatePresence>
+          {carriedItem === 'meat' && !isOffScreenHidden && (
+            <motion.div
+              initial={{ scale: 0, y: 6 }}
+              animate={{ scale: 1, y: [0, -3, 0] }}
+              exit={{ scale: 0, opacity: 0 }}
+              transition={{ y: { repeat: Infinity, duration: 0.9 } }}
+              className="absolute -top-5 -right-3 z-30 bg-indigo-950/90 border-2 border-amber-400 rounded-xl p-1 shadow-lg pointer-events-none"
+            >
+              <PixelMeatIcon className="w-5 h-5" />
+            </motion.div>
+          )}
+        </AnimatePresence>
+
         {/* Poop next to Digimon if present */}
-        {pet.poopCount > 0 && (
+        {pet.poopCount > 0 && !isOffScreenHidden && (
           <motion.div
             animate={{ rotate: [-4, 4, -4] }}
             transition={{ repeat: Infinity, duration: 1 }}
@@ -418,7 +857,7 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
           </motion.div>
         )}
 
-        {/* Digimon Sprite (Wrapped in relative z-20 so the head is in FRONT of the speech bubble) */}
+        {/* Digimon Sprite */}
         <div className="relative z-20">
           <DigimonSprite
             species={species}
@@ -433,14 +872,13 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
 
         {/* Quick Interaction Radial / Drawer Menu on Tap */}
         <AnimatePresence>
-          {isMenuOpen && (
+          {isMenuOpen && !isOffScreenHidden && (
             <motion.div
               initial={{ opacity: 0, scale: 0.8, y: 10 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.8, y: 10 }}
               className="absolute -bottom-16 bg-slate-950/95 backdrop-blur-md border border-cyan-500/40 rounded-2xl p-2 shadow-2xl flex items-center gap-1.5 z-50 text-slate-100"
             >
-              {/* AI Talk Button */}
               <button
                 onClick={() => {
                   setIsMenuOpen(false);
@@ -518,10 +956,9 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
             </motion.div>
           )}
         </AnimatePresence>
-
       </motion.div>
 
-      {/* Interactive AI Talk Popover (Fixed at bottom-center so it never clips off-screen) */}
+      {/* Interactive AI Talk Popover */}
       <AnimatePresence>
         {isChatInputOpen && (
           <motion.div
@@ -564,7 +1001,6 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
               </div>
             )}
 
-            {/* Quick suggestion chips */}
             <div className="flex flex-wrap gap-1">
               {['How are you feeling?', 'Tell me your attack!', 'Ready to battle?', 'Want some meat?'].map((prompt, i) => (
                 <button
@@ -578,7 +1014,6 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
               ))}
             </div>
 
-            {/* Input field + Send button */}
             <form
               onSubmit={(e) => {
                 e.preventDefault();

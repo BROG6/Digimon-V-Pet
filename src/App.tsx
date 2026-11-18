@@ -45,6 +45,7 @@ import {
   stopNativeFloatingOverlay, 
   isNativeOverlayActive 
 } from './utils/nativeOverlay';
+import { getGridRowRatios, isFlyingSpecies } from './utils/petOverlayEngine';
 import { sound, triggerHaptic } from './utils/audio';
 import { 
   Sparkles, 
@@ -297,6 +298,10 @@ export default function App() {
           standingFramesJson: JSON.stringify(standingFrames),
           walkingFramesJson: JSON.stringify(walkingFrames),
           quotesJson: JSON.stringify(speciesQuotes),
+          isFlying: isFlyingSpecies(currentSpecies),
+          gridRowRatiosJson: JSON.stringify(getGridRowRatios()),
+          hunger: pet.hunger,
+          happiness: pet.happiness,
         });
 
         if (ok) {
@@ -757,6 +762,22 @@ export default function App() {
         onGiveVitamin={handleGiveVitamin}
         onCleanPoop={handleCleanPoop}
         onPet={handlePetDigimon}
+        onForageReward={(reward) => {
+          if (reward === 'meat') {
+            setPet((prev) => ({
+              ...prev,
+              bigMeatStock: prev.bigMeatStock + 1,
+              happiness: Math.min(100, prev.happiness + 4),
+            }));
+            showNotification(`${pet.nickname || 'Digimon'} returned from foraging with +1 Big Meat!`);
+          } else {
+            setPet((prev) => ({
+              ...prev,
+              happiness: Math.min(100, prev.happiness + 10),
+            }));
+            showNotification(`${pet.nickname || 'Digimon'} visited friends! (+10 Happiness)`);
+          }
+        }}
         onOpenRoom={() => setIsRoomOpen(true)}
         onOpenColosseum={() => setIsColosseumOpen(true)}
         onOpenDigivice={() => setIsOverlayMode(false)}

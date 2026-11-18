@@ -245,19 +245,32 @@ export function stepWaypointFlight(
   };
 }
 
+export const OFF_SCREEN_MIN_COOLDOWN_MS = 180_000;
+export const OFF_SCREEN_NEEDY_COOLDOWN_MS = 120_000;
+
 export function pickOffScreenTrigger(params: {
   hunger: number;
   happiness: number;
   cyclesSinceForage: number;
+  lastOffScreenAtMs?: number;
+  nowMs?: number;
 }): { trigger: boolean; kind: 'forage_meat' | 'visit_friends' } {
-  const { hunger, happiness, cyclesSinceForage } = params;
-  if (hunger < 45 && cyclesSinceForage >= 3 && Math.random() < 0.45) {
+  const {
+    hunger,
+    happiness,
+    cyclesSinceForage,
+    lastOffScreenAtMs = 0,
+    nowMs = Date.now(),
+  } = params;
+  const elapsed = lastOffScreenAtMs > 0 ? nowMs - lastOffScreenAtMs : Number.POSITIVE_INFINITY;
+
+  if (hunger < 40 && cyclesSinceForage >= 14 && elapsed >= OFF_SCREEN_NEEDY_COOLDOWN_MS && Math.random() < 0.18) {
     return { trigger: true, kind: 'forage_meat' };
   }
-  if (happiness < 50 && cyclesSinceForage >= 3 && Math.random() < 0.4) {
+  if (happiness < 45 && cyclesSinceForage >= 14 && elapsed >= OFF_SCREEN_NEEDY_COOLDOWN_MS && Math.random() < 0.15) {
     return { trigger: true, kind: 'visit_friends' };
   }
-  if (cyclesSinceForage >= 7 && Math.random() < 0.25) {
+  if (cyclesSinceForage >= 28 && elapsed >= OFF_SCREEN_MIN_COOLDOWN_MS && Math.random() < 0.10) {
     return {
       trigger: true,
       kind: Math.random() < 0.55 ? 'forage_meat' : 'visit_friends',

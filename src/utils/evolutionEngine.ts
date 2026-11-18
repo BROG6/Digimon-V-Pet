@@ -178,6 +178,7 @@ function buildSpeciesOverlayVisualFields(species: DigimonSpecies | undefined) {
     NEW_DIGIMON_SPRITES['agumon'];
   const standingFrames = conf?.frames?.standing || [];
   const walkingFrames = conf?.frames?.walking || standingFrames;
+  const sleepingFrames = conf?.frames?.sleeping || standingFrames;
   const activeFrame = walkingFrames[0] || standingFrames[0] || { x: 2, y: 2, w: 48, h: 48 };
   const profile = getPersonalityProfile(speciesId);
   const speciesQuotes = [
@@ -205,6 +206,7 @@ function buildSpeciesOverlayVisualFields(species: DigimonSpecies | undefined) {
     frameRotate: activeFrame.rotate || 0,
     standingFramesJson: JSON.stringify(standingFrames),
     walkingFramesJson: JSON.stringify(walkingFrames),
+    sleepingFramesJson: JSON.stringify(sleepingFrames),
     quotesJson: JSON.stringify(speciesQuotes),
     isFlying: isFlyingSpecies(species),
   };
@@ -252,8 +254,10 @@ export function buildNativeOverlayPayload(params: {
     frameRotate: base.frameRotate,
     standingFramesJson: base.standingFramesJson,
     walkingFramesJson: base.walkingFramesJson,
+    sleepingFramesJson: base.sleepingFramesJson,
     quotesJson: base.quotesJson,
     isFlying: base.isFlying,
+    isSleeping: Boolean(pet.isSleeping || pet.lightsOff),
     gridRowRatiosJson: JSON.stringify(getGridRowRatios(presetId)),
     previewRowIndex: typeof previewRowIndex === 'number' ? previewRowIndex : -1,
     hunger: pet.hunger,

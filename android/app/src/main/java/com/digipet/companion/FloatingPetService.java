@@ -124,6 +124,7 @@ public class FloatingPetService extends Service {
     private int pendingPreviewRowIndex = -1;
     private int petHunger = 80;
     private int petHappiness = 80;
+    private boolean isPetSleeping = false;
 
     // In-place Evolution Tracking
     private String loadedSpeciesKey = "";
@@ -147,10 +148,13 @@ public class FloatingPetService extends Service {
     private int jumpTargetRow = 0;
     private long jumpStartMs = 0L;
     private static final long JUMP_DURATION_MS = 560L;
+    private static final long OFF_SCREEN_MIN_COOLDOWN_MS = 180_000L;
+    private static final long OFF_SCREEN_NEEDY_COOLDOWN_MS = 120_000L;
 
     // Timers & Phases
     private long stateUntilMs = 0L;
     private long offScreenWakeMs = 0L;
+    private long lastOffScreenAtMs = 0L;
     private long clearItemAtMs = 0L;
     private int cyclesSinceForage = 0;
     private boolean exitToRight = true;
@@ -222,9 +226,13 @@ public class FloatingPetService extends Service {
     private void parseConfigFromIntent(Intent intent) {
         if (intent == null) return;
         isFlyingPet = intent.getBooleanExtra("isFlying", false);
+        isPetSleeping = intent.getBooleanExtra("isSleeping", false);
         pendingPreviewRowIndex = intent.getIntExtra("previewRowIndex", -1);
         petHunger = intent.getIntExtra("hunger", 80);
         petHappiness = intent.getIntExtra("happiness", 80);
+        if (lastOffScreenAtMs == 0L) {
+            lastOffScreenAtMs = System.currentTimeMillis();
+        }
 
         String evoMsg = intent.getStringExtra("evolvedMessage");
         pendingEvolvedMessage = evoMsg != null ? evoMsg : "";
@@ -411,8 +419,13 @@ public class FloatingPetService extends Service {
 
         params.gravity = Gravity.TOP | Gravity.START;
         currentRowIndex = Math.max(0, rowYs.length - 1);
+        lastOffScreenAtMs = System.currentTimeMillis();
         posX = Math.max(dpToPx(8), (screenW - viewW) * 0.5f);
-        if (isFlyingPet) {
+        if (isPetSleeping) {
+            posY = isFlyingPet ? (screenH * 0.45f) : getTopYForFootY(rowYs[currentRowIndex]);
+            petState = PetState.IDLE;
+            stateUntilMs = System.currentTimeMillis() + 1400L;
+        } else if (isFlyingPet) {
             posY = screenH * 0.38f;
             petState = PetState.FLYING;
             pickNextFlyWaypoint();
@@ -545,6 +558,12 @@ public class FloatingPetService extends Service {
                                 physicsHandler.removeCallbacks(singleTapRunnable);
                                 physicsHandler.postDelayed(singleTapRunnable, 280L);
                             }
+                        } else if (isPetSleeping) {
+                            if (!isFlyingPet) {
+                                snapGroundedToNearestRow();
+                            }
+                            petState = PetState.IDLE;
+                            syncVisualState("sleep", facingRight, "", null);
                         } else if (!isFlyingPet) {
                             // Snap grounded pet feet onto nearest surface row
                             snapGroundedToNearestRow();
@@ -856,11 +875,17 @@ public class FloatingPetService extends Service {
             loadWebViewFromIntent(intent, pendingEvolvedMessage);
             pendingEvolvedMessage = "";
             // Ensure visible when evolving in-place unless actively hidden off-screen
-            if (offScreenPhase == OffScreenPhase.HIDDEN && hasEvoMessage) {
+            if (offScreenPhase == OffScreenPhase.HIDDEN && (hasEvoMessage || isPetSleeping)) {
                 setOverlayHidden(false);
                 offScreenPhase = OffScreenPhase.NONE;
             }
-            if (isFlyingPet && petState != PetState.OFF_SCREEN) {
+            if (isPetSleeping) {
+                if (!isFlyingPet) {
+                    snapGroundedToNearestRow();
+                }
+                petState = PetState.IDLE;
+                carriedItem = "";
+            } else if (isFlyingPet && petState != PetState.OFF_SCREEN) {
                 petState = PetState.FLYING;
                 pickNextFlyWaypoint();
             } else if (!isFlyingPet && petState == PetState.FLYING) {
@@ -868,18 +893,46 @@ public class FloatingPetService extends Service {
                 petState = PetState.IDLE;
                 stateUntilMs = System.currentTimeMillis() + 1400L;
             }
-        } else if (!isFlyingPet && petState != PetState.OFF_SCREEN && petState != PetState.JUMPING) {
-            // Grid preset ratios or manual line adjustment updated
-            if (pendingPreviewRowIndex >= 0 && pendingPreviewRowIndex < rowYs.length) {
-                currentRowIndex = pendingPreviewRowIndex;
-                pendingPreviewRowIndex = -1;
-                petState = PetState.IDLE;
-                stateUntilMs = System.currentTimeMillis() + 2600L;
-            } else {
-                currentRowIndex = Math.max(0, Math.min(currentRowIndex, rowYs.length - 1));
+        } else {
+            if (!isFlyingPet && petState != PetState.OFF_SCREEN && petState != PetState.JUMPING) {
+                // Grid preset ratios or manual line adjustment updated
+                if (pendingPreviewRowIndex >= 0 && pendingPreviewRowIndex < rowYs.length) {
+                    currentRowIndex = pendingPreviewRowIndex;
+                    pendingPreviewRowIndex = -1;
+                    petState = PetState.IDLE;
+                    stateUntilMs = System.currentTimeMillis() + 2600L;
+                } else {
+                    currentRowIndex = Math.max(0, Math.min(currentRowIndex, rowYs.length - 1));
+                }
+                posY = getTopYForFootY(rowYs[currentRowIndex]);
+                applyWindowPosition();
             }
-            posY = getTopYForFootY(rowYs[currentRowIndex]);
-            applyWindowPosition();
+
+            if (isPetSleeping) {
+                if (offScreenPhase == OffScreenPhase.HIDDEN) {
+                    setOverlayHidden(false);
+                    posX = Math.max(dpToPx(20), (screenW - viewW) * 0.5f);
+                    posY = isFlyingPet ? (screenH * 0.45f) : getTopYForFootY(rowYs[currentRowIndex]);
+                    applyWindowPosition();
+                }
+                offScreenPhase = OffScreenPhase.NONE;
+                if (!isFlyingPet && petState == PetState.JUMPING) {
+                    snapGroundedToNearestRow();
+                }
+                petState = PetState.IDLE;
+                carriedItem = "";
+                syncVisualState("sleep", facingRight, "", null);
+            } else if ("sleep".equals(lastJsAnimMode)) {
+                if (isFlyingPet) {
+                    petState = PetState.FLYING;
+                    pickNextFlyWaypoint();
+                    syncVisualState("walk", facingRight, carriedItem, null);
+                } else {
+                    petState = PetState.IDLE;
+                    stateUntilMs = System.currentTimeMillis() + 1000L;
+                    syncVisualState("idle", facingRight, carriedItem, null);
+                }
+            }
         }
     }
 
@@ -923,8 +976,10 @@ public class FloatingPetService extends Service {
                 obj.optInt("frameRotate", 0),
                 obj.optString("standingFramesJson", "[]"),
                 obj.optString("walkingFramesJson", "[]"),
+                obj.optString("sleepingFramesJson", "[]"),
                 obj.optString("quotesJson", "[]"),
-                evolvedMsg
+                evolvedMsg,
+                isPetSleeping
             );
 
             if (offScreenPhase == OffScreenPhase.HIDDEN) {
@@ -940,7 +995,13 @@ public class FloatingPetService extends Service {
                 applyWindowPosition();
             }
 
-            if (isFlyingPet) {
+            if (isPetSleeping) {
+                if (!isFlyingPet) {
+                    snapGroundedToNearestRow();
+                }
+                petState = PetState.IDLE;
+                syncVisualState("sleep", facingRight, "", null);
+            } else if (isFlyingPet) {
                 petState = PetState.FLYING;
                 pickNextFlyWaypoint();
             } else {
@@ -959,6 +1020,37 @@ public class FloatingPetService extends Service {
         // Check autonomous natural evolution timer even when main app is backgrounded
         if (nextEvoTriggerMs > 0L && nowMs >= nextEvoTriggerMs && nextEvoPayloadJson != null && !nextEvoPayloadJson.isEmpty()) {
             performNativeBackgroundEvolution(nowMs);
+        }
+
+        // Sleep state synced from Digivice: stay on-screen, stationary, and show sleeping animation + Zzz
+        if (isPetSleeping) {
+            if (offScreenPhase == OffScreenPhase.HIDDEN) {
+                refreshScreenMetrics();
+                setOverlayHidden(false);
+                posX = Math.max(dpToPx(20), (screenW - viewW) * 0.5f);
+                if (isFlyingPet) {
+                    posY = screenH * 0.45f;
+                } else {
+                    currentRowIndex = Math.max(0, Math.min(currentRowIndex, rowYs.length - 1));
+                    posY = getTopYForFootY(rowYs[currentRowIndex]);
+                }
+                applyWindowPosition();
+            } else if (offScreenPhase == OffScreenPhase.EXITING || offScreenPhase == OffScreenPhase.ENTERING) {
+                posX = Math.max(dpToPx(8), Math.min(screenW - viewW - dpToPx(8), posX));
+                if (!isFlyingPet) {
+                    snapGroundedToNearestRow();
+                } else {
+                    applyWindowPosition();
+                }
+            } else if (!isFlyingPet && petState == PetState.JUMPING) {
+                snapGroundedToNearestRow();
+            }
+            offScreenPhase = OffScreenPhase.NONE;
+            petState = PetState.IDLE;
+            carriedItem = "";
+            clearItemAtMs = 0L;
+            syncVisualState("sleep", facingRight, "", null);
+            return;
         }
 
         // Clear carried forage item badge cleanly after arrival showcase
@@ -1058,16 +1150,17 @@ public class FloatingPetService extends Service {
 
     private void onActionCycleComplete(long nowMs) {
         cyclesSinceForage++;
+        long elapsedSinceOffScreen = lastOffScreenAtMs > 0L ? (nowMs - lastOffScreenAtMs) : Long.MAX_VALUE;
         boolean shouldForage = false;
-        if (petHunger < 45 && cyclesSinceForage >= 3 && random.nextFloat() < 0.45f) {
+        if (petHunger < 40 && cyclesSinceForage >= 14 && elapsedSinceOffScreen >= OFF_SCREEN_NEEDY_COOLDOWN_MS && random.nextFloat() < 0.18f) {
             shouldForage = true;
             pendingForageKind = "meat";
-        } else if (petHappiness < 50 && cyclesSinceForage >= 3 && random.nextFloat() < 0.40f) {
+        } else if (petHappiness < 45 && cyclesSinceForage >= 14 && elapsedSinceOffScreen >= OFF_SCREEN_NEEDY_COOLDOWN_MS && random.nextFloat() < 0.15f) {
             shouldForage = true;
             pendingForageKind = "friends";
-        } else if (cyclesSinceForage >= 7 && random.nextFloat() < 0.30f) {
+        } else if (cyclesSinceForage >= 28 && elapsedSinceOffScreen >= OFF_SCREEN_MIN_COOLDOWN_MS && random.nextFloat() < 0.10f) {
             shouldForage = true;
-            pendingForageKind = random.nextFloat() < 0.6f ? "meat" : "friends";
+            pendingForageKind = random.nextFloat() < 0.55f ? "meat" : "friends";
         }
 
         if (shouldForage) {
@@ -1135,6 +1228,7 @@ public class FloatingPetService extends Service {
 
     private void startOffScreenSequence(long nowMs) {
         cyclesSinceForage = 0;
+        lastOffScreenAtMs = nowMs;
         petState = PetState.OFF_SCREEN;
         offScreenPhase = OffScreenPhase.EXITING;
         exitToRight = posX > (screenW * 0.4f);
@@ -1157,7 +1251,7 @@ public class FloatingPetService extends Service {
                 boolean exitedLeft = !exitToRight && posX <= -viewW - dpToPx(8);
                 if (exitedRight || exitedLeft) {
                     offScreenPhase = OffScreenPhase.HIDDEN;
-                    offScreenWakeMs = nowMs + 30000L + random.nextInt(30001);
+                    offScreenWakeMs = nowMs + 20000L + random.nextInt(15001);
                     setOverlayHidden(true);
                 }
                 break;
@@ -1238,6 +1332,7 @@ public class FloatingPetService extends Service {
     private void finishReEntry(long nowMs) {
         applyWindowPosition();
         offScreenPhase = OffScreenPhase.NONE;
+        lastOffScreenAtMs = nowMs;
         if (!carriedItem.isEmpty()) {
             clearItemAtMs = nowMs + 2200L;
         }
@@ -1325,10 +1420,14 @@ public class FloatingPetService extends Service {
             intent != null && intent.getStringExtra("walkingFramesJson") != null
                 ? intent.getStringExtra("walkingFramesJson")
                 : "[]",
+            intent != null && intent.getStringExtra("sleepingFramesJson") != null
+                ? intent.getStringExtra("sleepingFramesJson")
+                : "[]",
             intent != null && intent.getStringExtra("quotesJson") != null
                 ? intent.getStringExtra("quotesJson")
                 : "[]",
-            evolvedMessage
+            evolvedMessage,
+            isPetSleeping
         );
     }
 
@@ -1346,8 +1445,10 @@ public class FloatingPetService extends Service {
         int frameRotate,
         String standingFramesJson,
         String walkingFramesJson,
+        String sleepingFramesJson,
         String quotesJson,
-        String evolvedMessage
+        String evolvedMessage,
+        boolean initialIsSleeping
     ) {
         String relSpriteUrl = rawSpriteUrl != null ? rawSpriteUrl : "assets/digidestined/agumon.png";
         if (relSpriteUrl.startsWith("file:///android_asset/public/")) {
@@ -1375,6 +1476,10 @@ public class FloatingPetService extends Service {
             "#petWrap.evolving #spriteBox { animation:evoFlash 1.3s ease-in-out; }" +
             "@keyframes evoBurst { 0% { transform:scale(0.4); opacity:0; } 30% { transform:scale(1.45); opacity:1; } 100% { transform:scale(1.9); opacity:0; } }" +
             "@keyframes evoFlash { 0%, 100% { filter:brightness(1); transform:scale(1); } 25% { filter:brightness(2.8) drop-shadow(0 0 12px #fde047); transform:scale(1.18); } 60% { filter:brightness(2.0) drop-shadow(0 0 10px #38bdf8); transform:scale(1.08); } }" +
+            "#sleepBadge { display:none; position:absolute; top:-20px; right:-8px; z-index:22; color:#67e8f9; font-family:monospace; font-weight:900; font-size:12px; text-shadow:0 1px 4px rgba(15,23,42,0.95), 0 0 8px rgba(56,189,248,0.7); pointer-events:none; }" +
+            "#petWrap.sleeping #sleepBadge { display:block; animation:zzzFloat 1.8s ease-out infinite; }" +
+            "#petWrap.sleeping #spriteBox { filter:brightness(0.88); }" +
+            "@keyframes zzzFloat { 0% { transform:translate(0px, 2px) scale(0.85); opacity:0; } 35% { opacity:1; } 100% { transform:translate(8px, -14px) scale(1.1); opacity:0; } }" +
             "#carryBadge { display:none; position:absolute; top:-16px; right:-18px; z-index:20; background:#1e1b4b; border:1.5px solid #fbbf24; border-radius:8px; padding:2px; box-shadow:0 2px 6px rgba(0,0,0,0.5); }" +
             "#carryBadge.show { display:block; }" +
             "#spriteBox { position:relative; overflow:visible; z-index:10; }" +
@@ -1389,6 +1494,7 @@ public class FloatingPetService extends Service {
             "  <div id='petWrap'>" +
             "    <div id='evoAura'></div>" +
             "    <div id='bubble'>Ready!</div>" +
+            "    <div id='sleepBadge'>Zzz...</div>" +
             "    <div id='carryBadge'>" +
             "      <svg viewBox='0 0 16 16' width='16' height='16' shape-rendering='crispEdges'>" +
             "        <rect x='2' y='2' width='2' height='2' fill='#18181b'/>" +
@@ -1417,14 +1523,18 @@ public class FloatingPetService extends Service {
             "var groundOffset = " + groundOffset + ";" +
             "var fallbackFrame = { x: " + frameX + ", y: " + frameY + ", w: " + frameW + ", h: " + frameH + ", rotate: " + frameRotate + " };" +
             "var initialEvoMsg = " + safeEvoJs + ";" +
+            "var isSleeping = " + (initialIsSleeping ? "true" : "false") + ";" +
             "var standingFrames = [];" +
             "var walkingFrames = [];" +
+            "var sleepingFrames = [];" +
             "var quotes = [];" +
             "try { standingFrames = " + standingFramesJson + "; } catch(e){}" +
             "try { walkingFrames = " + walkingFramesJson + "; } catch(e){}" +
+            "try { sleepingFrames = " + sleepingFramesJson + "; } catch(e){}" +
             "try { quotes = " + quotesJson + "; } catch(e){}" +
             "if (!standingFrames || standingFrames.length === 0) standingFrames = [fallbackFrame];" +
             "if (!walkingFrames || walkingFrames.length === 0) walkingFrames = standingFrames;" +
+            "if (!sleepingFrames || sleepingFrames.length === 0) sleepingFrames = standingFrames;" +
             "if (!quotes || quotes.length === 0) quotes = ['Exploring your home screen!', 'Ready to train!', 'Together forever, Tamer!'];" +
 
             "var petWrap = document.getElementById('petWrap');" +
@@ -1440,6 +1550,7 @@ public class FloatingPetService extends Service {
             "var isWalking = false;" +
             "var walkFrameIdx = 0;" +
             "var standFrameIdx = 0;" +
+            "var sleepFrameIdx = isSleeping ? Math.max(0, sleepingFrames.length - 1) : 0;" +
             "var bubbleTimeout = null;" +
 
             "function renderFrame(frame) {" +
@@ -1513,6 +1624,10 @@ public class FloatingPetService extends Service {
             "}" +
 
             "window.onPetTapped = function() {" +
+            "  if (isSleeping) {" +
+            "    showSpeech('Zzz... sleeping soundly...', 2400);" +
+            "    return;" +
+            "  }" +
             "  showSpeech();" +
             "  petWrap.classList.remove('hopping');" +
             "  void petWrap.offsetWidth;" +
@@ -1520,15 +1635,27 @@ public class FloatingPetService extends Service {
             "};" +
 
             "window.setPetVisualState = function(mode, right, carried, speech) {" +
+            "  var wasSleeping = isSleeping;" +
             "  facingRight = !!right;" +
-            "  isWalking = (mode === 'walk');" +
+            "  isSleeping = (mode === 'sleep');" +
+            "  isWalking = !isSleeping && (mode === 'walk');" +
+            "  if (isSleeping) {" +
+            "    petWrap.classList.add('sleeping');" +
+            "    if (!wasSleeping) sleepFrameIdx = 0;" +
+            "  } else {" +
+            "    petWrap.classList.remove('sleeping');" +
+            "  }" +
             "  if (carried === 'meat') carryBadge.classList.add('show'); else carryBadge.classList.remove('show');" +
             "  if (speech) showSpeech(speech);" +
-            "  renderFrame(isWalking ? walkingFrames[walkFrameIdx] : standingFrames[standFrameIdx]);" +
+            "  if (isSleeping) renderFrame(sleepingFrames[Math.min(sleepFrameIdx, sleepingFrames.length - 1)]);" +
+            "  else renderFrame(isWalking ? walkingFrames[walkFrameIdx] : standingFrames[standFrameIdx]);" +
             "};" +
 
             "setInterval(function() {" +
-            "  if (isWalking) {" +
+            "  if (isSleeping) {" +
+            "    if (sleepFrameIdx < sleepingFrames.length - 1) sleepFrameIdx++;" +
+            "    renderFrame(sleepingFrames[Math.min(sleepFrameIdx, sleepingFrames.length - 1)]);" +
+            "  } else if (isWalking) {" +
             "    walkFrameIdx = (walkFrameIdx + 1) % walkingFrames.length;" +
             "    renderFrame(walkingFrames[walkFrameIdx]);" +
             "  } else {" +
@@ -1537,10 +1664,15 @@ public class FloatingPetService extends Service {
             "  }" +
             "}, 62);" +
 
-            "renderFrame(standingFrames[0]);" +
+            "if (isSleeping) {" +
+            "  petWrap.classList.add('sleeping');" +
+            "  renderFrame(sleepingFrames[Math.min(sleepFrameIdx, sleepingFrames.length - 1)]);" +
+            "} else {" +
+            "  renderFrame(standingFrames[0]);" +
+            "}" +
             "if (initialEvoMsg) {" +
             "  setTimeout(function() { playEvolutionEffect(initialEvoMsg); }, 120);" +
-            "} else {" +
+            "} else if (!isSleeping) {" +
             "  setTimeout(function() { showSpeech(); }, 600);" +
             "}" +
             "</script></body></html>";

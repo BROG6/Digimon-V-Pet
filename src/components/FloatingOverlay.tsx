@@ -121,18 +121,19 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
   const lastTapMsRef = useRef<number>(0);
   const prevSpeciesIdRef = useRef<string | undefined>(species?.id);
   const isFlying = isFlyingSpecies(species);
+  const isPetSleeping = Boolean(pet.isSleeping || pet.lightsOff);
 
   const petVitalsRef = useRef({
     hunger: pet.hunger,
     happiness: pet.happiness,
     isSick: pet.isSick,
-    isSleeping: pet.isSleeping,
+    isSleeping: isPetSleeping,
   });
   petVitalsRef.current = {
     hunger: pet.hunger,
     happiness: pet.happiness,
     isSick: pet.isSick,
-    isSleeping: pet.isSleeping,
+    isSleeping: isPetSleeping,
   };
 
   const onForageRewardRef = useRef(onForageReward);
@@ -154,6 +155,7 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
     jumpStartMs: number;
     stateUntilMs: number;
     offScreenWakeMs: number;
+    lastOffScreenAtMs: number;
     exitToRight: boolean;
     enterFromTop: boolean;
     forageKind: 'forage_meat' | 'visit_friends';
@@ -175,6 +177,7 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
     jumpStartMs: 0,
     stateUntilMs: Date.now() + 1400,
     offScreenWakeMs: 0,
+    lastOffScreenAtMs: Date.now(),
     exitToRight: true,
     enterFromTop: false,
     forageKind: 'forage_meat',
@@ -257,12 +260,6 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
   useEffect(() => {
     if (!isOverlayActive) return;
 
-    if (pet.isSleeping) {
-      physicsRef.current.petState = 'IDLE';
-      setCurrentAction('sleep');
-      return;
-    }
-
     const getBounds = () => {
       const w = typeof window !== 'undefined' ? window.innerWidth : 380;
       const h = typeof window !== 'undefined' ? window.innerHeight : 760;
@@ -273,6 +270,28 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
       const maxSkyY = Math.max(minSkyY + 100, h - 130);
       return { w, h, rowYs, minX, maxX, minSkyY, maxSkyY };
     };
+
+    if (isPetSleeping) {
+      const p = physicsRef.current;
+      const { rowYs, minX, maxX, minSkyY, maxSkyY } = getBounds();
+      p.petState = 'IDLE';
+      p.offScreenPhase = 'none';
+      setIsOffScreenHidden(false);
+      p.posX = Math.max(minX, Math.min(maxX, p.posX));
+      if (!isFlying) {
+        const snapped = snapToNearestSurfaceRow(p.posY + SPRITE_FOOT_OFFSET, rowYs);
+        p.rowIndex = snapped.rowIndex;
+        p.posY = snapped.y - SPRITE_FOOT_OFFSET;
+      } else {
+        p.posY = Math.max(minSkyY, Math.min(maxSkyY, p.posY));
+      }
+      xMotion.set(p.posX);
+      yMotion.set(p.posY);
+      setCurrentAction('sleep');
+      return;
+    }
+
+    setCurrentAction((prev) => (prev === 'sleep' ? (petVitalsRef.current.isSick ? 'sick' : 'idle') : prev));
 
     const pickFlyWaypoint = (p: typeof physicsRef.current) => {
       const { minX, maxX, minSkyY, maxSkyY } = getBounds();
@@ -329,6 +348,7 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
       const p = physicsRef.current;
       const { w } = getBounds();
       p.cyclesSinceForage = 0;
+      p.lastOffScreenAtMs = Date.now();
       p.petState = 'OFF_SCREEN';
       p.offScreenPhase = 'exiting';
       p.forageKind = kind;
@@ -350,6 +370,8 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
         hunger: petVitalsRef.current.hunger,
         happiness: petVitalsRef.current.happiness,
         cyclesSinceForage: p.cyclesSinceForage,
+        lastOffScreenAtMs: p.lastOffScreenAtMs,
+        nowMs: now,
       });
 
       if (decision.trigger) {
@@ -375,6 +397,7 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
     const finishReEntry = (now: number) => {
       const p = physicsRef.current;
       p.offScreenPhase = 'none';
+      p.lastOffScreenAtMs = now;
       p.petState = 'IDLE';
       p.stateUntilMs = now + 2200;
       setCurrentAction(petVitalsRef.current.isSick ? 'sick' : 'happy');
@@ -492,7 +515,7 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
             xMotion.set(p.posX);
             if ((p.exitToRight && p.posX >= w + 90) || (!p.exitToRight && p.posX <= -120)) {
               p.offScreenPhase = 'hidden';
-              p.offScreenWakeMs = now + 30000 + Math.random() * 30000;
+              p.offScreenWakeMs = now + 20000 + Math.random() * 15000;
               setIsOffScreenHidden(true);
             }
           } else if (p.offScreenPhase === 'hidden') {
@@ -562,7 +585,7 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
       clearInterval(tick);
       if (carriedTimerRef.current) clearTimeout(carriedTimerRef.current);
     };
-  }, [isOverlayActive, isFlying, gridPreset, pet.isSleeping, isChatInputOpen, xMotion, yMotion]);
+  }, [isOverlayActive, isFlying, gridPreset, isPetSleeping, isChatInputOpen, xMotion, yMotion]);
 
   // Live in-place evolution reaction while overlay remains open
   useEffect(() => {
@@ -736,7 +759,7 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
     setCurrentAction('happy');
     onPet();
     setTimeout(() => {
-      setCurrentAction(pet.isSick ? 'sick' : 'idle');
+      setCurrentAction(petVitalsRef.current.isSleeping ? 'sleep' : pet.isSick ? 'sick' : 'idle');
     }, 1500);
   };
 
@@ -751,7 +774,7 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
     setTimeout(() => {
       setCurrentAction('happy');
       setTimeout(() => {
-        setCurrentAction(pet.isSick ? 'sick' : 'idle');
+        setCurrentAction(petVitalsRef.current.isSleeping ? 'sleep' : pet.isSick ? 'sick' : 'idle');
       }, 900);
     }, 1700);
   };
@@ -767,7 +790,7 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
     setTimeout(() => {
       setCurrentAction('happy');
       setTimeout(() => {
-        setCurrentAction(pet.isSick ? 'sick' : 'idle');
+        setCurrentAction(petVitalsRef.current.isSleeping ? 'sleep' : pet.isSick ? 'sick' : 'idle');
       }, 900);
     }, 1700);
   };
@@ -949,7 +972,7 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
           p.posY = droppedY;
           xMotion.set(clampedX);
           yMotion.set(droppedY);
-          setCurrentAction(pet.isSick ? 'sick' : 'idle');
+          setCurrentAction(isPetSleeping ? 'sleep' : pet.isSick ? 'sick' : 'idle');
         }}
         className={`absolute top-0 left-0 flex flex-col items-center select-none transition-opacity duration-200 ${
           isOffScreenHidden

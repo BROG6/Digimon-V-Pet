@@ -536,7 +536,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [pet.currentSpeciesId, pet.hunger, pet.happiness, pet.evoGoalMetAt, pet.stageEnteredAt]);
+  }, [pet.currentSpeciesId, pet.hunger, pet.happiness, pet.isSleeping, pet.lightsOff, pet.evoGoalMetAt, pet.stageEnteredAt]);
 
   // CARE ACTIONS
   const handleFeedMeat = () => {

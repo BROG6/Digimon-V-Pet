@@ -15,8 +15,10 @@ export interface OverlayLaunchParams {
   frameRotate?: number;
   standingFramesJson?: string;
   walkingFramesJson?: string;
+  sleepingFramesJson?: string;
   quotesJson?: string;
   isFlying?: boolean;
+  isSleeping?: boolean;
   gridRowRatiosJson?: string;
   previewRowIndex?: number;
   hunger?: number;

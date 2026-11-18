@@ -82,6 +82,7 @@ public class OverlayPlugin extends Plugin {
         Integer groundOffset = call.getInt("groundOffset", 0);
         String standingFramesJson = call.getString("standingFramesJson", "[]");
         String walkingFramesJson = call.getString("walkingFramesJson", "[]");
+        String sleepingFramesJson = call.getString("sleepingFramesJson", "[]");
         String quotesJson = call.getString("quotesJson", "[]");
         Integer frameX = call.getInt("frameX", 2);
         Integer frameY = call.getInt("frameY", 2);
@@ -89,6 +90,7 @@ public class OverlayPlugin extends Plugin {
         Integer frameH = call.getInt("frameH", 48);
         Integer frameRotate = call.getInt("frameRotate", 0);
         Boolean isFlying = call.getBoolean("isFlying", false);
+        Boolean isSleeping = call.getBoolean("isSleeping", false);
         String gridRowRatiosJson = call.getString("gridRowRatiosJson", "[0.365,0.497,0.629,0.76,0.92]");
         Integer previewRowIndex = call.getInt("previewRowIndex", -1);
         Integer hunger = call.getInt("hunger", 75);
@@ -107,6 +109,7 @@ public class OverlayPlugin extends Plugin {
         serviceIntent.putExtra("groundOffset", groundOffset);
         serviceIntent.putExtra("standingFramesJson", standingFramesJson);
         serviceIntent.putExtra("walkingFramesJson", walkingFramesJson);
+        serviceIntent.putExtra("sleepingFramesJson", sleepingFramesJson);
         serviceIntent.putExtra("quotesJson", quotesJson);
         serviceIntent.putExtra("frameX", frameX);
         serviceIntent.putExtra("frameY", frameY);
@@ -114,6 +117,7 @@ public class OverlayPlugin extends Plugin {
         serviceIntent.putExtra("frameH", frameH);
         serviceIntent.putExtra("frameRotate", frameRotate);
         serviceIntent.putExtra("isFlying", isFlying != null ? isFlying : false);
+        serviceIntent.putExtra("isSleeping", isSleeping != null ? isSleeping : false);
         serviceIntent.putExtra("gridRowRatiosJson", gridRowRatiosJson);
         serviceIntent.putExtra("previewRowIndex", previewRowIndex != null ? previewRowIndex : -1);
         serviceIntent.putExtra("hunger", hunger != null ? hunger : 75);

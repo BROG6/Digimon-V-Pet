@@ -22,19 +22,19 @@ export const GRID_LAYOUT_PRESETS: Record<GridLayoutPresetId, GridLayoutPreset> =
     id: 'asus-4row',
     label: '4-Row + Dock (ASUS / Android)',
     description: 'Snaps to 4 home-screen icon rows plus the bottom dock shelf',
-    rowRatios: [0.34, 0.48, 0.62, 0.76, 0.90],
+    rowRatios: [0.34, 0.48, 0.62, 0.76, 0.92],
   },
   'compact-5row': {
     id: 'compact-5row',
     label: '5-Row + Dock (Dense Grid)',
     description: 'Snaps across 5 compact icon rows plus the bottom dock shelf',
-    rowRatios: [0.24, 0.37, 0.50, 0.63, 0.77, 0.90],
+    rowRatios: [0.24, 0.37, 0.50, 0.63, 0.77, 0.92],
   },
   'dock-only': {
     id: 'dock-only',
     label: 'Bottom Dock Only',
     description: 'Roams strictly along the bottom dock bar',
-    rowRatios: [0.90],
+    rowRatios: [0.92],
   },
 };
 

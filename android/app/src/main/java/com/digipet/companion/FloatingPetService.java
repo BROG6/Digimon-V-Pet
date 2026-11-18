@@ -62,11 +62,13 @@ public class FloatingPetService extends Service {
     private int footOffsetPx;
     private int screenW = 1080;
     private int screenH = 2200;
+    private int topSystemOffsetPx = 0;
+    private boolean topOffsetCalibrated = false;
 
     // Pet & Grid Configuration
     private boolean isFlyingPet = false;
-    private double[] rowRatios = new double[] { 0.34, 0.48, 0.62, 0.76, 0.90 };
-    private int[] rowYs = new int[] { 740, 1050, 1360, 1670, 1980 };
+    private double[] rowRatios = new double[] { 0.34, 0.48, 0.62, 0.76, 0.92 };
+    private int[] rowYs = new int[] { 740, 1050, 1360, 1670, 2020 };
     private int currentRowIndex = 4; // Start at bottom dock
     private int petHunger = 80;
     private int petHappiness = 80;
@@ -223,6 +225,13 @@ public class FloatingPetService extends Service {
             screenH = Math.max(480, dm.heightPixels);
         }
 
+        if (!topOffsetCalibrated) {
+            int statusResId = getResources().getIdentifier("status_bar_height", "dimen", "android");
+            if (statusResId > 0) {
+                topSystemOffsetPx = getResources().getDimensionPixelSize(statusResId);
+            }
+        }
+
         rowYs = new int[rowRatios.length];
         int minRow = dpToPx(72);
         int maxRow = screenH - dpToPx(14);
@@ -238,11 +247,36 @@ public class FloatingPetService extends Service {
     }
 
     private float getTopYForFootY(float footY) {
-        return footY - (viewH - footOffsetPx);
+        return footY - (viewH - footOffsetPx) - topSystemOffsetPx;
     }
 
     private float getFootYForTopY(float topY) {
-        return topY + (viewH - footOffsetPx);
+        return topY + topSystemOffsetPx + (viewH - footOffsetPx);
+    }
+
+    private void scheduleTopOffsetCalibration() {
+        if (floatingView == null) return;
+        floatingView.post(new Runnable() {
+            @Override
+            public void run() {
+                if (floatingView == null || params == null || isUserDragging) return;
+                if (offScreenPhase == OffScreenPhase.HIDDEN || floatingView.getVisibility() != View.VISIBLE) return;
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT && !floatingView.isAttachedToWindow()) return;
+                int[] loc = new int[2];
+                floatingView.getLocationOnScreen(loc);
+                int measured = loc[1] - params.y;
+                if (measured >= 0 && measured <= dpToPx(68) && params.y > 0) {
+                    if (measured != topSystemOffsetPx) {
+                        topSystemOffsetPx = measured;
+                        if (!isFlyingPet && petState != PetState.OFF_SCREEN && petState != PetState.JUMPING) {
+                            posY = getTopYForFootY(rowYs[currentRowIndex]);
+                            applyWindowPosition();
+                        }
+                    }
+                    topOffsetCalibrated = true;
+                }
+            }
+        });
     }
 
     private void createNotificationChannel() {
@@ -445,6 +479,7 @@ public class FloatingPetService extends Service {
 
         floatingView = rootLayout;
         windowManager.addView(floatingView, params);
+        scheduleTopOffsetCalibration();
     }
 
     private void snapGroundedToNearestRow() {
@@ -760,8 +795,8 @@ public class FloatingPetService extends Service {
     private void pickNextFlyWaypoint() {
         int minX = dpToPx(4);
         int maxX = Math.max(minX + 40, screenW - viewW - dpToPx(4));
-        int minY = dpToPx(42);
-        int maxY = Math.max(minY + 120, screenH - viewH - dpToPx(24));
+        int minY = Math.max(dpToPx(4), dpToPx(42) - topSystemOffsetPx);
+        int maxY = Math.max(minY + 120, screenH - viewH - dpToPx(24) - topSystemOffsetPx);
         targetX = minX + random.nextFloat() * (maxX - minX);
         targetY = minY + random.nextFloat() * (maxY - minY);
         facingRight = targetX >= posX;

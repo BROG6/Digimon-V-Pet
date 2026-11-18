@@ -95,9 +95,15 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
   const [currentAction, setCurrentAction] = useState<'idle' | 'walk' | 'sleep' | 'sick' | 'eat' | 'happy' | 'sit' | 'poop'>('idle');
   const [activeEatItem, setActiveEatItem] = useState<'meat' | 'vitamin'>('meat');
   const [speechBubble, setSpeechBubble] = useState<string | null>(null);
+  const [bubblePlacement, setBubblePlacement] = useState<{ align: 'left' | 'center' | 'right'; below: boolean }>({
+    align: 'center',
+    below: false,
+  });
   const [carriedItem, setCarriedItem] = useState<'meat' | null>(null);
   const [isOffScreenHidden, setIsOffScreenHidden] = useState<boolean>(false);
   const [isEvolvingFlash, setIsEvolvingFlash] = useState<boolean>(false);
+  const [isDraggingPet, setIsDraggingPet] = useState<boolean>(false);
+  const [isOverDismissZone, setIsOverDismissZone] = useState<boolean>(false);
 
   const [isMenuOpen, setIsMenuOpen] = useState<boolean>(false);
   const [isChatInputOpen, setIsChatInputOpen] = useState<boolean>(false);
@@ -111,6 +117,8 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
   const isDraggingRef = useRef<boolean>(false);
   const speechTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const carriedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const singleTapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastTapMsRef = useRef<number>(0);
   const prevSpeciesIdRef = useRef<string | undefined>(species?.id);
   const isFlying = isFlyingSpecies(species);
 
@@ -224,13 +232,25 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
     return () => window.removeEventListener(GRID_RATIOS_CHANGED_EVENT, handleGridUpdated);
   }, [isFlying, yMotion]);
 
+  const updateBubblePlacement = () => {
+    const w = typeof window !== 'undefined' ? window.innerWidth : 380;
+    const px = xMotion.get();
+    const py = yMotion.get();
+    const align: 'left' | 'center' | 'right' =
+      px < 90 ? 'left' : px + SPRITE_BOX_WIDTH > w - 90 ? 'right' : 'center';
+    const below = py < 150;
+    setBubblePlacement({ align, below });
+  };
+
   // Show speech helper for state engine & user interactions
   const showShortSpeech = (msg: string, durationMs: number = 4500) => {
     if (speechTimerRef.current) clearTimeout(speechTimerRef.current);
+    updateBubblePlacement();
     setSpeechBubble(msg);
+    const readMs = Math.max(durationMs, Math.min(9500, 2600 + msg.length * 45));
     speechTimerRef.current = setTimeout(() => {
       setSpeechBubble(null);
-    }, durationMs);
+    }, readMs);
   };
 
   // Main 5-State Overlay Engine Loop (~30fps)
@@ -361,14 +381,14 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
 
       if (p.forageKind === 'forage_meat') {
         setCarriedItem('meat');
-        showShortSpeech('Found Big Meat! 🍖 (+1 Stock)', 5200);
+        showShortSpeech('Found Big Meat! 🍖 (+1 Stock)', 3200);
         onForageRewardRef.current?.('meat');
         if (carriedTimerRef.current) clearTimeout(carriedTimerRef.current);
         carriedTimerRef.current = setTimeout(() => {
           setCarriedItem(null);
-        }, 6500);
+        }, 2200);
       } else {
-        showShortSpeech('Back from visiting friends! 🤝', 5000);
+        showShortSpeech('Back from visiting friends! 🤝', 3600);
         onForageRewardRef.current?.('friends');
       }
       sound.playAlert();
@@ -599,6 +619,7 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
   const triggerSpeech = async (customMessage?: string) => {
     if (speechTimerRef.current) clearTimeout(speechTimerRef.current);
 
+    updateBubblePlacement();
     if (customMessage) {
       setSpeechBubble('💭 ...');
       setIsAiThinking(true);
@@ -633,6 +654,7 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
         });
 
         setChatHistory((prev) => [...prev, { role: 'model', text: result.text }]);
+        updateBubblePlacement();
         setSpeechBubble(result.text);
         sound.playAlert();
         setCurrentAction('happy');
@@ -640,9 +662,10 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
           setCurrentAction(pet.isSick ? 'sick' : 'idle');
         }, 1500);
 
+        const aiReadMs = Math.max(9000, Math.min(14000, 3500 + result.text.length * 45));
         speechTimerRef.current = setTimeout(() => {
           setSpeechBubble(null);
-        }, 9000);
+        }, aiReadMs);
       } catch (err) {
         console.warn('Speech trigger error:', err);
         const fallback = getContextualQuote(pet.currentSpeciesId, {
@@ -651,6 +674,7 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
           poopCount: pet.poopCount,
           happiness: pet.happiness,
         });
+        updateBubblePlacement();
         setSpeechBubble(fallback);
       } finally {
         setIsAiThinking(false);
@@ -668,12 +692,14 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
       currentTimeStr,
     });
 
+    updateBubblePlacement();
     setSpeechBubble(msg);
     sound.playAlert();
 
+    const quoteReadMs = Math.max(5000, Math.min(9000, 2600 + msg.length * 45));
     speechTimerRef.current = setTimeout(() => {
       setSpeechBubble(null);
-    }, 5000);
+    }, quoteReadMs);
   };
 
   const handleSendUserChat = (text: string) => {
@@ -684,11 +710,25 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
   };
 
   const handleSpriteClick = () => {
-    sound.playButton();
-    setIsMenuOpen((prev) => !prev);
-    if (!speechBubble) {
-      triggerSpeech();
+    const now = Date.now();
+    if (lastTapMsRef.current > 0 && now - lastTapMsRef.current <= 300) {
+      if (singleTapTimerRef.current) clearTimeout(singleTapTimerRef.current);
+      lastTapMsRef.current = 0;
+      sound.playButton();
+      onToggleOverlay();
+      return;
     }
+
+    lastTapMsRef.current = now;
+    if (singleTapTimerRef.current) clearTimeout(singleTapTimerRef.current);
+    singleTapTimerRef.current = setTimeout(() => {
+      lastTapMsRef.current = 0;
+      sound.playButton();
+      setIsMenuOpen((prev) => !prev);
+      if (!speechBubble) {
+        triggerSpeech();
+      }
+    }, 260);
   };
 
   const handlePetDigimon = () => {
@@ -831,6 +871,37 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
         </button>
       </motion.div>
 
+      {/* Drag-to-Bottom Dismiss Drop Target */}
+      <AnimatePresence>
+        {isDraggingPet && (
+          <motion.div
+            initial={{ y: 40, opacity: 0 }}
+            animate={{ y: 0, opacity: 1, scale: isOverDismissZone ? 1.15 : 1 }}
+            exit={{ y: 40, opacity: 0 }}
+            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 pointer-events-none flex flex-col items-center gap-1"
+          >
+            <div
+              className={`w-12 h-12 rounded-full border-2 flex items-center justify-center shadow-xl transition-colors ${
+                isOverDismissZone
+                  ? 'bg-rose-500 border-white text-white shadow-rose-500/50'
+                  : 'bg-slate-900/90 border-rose-400/80 text-rose-300'
+              }`}
+            >
+              <X className="w-6 h-6" />
+            </div>
+            <span
+              className={`font-pixel text-[8px] px-2 py-0.5 rounded-full ${
+                isOverDismissZone
+                  ? 'bg-rose-600 text-white'
+                  : 'bg-slate-900/85 text-rose-200'
+              }`}
+            >
+              {isOverDismissZone ? 'RELEASE TO CLOSE' : 'DROP TO CLOSE'}
+            </span>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Floating Digimon Companion Hitbox */}
       <motion.div
         drag={!isOffScreenHidden}
@@ -838,12 +909,27 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
         style={{ x: xMotion, y: yMotion }}
         onDragStart={() => {
           isDraggingRef.current = true;
+          setIsDraggingPet(true);
+          setIsOverDismissZone(false);
           setCurrentAction('walk');
+        }}
+        onDrag={() => {
+          const screenH = typeof window !== 'undefined' ? window.innerHeight : 760;
+          const over = yMotion.get() + SPRITE_FOOT_OFFSET >= screenH - 105;
+          setIsOverDismissZone(over);
         }}
         onDragEnd={() => {
           isDraggingRef.current = false;
+          setIsDraggingPet(false);
           const screenW = typeof window !== 'undefined' ? window.innerWidth : 380;
           const screenH = typeof window !== 'undefined' ? window.innerHeight : 760;
+          const shouldClose = yMotion.get() + SPRITE_FOOT_OFFSET >= screenH - 105;
+          setIsOverDismissZone(false);
+          if (shouldClose) {
+            sound.playButton();
+            onToggleOverlay();
+            return;
+          }
           const clampedX = Math.max(10, Math.min(screenW - SPRITE_BOX_WIDTH - 10, xMotion.get()));
           let droppedY = Math.max(70, Math.min(screenH - 110, yMotion.get()));
 
@@ -871,19 +957,68 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
             : 'pointer-events-auto cursor-grab active:cursor-grabbing'
         }`}
       >
-        {/* Speech Dialogue Bubble - Above and behind Digimon head */}
+        {/* Speech Dialogue Bubble - Anchored by bottom/top edge so long messages never clip behind sprite or screen edges */}
         <AnimatePresence>
           {speechBubble && !isOffScreenHidden && (
             <motion.div
-              initial={{ scale: 0, opacity: 0, y: 8 }}
+              initial={{ scale: 0, opacity: 0, y: bubblePlacement.below ? -8 : 8 }}
               animate={{ scale: 1, opacity: 1, y: 0 }}
-              exit={{ scale: 0, opacity: 0, y: 8 }}
-              className="absolute -top-16 sm:-top-20 left-1/2 -translate-x-1/2 pointer-events-none max-w-[240px] w-max z-0 select-none"
+              exit={{ scale: 0, opacity: 0, y: bubblePlacement.below ? -8 : 8 }}
+              className={`absolute pointer-events-none max-w-[min(260px,calc(100vw-24px))] w-max z-30 select-none ${
+                bubblePlacement.below ? 'top-full mt-2' : 'bottom-full mb-2'
+              } ${
+                bubblePlacement.align === 'left'
+                  ? 'left-0'
+                  : bubblePlacement.align === 'right'
+                  ? 'right-0'
+                  : 'left-1/2 -translate-x-1/2'
+              }`}
             >
-              <div className="relative bg-white/95 backdrop-blur-md text-slate-900 border-2 border-slate-950 rounded-2xl px-3.5 py-2 shadow-2xl text-xs font-bold text-center filter drop-shadow-xl leading-snug">
+              <div className="relative bg-white/95 backdrop-blur-md text-slate-900 border-2 border-slate-950 rounded-2xl px-3.5 py-2 shadow-2xl text-xs font-bold text-center filter drop-shadow-xl leading-snug whitespace-normal break-words">
                 <span>{speechBubble}</span>
-                <div className="absolute -bottom-2.5 left-1/2 -translate-x-1/2 w-0 h-0 border-x-8 border-x-transparent border-t-8 border-t-white" />
-                <div className="absolute -bottom-3.5 left-1/2 -translate-x-1/2 w-0 h-0 border-x-[9px] border-x-transparent border-t-[9px] border-t-slate-950 -z-10" />
+                {bubblePlacement.below ? (
+                  <>
+                    <div
+                      className={`absolute -top-2 w-0 h-0 border-x-8 border-x-transparent border-b-8 border-b-white ${
+                        bubblePlacement.align === 'left'
+                          ? 'left-6'
+                          : bubblePlacement.align === 'right'
+                          ? 'right-6'
+                          : 'left-1/2 -translate-x-1/2'
+                      }`}
+                    />
+                    <div
+                      className={`absolute -top-2.5 w-0 h-0 border-x-[9px] border-x-transparent border-b-[9px] border-b-slate-950 -z-10 ${
+                        bubblePlacement.align === 'left'
+                          ? 'left-[23px]'
+                          : bubblePlacement.align === 'right'
+                          ? 'right-[23px]'
+                          : 'left-1/2 -translate-x-1/2'
+                      }`}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <div
+                      className={`absolute -bottom-2 w-0 h-0 border-x-8 border-x-transparent border-t-8 border-t-white ${
+                        bubblePlacement.align === 'left'
+                          ? 'left-6'
+                          : bubblePlacement.align === 'right'
+                          ? 'right-6'
+                          : 'left-1/2 -translate-x-1/2'
+                      }`}
+                    />
+                    <div
+                      className={`absolute -bottom-2.5 w-0 h-0 border-x-[9px] border-x-transparent border-t-[9px] border-t-slate-950 -z-10 ${
+                        bubblePlacement.align === 'left'
+                          ? 'left-[23px]'
+                          : bubblePlacement.align === 'right'
+                          ? 'right-[23px]'
+                          : 'left-1/2 -translate-x-1/2'
+                      }`}
+                    />
+                  </>
+                )}
               </div>
             </motion.div>
           )}

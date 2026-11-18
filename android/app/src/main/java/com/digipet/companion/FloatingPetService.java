@@ -9,19 +9,26 @@ import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Color;
 import android.graphics.PixelFormat;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import android.provider.Settings;
 import android.util.DisplayMetrics;
+import android.util.TypedValue;
 import android.view.Gravity;
+import android.view.HapticFeedbackConstants;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.WindowManager;
+import android.webkit.JavascriptInterface;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.widget.FrameLayout;
+import android.widget.LinearLayout;
+import android.widget.TextView;
 import androidx.core.app.NotificationCompat;
 import java.util.Random;
 import org.json.JSONArray;
@@ -53,8 +60,52 @@ public class FloatingPetService extends Service {
     private WindowManager.LayoutParams params;
     private WebView webView;
 
+    // Dedicated non-touchable speech bubble window (unclipped regardless of message length or sprite size)
+    private FrameLayout bubbleContainer;
+    private TextView bubbleTextView;
+    private WindowManager.LayoutParams bubbleParams;
+    private boolean bubbleVisible = false;
+    private int bubbleSpriteHeightDp = 58;
+
+    // Bottom drag-to-close dismiss drop target
+    private LinearLayout dismissContainer;
+    private TextView dismissCircleView;
+    private TextView dismissLabelView;
+    private WindowManager.LayoutParams dismissParams;
+    private boolean dismissVisible = false;
+    private boolean isOverDismissZone = false;
+
+    // Double-tap detection
+    private long lastTapUpMs = 0L;
+
     private final Handler physicsHandler = new Handler(Looper.getMainLooper());
     private final Random random = new Random();
+    private final Runnable hideBubbleRunnable = new Runnable() {
+        @Override
+        public void run() {
+            hideNativeBubble();
+        }
+    };
+    private final Runnable singleTapRunnable = new Runnable() {
+        @Override
+        public void run() {
+            if (webView != null) {
+                webView.evaluateJavascript("window.onPetTapped && window.onPetTapped();", null);
+            }
+        }
+    };
+
+    private class NativeBubbleBridge {
+        @JavascriptInterface
+        public void showBubble(final String text, final int durationMs, final int spriteHeightDp) {
+            physicsHandler.post(new Runnable() {
+                @Override
+                public void run() {
+                    showNativeBubble(text, durationMs, spriteHeightDp);
+                }
+            });
+        }
+    }
 
     // Display & Viewport metrics
     private int viewW;
@@ -403,6 +454,7 @@ public class FloatingPetService extends Service {
         }
         webView.setVerticalScrollBarEnabled(false);
         webView.setHorizontalScrollBarEnabled(false);
+        webView.addJavascriptInterface(new NativeBubbleBridge(), "NativeBubbleBridge");
 
         loadWebViewFromIntent(intent, pendingEvolvedMessage);
         pendingEvolvedMessage = "";
@@ -412,7 +464,7 @@ public class FloatingPetService extends Service {
             FrameLayout.LayoutParams.MATCH_PARENT
         ));
 
-        // Dragging & Tapping Touch Listener (pauses state machine during drag & snaps to nearest row on release)
+        // Dragging & Tapping Touch Listener (pauses state machine during drag, supports double-tap to open app & drag-to-bottom to close)
         rootLayout.setOnTouchListener(new View.OnTouchListener() {
             private int initialX;
             private int initialY;
@@ -435,6 +487,7 @@ public class FloatingPetService extends Service {
                         initialTouchY = event.getRawY();
                         touchStartTime = System.currentTimeMillis();
                         isDragging = false;
+                        isOverDismissZone = false;
                         return true;
 
                     case MotionEvent.ACTION_MOVE:
@@ -442,7 +495,10 @@ public class FloatingPetService extends Service {
                         int dy = (int) (event.getRawY() - initialTouchY);
                         if (!isDragging && (Math.abs(dx) > 8 || Math.abs(dy) > 8)) {
                             isDragging = true;
+                            physicsHandler.removeCallbacks(singleTapRunnable);
+                            lastTapUpMs = 0L;
                             syncVisualState("walk", dx >= 0, carriedItem, null);
+                            setDismissTargetVisible(true, false);
                         }
                         if (isDragging) {
                             params.x = initialX + dx;
@@ -450,19 +506,44 @@ public class FloatingPetService extends Service {
                             posX = params.x;
                             posY = params.y;
                             safeUpdateWindowLayout();
+                            boolean inDismiss = isDragPointInDismissZone(event.getRawY());
+                            if (inDismiss != isOverDismissZone) {
+                                isOverDismissZone = inDismiss;
+                                setDismissTargetVisible(true, inDismiss);
+                                if (inDismiss && floatingView != null) {
+                                    floatingView.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY);
+                                }
+                            }
                         }
                         return true;
 
                     case MotionEvent.ACTION_UP:
                     case MotionEvent.ACTION_CANCEL:
                         isUserDragging = false;
+                        boolean shouldCloseOverlay = isDragging && isOverDismissZone;
+                        setDismissTargetVisible(false, false);
+                        isOverDismissZone = false;
+
+                        if (shouldCloseOverlay) {
+                            hideNativeBubble();
+                            stopSelf();
+                            return true;
+                        }
+
                         long duration = System.currentTimeMillis() - touchStartTime;
                         int diffX = (int) Math.abs(event.getRawX() - initialTouchX);
                         int diffY = (int) Math.abs(event.getRawY() - initialTouchY);
 
-                        if (!isDragging && duration < 350 && diffX < 20 && diffY < 20) {
-                            if (webView != null) {
-                                webView.evaluateJavascript("window.onPetTapped && window.onPetTapped();", null);
+                        if (!isDragging && duration < 320 && diffX < 20 && diffY < 20) {
+                            long now = System.currentTimeMillis();
+                            if (lastTapUpMs > 0L && (now - lastTapUpMs) <= 320L) {
+                                physicsHandler.removeCallbacks(singleTapRunnable);
+                                lastTapUpMs = 0L;
+                                openMainApp();
+                            } else {
+                                lastTapUpMs = now;
+                                physicsHandler.removeCallbacks(singleTapRunnable);
+                                physicsHandler.postDelayed(singleTapRunnable, 280L);
                             }
                         } else if (!isFlyingPet) {
                             // Snap grounded pet feet onto nearest surface row
@@ -481,7 +562,248 @@ public class FloatingPetService extends Service {
 
         floatingView = rootLayout;
         windowManager.addView(floatingView, params);
+        setupBubbleOverlay(layoutType);
+        setupDismissOverlay(layoutType);
         scheduleTopOffsetCalibration();
+    }
+
+    private void openMainApp() {
+        try {
+            Intent openIntent = new Intent(this, MainActivity.class);
+            openIntent.addFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK |
+                Intent.FLAG_ACTIVITY_SINGLE_TOP |
+                Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+            );
+            startActivity(openIntent);
+        } catch (Exception ignored) {
+            // Safe ignore
+        }
+    }
+
+    private boolean isDragPointInDismissZone(float rawY) {
+        int thresholdRaw = screenH - dpToPx(135);
+        float petBottom = params.y + viewH + topSystemOffsetPx;
+        return rawY >= thresholdRaw || petBottom >= (screenH - dpToPx(110));
+    }
+
+    private void setupDismissOverlay(int layoutType) {
+        if (windowManager == null || dismissContainer != null) return;
+
+        dismissContainer = new LinearLayout(this);
+        dismissContainer.setOrientation(LinearLayout.VERTICAL);
+        dismissContainer.setGravity(Gravity.CENTER_HORIZONTAL);
+        dismissContainer.setBackgroundColor(Color.TRANSPARENT);
+        dismissContainer.setVisibility(View.GONE);
+        int pad = dpToPx(8);
+        dismissContainer.setPadding(pad, pad, pad, pad);
+
+        dismissCircleView = new TextView(this);
+        dismissCircleView.setText("✕");
+        dismissCircleView.setTextColor(Color.WHITE);
+        dismissCircleView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f);
+        dismissCircleView.setTypeface(Typeface.DEFAULT_BOLD);
+        dismissCircleView.setGravity(Gravity.CENTER);
+        int circleSize = dpToPx(48);
+        LinearLayout.LayoutParams circleLp = new LinearLayout.LayoutParams(circleSize, circleSize);
+        dismissContainer.addView(dismissCircleView, circleLp);
+
+        dismissLabelView = new TextView(this);
+        dismissLabelView.setText("DROP TO CLOSE");
+        dismissLabelView.setTextColor(0xFFFDA4AF);
+        dismissLabelView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9.5f);
+        dismissLabelView.setTypeface(Typeface.create(Typeface.MONOSPACE, Typeface.BOLD));
+        dismissLabelView.setGravity(Gravity.CENTER);
+        LinearLayout.LayoutParams labelLp = new LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.WRAP_CONTENT,
+            LinearLayout.LayoutParams.WRAP_CONTENT
+        );
+        labelLp.topMargin = dpToPx(4);
+        dismissContainer.addView(dismissLabelView, labelLp);
+
+        styleDismissTarget(false);
+
+        dismissParams = new WindowManager.LayoutParams(
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            layoutType,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE |
+            WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE |
+            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            PixelFormat.TRANSLUCENT
+        );
+        dismissParams.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
+        dismissParams.x = 0;
+        dismissParams.y = dpToPx(24);
+
+        try {
+            windowManager.addView(dismissContainer, dismissParams);
+        } catch (Exception ignored) {
+            dismissContainer = null;
+        }
+    }
+
+    private void styleDismissTarget(boolean highlighted) {
+        if (dismissCircleView != null) {
+            GradientDrawable circleBg = new GradientDrawable();
+            circleBg.setShape(GradientDrawable.OVAL);
+            circleBg.setColor(highlighted ? 0xEEEF4444 : 0xCC0F172A);
+            circleBg.setStroke(dpToPx(2), highlighted ? 0xFFFFFFFF : 0xFFFB7185);
+            dismissCircleView.setBackground(circleBg);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                dismissCircleView.setElevation(dpToPx(highlighted ? 8 : 4));
+            }
+        }
+        if (dismissLabelView != null) {
+            dismissLabelView.setText(highlighted ? "RELEASE TO CLOSE" : "DROP TO CLOSE");
+            dismissLabelView.setTextColor(highlighted ? 0xFFFFFFFF : 0xFFFDA4AF);
+        }
+        if (dismissContainer != null) {
+            float scale = highlighted ? 1.18f : 1.0f;
+            dismissContainer.setScaleX(scale);
+            dismissContainer.setScaleY(scale);
+        }
+    }
+
+    private void setDismissTargetVisible(boolean visible, boolean highlighted) {
+        if (dismissContainer == null) return;
+        if (visible) {
+            styleDismissTarget(highlighted);
+            if (!dismissVisible) {
+                dismissVisible = true;
+                dismissContainer.setVisibility(View.VISIBLE);
+            }
+        } else if (dismissVisible) {
+            dismissVisible = false;
+            dismissContainer.setVisibility(View.GONE);
+        }
+    }
+
+    private void setupBubbleOverlay(int layoutType) {
+        if (windowManager == null || bubbleContainer != null) return;
+
+        bubbleContainer = new FrameLayout(this);
+        bubbleContainer.setBackgroundColor(Color.TRANSPARENT);
+        bubbleContainer.setVisibility(View.GONE);
+        int padShadow = dpToPx(6);
+        bubbleContainer.setPadding(padShadow, padShadow, padShadow, padShadow);
+
+        bubbleTextView = new TextView(this);
+        GradientDrawable bg = new GradientDrawable();
+        bg.setColor(0xF7FFFFFF);
+        bg.setCornerRadius(dpToPx(12));
+        bg.setStroke(dpToPx(2), 0xFF0F172A);
+        bubbleTextView.setBackground(bg);
+        bubbleTextView.setTextColor(0xFF0F172A);
+        bubbleTextView.setTypeface(Typeface.create(Typeface.MONOSPACE, Typeface.BOLD));
+        bubbleTextView.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11.5f);
+        bubbleTextView.setGravity(Gravity.CENTER);
+        bubbleTextView.setSingleLine(false);
+        bubbleTextView.setEllipsize(null);
+        bubbleTextView.setLineSpacing(dpToPx(1), 1.15f);
+        bubbleTextView.setPadding(dpToPx(10), dpToPx(6), dpToPx(10), dpToPx(6));
+        int maxBubbleW = Math.min(dpToPx(236), Math.max(dpToPx(160), screenW - dpToPx(28)));
+        bubbleTextView.setMaxWidth(maxBubbleW);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            bubbleTextView.setElevation(dpToPx(4));
+        }
+
+        bubbleContainer.addView(bubbleTextView, new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.WRAP_CONTENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT
+        ));
+
+        bubbleParams = new WindowManager.LayoutParams(
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            WindowManager.LayoutParams.WRAP_CONTENT,
+            layoutType,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE |
+            WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE |
+            WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+            PixelFormat.TRANSLUCENT
+        );
+        bubbleParams.gravity = Gravity.TOP | Gravity.START;
+        bubbleParams.x = 0;
+        bubbleParams.y = 0;
+
+        try {
+            windowManager.addView(bubbleContainer, bubbleParams);
+        } catch (Exception ignored) {
+            bubbleContainer = null;
+        }
+    }
+
+    private void showNativeBubble(String text, int durationMs, int spriteHeightDp) {
+        if (bubbleContainer == null || bubbleTextView == null || text == null || text.trim().isEmpty()) {
+            return;
+        }
+        if (offScreenPhase == OffScreenPhase.HIDDEN) {
+            return;
+        }
+        if (spriteHeightDp > 16 && spriteHeightDp < 140) {
+            bubbleSpriteHeightDp = spriteHeightDp;
+        }
+        int maxBubbleW = Math.min(dpToPx(236), Math.max(dpToPx(160), screenW - dpToPx(28)));
+        bubbleTextView.setMaxWidth(maxBubbleW);
+        bubbleTextView.setText(text.trim());
+        bubbleVisible = true;
+        bubbleContainer.setVisibility(View.VISIBLE);
+        updateBubblePosition();
+
+        physicsHandler.removeCallbacks(hideBubbleRunnable);
+        long safeDuration = Math.max(2400L, Math.min(9000L, durationMs));
+        physicsHandler.postDelayed(hideBubbleRunnable, safeDuration);
+    }
+
+    private void hideNativeBubble() {
+        bubbleVisible = false;
+        if (bubbleContainer != null) {
+            bubbleContainer.setVisibility(View.GONE);
+        }
+    }
+
+    private void updateBubblePosition() {
+        if (!bubbleVisible || bubbleContainer == null || bubbleParams == null || params == null || windowManager == null) {
+            return;
+        }
+        try {
+            int maxWSpec = View.MeasureSpec.makeMeasureSpec(Math.max(dpToPx(160), screenW - dpToPx(16)), View.MeasureSpec.AT_MOST);
+            int maxHSpec = View.MeasureSpec.makeMeasureSpec(Math.max(dpToPx(120), screenH / 2), View.MeasureSpec.AT_MOST);
+            bubbleContainer.measure(maxWSpec, maxHSpec);
+            int bw = Math.max(dpToPx(48), bubbleContainer.getMeasuredWidth());
+            int bh = Math.max(dpToPx(28), bubbleContainer.getMeasuredHeight());
+
+            int petWindowY = params.y;
+            int petWindowX = params.x;
+
+            int bx = Math.round(petWindowX + (viewW - bw) * 0.5f);
+            int minBx = dpToPx(6);
+            int maxBx = Math.max(minBx, screenW - bw - dpToPx(6));
+            if (bx < minBx) bx = minBx;
+            if (bx > maxBx) bx = maxBx;
+
+            // Anchor right above the sprite's actual head inside the pet window
+            int spriteTopInWindow = Math.max(dpToPx(4), viewH - dpToPx(12 + bubbleSpriteHeightDp));
+            int spriteTopY = petWindowY + spriteTopInWindow;
+            int by = spriteTopY - bh - dpToPx(2);
+
+            // If near top of screen, flip bubble below the pet so it never clips above status bar
+            if (by < dpToPx(8)) {
+                by = petWindowY + viewH - dpToPx(2);
+                int maxBy = Math.max(dpToPx(8), screenH - bh - dpToPx(16) - topSystemOffsetPx);
+                if (by > maxBy) by = maxBy;
+            }
+
+            if (bubbleParams.x != bx || bubbleParams.y != by) {
+                bubbleParams.x = bx;
+                bubbleParams.y = by;
+                if (Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT || bubbleContainer.isAttachedToWindow()) {
+                    windowManager.updateViewLayout(bubbleContainer, bubbleParams);
+                }
+            }
+        } catch (Exception ignored) {
+            // Safe guard during shutdown
+        }
     }
 
     private void snapGroundedToNearestRow() {
@@ -917,7 +1239,7 @@ public class FloatingPetService extends Service {
         applyWindowPosition();
         offScreenPhase = OffScreenPhase.NONE;
         if (!carriedItem.isEmpty()) {
-            clearItemAtMs = nowMs + 6500L;
+            clearItemAtMs = nowMs + 2200L;
         }
         petState = PetState.IDLE;
         stateUntilMs = nowMs + 2200L;
@@ -927,6 +1249,8 @@ public class FloatingPetService extends Service {
     private void setOverlayHidden(boolean hidden) {
         if (floatingView == null || params == null) return;
         if (hidden) {
+            hideNativeBubble();
+            setDismissTargetVisible(false, false);
             floatingView.setVisibility(View.INVISIBLE);
             params.flags |= WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
         } else {
@@ -948,6 +1272,9 @@ public class FloatingPetService extends Service {
         try {
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.KITKAT || floatingView.isAttachedToWindow()) {
                 windowManager.updateViewLayout(floatingView, params);
+            }
+            if (bubbleVisible) {
+                updateBubblePosition();
             }
         } catch (Exception ignored) {
             // Safe guard during shutdown
@@ -1163,10 +1490,18 @@ public class FloatingPetService extends Service {
 
             "function showSpeech(text, ms) {" +
             "  if (!text) text = quotes[Math.floor(Math.random() * quotes.length)];" +
+            "  var dur = Math.max(ms || 3800, Math.min(8500, 2600 + String(text).length * 42));" +
+            "  var rect = spriteBox ? spriteBox.getBoundingClientRect() : null;" +
+            "  var sh = rect && rect.height ? Math.round(rect.height) : 58;" +
+            "  if (window.NativeBubbleBridge && window.NativeBubbleBridge.showBubble) {" +
+            "    bubble.classList.remove('show');" +
+            "    window.NativeBubbleBridge.showBubble(String(text), Math.round(dur), sh);" +
+            "    return;" +
+            "  }" +
             "  bubble.innerText = text;" +
             "  bubble.classList.add('show');" +
             "  if (bubbleTimeout) clearTimeout(bubbleTimeout);" +
-            "  bubbleTimeout = setTimeout(function() { bubble.classList.remove('show'); }, ms || 3500);" +
+            "  bubbleTimeout = setTimeout(function() { bubble.classList.remove('show'); }, dur);" +
             "}" +
 
             "function playEvolutionEffect(msg) {" +
@@ -1223,6 +1558,22 @@ public class FloatingPetService extends Service {
         isRunning = false;
         physicsStarted = false;
         physicsHandler.removeCallbacksAndMessages(null);
+        if (dismissContainer != null && windowManager != null) {
+            try {
+                windowManager.removeView(dismissContainer);
+            } catch (Exception ignored) {
+                // safe ignore
+            }
+            dismissContainer = null;
+        }
+        if (bubbleContainer != null && windowManager != null) {
+            try {
+                windowManager.removeView(bubbleContainer);
+            } catch (Exception ignored) {
+                // safe ignore
+            }
+            bubbleContainer = null;
+        }
         if (floatingView != null && windowManager != null) {
             try {
                 windowManager.removeView(floatingView);

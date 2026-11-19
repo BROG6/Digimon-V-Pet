@@ -16,12 +16,16 @@ import {
   RotateCcw,
   Github,
   GitBranch,
-  HelpCircle
+  HelpCircle,
+  Copy,
+  Upload
 } from 'lucide-react';
 import { sound } from '../utils/audio';
 import { 
   UpdateManifest, 
+  UpdateCheckResult,
   AppInfo, 
+  DEFAULT_APP_INFO,
   getLocalAppInfo, 
   checkForUpdate, 
   downloadAndInstallApk, 
@@ -32,6 +36,8 @@ import {
   resolveFullUrl,
   DEFAULT_PRODUCTION_URL,
   isVersionNewer,
+  extractManifestVersion,
+  markUpdateNotified,
   getAutoCheckEnabled, 
   setAutoCheckEnabled, 
   getCustomUpdateUrl, 
@@ -51,20 +57,21 @@ interface AppUpdateModalProps {
   onClose: () => void;
   initialManifest?: UpdateManifest | null;
   onUpdateDownloaded?: () => void;
+  onCheckComplete?: (result: UpdateCheckResult) => void;
+  onSaveRestored?: () => void;
 }
+
+const PET_STORAGE_KEY = 'digipet_vpet_save_v1';
 
 export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
   isOpen,
   onClose,
   initialManifest,
   onUpdateDownloaded,
+  onCheckComplete,
+  onSaveRestored,
 }) => {
-  const [appInfo, setAppInfo] = useState<AppInfo>({
-    versionName: '1.2.0',
-    versionCode: 3,
-    packageName: 'com.digipet.companion',
-    isNative: false,
-  });
+  const [appInfo, setAppInfo] = useState<AppInfo>(DEFAULT_APP_INFO);
   const [manifest, setManifest] = useState<UpdateManifest | null>(initialManifest || null);
   const [isChecking, setIsChecking] = useState<boolean>(false);
   const [isDownloading, setIsDownloading] = useState<boolean>(false);
@@ -81,6 +88,9 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
   const [useGitHubReleasesState, setUseGitHubReleasesState] = useState<boolean>(true);
   const [isCheckingGitHub, setIsCheckingGitHub] = useState<boolean>(false);
   const [showHowUpdatesWork, setShowHowUpdatesWork] = useState<boolean>(false);
+  const [backupCode, setBackupCode] = useState<string>('');
+  const [restoreInput, setRestoreInput] = useState<string>('');
+  const [backupStatusMsg, setBackupStatusMsg] = useState<string | null>(null);
 
   // Load app info and check install permission on mount / open
   useEffect(() => {
@@ -126,24 +136,29 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
     try {
       const res = await checkForUpdate({
         customUrl: customManifestUrl || undefined,
-        preferGitHub: forceGitHub || useGitHubReleasesState,
+        preferGitHub: forceGitHub,
         githubRepo: githubRepoState,
+        forceRefresh: playSfx || forceGitHub,
       });
       setManifest(res.manifest);
       setAppInfo(res.currentInfo);
+      onCheckComplete?.(res);
 
       if (res.manifest?.apkDownloadUrl) {
         setCurrentResolvedUrl(resolveFullUrl(res.manifest.apkDownloadUrl));
       }
 
       if (res.error) {
-        // Show informative notice while keeping update available
+        // Show informative notice while keeping manifest details visible
         setErrorMsg(res.error);
-      } else if (res.updateAvailable) {
-        setSuccessMsg(`New version v${res.manifest?.versionName} is ready to install! (${res.source === 'github' ? 'From GitHub Releases' : 'From Digi-Cloud'})`);
+      } else if (!Capacitor.isNativePlatform()) {
+        setSuccessMsg('Web App is always up to date with the latest live release! 🌐');
+      } else if (res.updateAvailable && res.manifest) {
+        markUpdateNotified(res.manifest.versionName);
+        setSuccessMsg(`New version v${res.manifest.versionName} is ready to install! (${res.source === 'github' ? 'From GitHub Releases' : 'From Digi-Cloud'})`);
         if (playSfx) sound.playVictory();
       } else {
-        setSuccessMsg(`You have the newest version (v${appInfo.versionName}) installed! 🛡️`);
+        setSuccessMsg(`You have the newest version (v${res.currentInfo.versionName}) installed! 🛡️`);
       }
     } catch (e: any) {
       setErrorMsg(e.message || 'Error checking for updates');
@@ -285,12 +300,70 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
     handleCheckUpdates(false);
   };
 
+  const handleCopySaveBackup = async () => {
+    sound.playButton();
+    try {
+      const raw = localStorage.getItem(PET_STORAGE_KEY);
+      if (!raw) {
+        setBackupStatusMsg('No active pet save found yet.');
+        return;
+      }
+      const bytes = new TextEncoder().encode(raw);
+      let binary = '';
+      for (let i = 0; i < bytes.length; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      const code = `DIGIPET1:${btoa(binary)}`;
+      setBackupCode(code);
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(code);
+        setBackupStatusMsg('Save backup copied to clipboard! Keep it safe before reinstalling.');
+      } else {
+        setBackupStatusMsg('Save backup generated below — select and copy it.');
+      }
+    } catch {
+      setBackupStatusMsg('Could not export save backup.');
+    }
+  };
+
+  const handleRestoreSaveBackup = () => {
+    sound.playButton();
+    const rawInput = restoreInput.trim();
+    if (!rawInput) {
+      setBackupStatusMsg('Paste a DIGIPET1 backup code or JSON save first.');
+      return;
+    }
+    try {
+      let jsonStr = rawInput;
+      if (rawInput.startsWith('DIGIPET1:')) {
+        const b64 = rawInput.slice('DIGIPET1:'.length).trim();
+        const binary = atob(b64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) {
+          bytes[i] = binary.charCodeAt(i);
+        }
+        jsonStr = new TextDecoder().decode(bytes);
+      }
+      const parsed = JSON.parse(jsonStr);
+      if (!parsed || typeof parsed !== 'object' || !parsed.currentSpeciesId || !parsed.stage) {
+        setBackupStatusMsg('Invalid backup format. Please paste the full DIGIPET1 code.');
+        return;
+      }
+      localStorage.setItem(PET_STORAGE_KEY, JSON.stringify(parsed));
+      setRestoreInput('');
+      setBackupStatusMsg(`Restored ${parsed.nickname || parsed.currentSpeciesId} successfully!`);
+      onSaveRestored?.();
+    } catch {
+      setBackupStatusMsg('Could not decode backup code. Check that nothing was cut off.');
+    }
+  };
+
   if (!isOpen) return null;
 
-  const isUpdateAvailable = !!(manifest && (
-    Number(manifest.versionCode) > Number(appInfo.versionCode) || 
-    isVersionNewer(manifest.versionName, appInfo.versionName)
-  ));
+  const isNative = Capacitor.isNativePlatform();
+  const manifestVersion = extractManifestVersion(manifest);
+  const isUpdateAvailable = isNative && Boolean(manifestVersion && isVersionNewer(manifestVersion, appInfo.versionName));
+  const needsLegacyKeyMigration = isNative && (Number(appInfo.versionCode) < 124 || isVersionNewer('1.2.4', appInfo.versionName));
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-slate-950/90 backdrop-blur-md android-safe-modal">
@@ -350,7 +423,7 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
                   ? 'bg-amber-500/20 text-amber-300 border border-amber-500/50 animate-pulse'
                   : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
               }`}>
-                {isUpdateAvailable ? `v${manifest?.versionName} AVAILABLE` : `v${appInfo.versionName} LATEST`}
+                {isUpdateAvailable ? `v${manifest?.versionName} AVAILABLE` : isNative ? `v${appInfo.versionName} LATEST` : 'WEB LIVE LATEST'}
               </span>
             </div>
 
@@ -390,6 +463,40 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
                 <Smartphone className="w-3.5 h-3.5 text-slate-950" />
                 <span>ALLOW INSTALLING UPDATES (OPEN SETTINGS)</span>
               </button>
+            </div>
+          )}
+
+          {/* One-time Signing Key Migration Notice for Legacy Builds (< v1.2.4) */}
+          {needsLegacyKeyMigration && isUpdateAvailable && (
+            <div className="p-3.5 bg-cyan-950/60 border-2 border-cyan-500/50 rounded-2xl space-y-2.5">
+              <div className="flex items-center gap-2 text-cyan-300 font-chakra font-bold text-xs">
+                <ShieldCheck className="w-4 h-4 text-cyan-400 shrink-0" />
+                <span>ONE-TIME SIGNING KEY UPGRADE (AVOIDS PACKAGE CONFLICT)</span>
+              </div>
+              <p className="text-slate-300 text-[11px] leading-relaxed">
+                Builds before <strong className="text-white">v1.2.4</strong> used temporary build keys, so Android shows <em>"package conflicts with an existing package"</em> when updating in-place. Copy your pet save below, uninstall this old build once, install <strong className="text-cyan-300">v{manifest?.versionName}</strong>, then paste your backup. Every update from <strong className="text-cyan-300">v1.2.4+</strong> uses a permanent signing key with zero conflicts.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={handleCopySaveBackup}
+                  className="flex-1 py-2 px-3 bg-cyan-600 hover:bg-cyan-500 text-white font-pixel text-[10px] font-bold rounded-xl flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  <span>COPY PET SAVE BACKUP</span>
+                </button>
+              </div>
+              {backupCode && (
+                <textarea
+                  readOnly
+                  value={backupCode}
+                  onFocus={(e) => e.currentTarget.select()}
+                  rows={2}
+                  className="w-full bg-slate-950 border border-cyan-500/40 rounded-lg p-2 text-[10px] font-mono text-cyan-200 focus:outline-none"
+                />
+              )}
+              {backupStatusMsg && (
+                <p className="text-[10px] text-emerald-300 font-medium">{backupStatusMsg}</p>
+              )}
             </div>
           )}
 
@@ -664,7 +771,7 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
                     <div className="flex gap-1.5">
                       <input
                         type="text"
-                        placeholder="brodson/Digimon-V-Pet"
+                        placeholder="BROG6/Digimon-V-Pet"
                         value={githubRepoState}
                         onChange={(e) => setGithubRepoState(e.target.value)}
                         className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-indigo-400 font-mono"
@@ -757,6 +864,48 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
                         SAVE
                       </button>
                     </div>
+                  </div>
+
+                  {/* Pet Save Backup & Restore */}
+                  <div className="p-3 bg-slate-950 rounded-xl border border-slate-800 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-white">Pet Save Backup &amp; Restore</span>
+                      <button
+                        onClick={handleCopySaveBackup}
+                        className="px-2.5 py-1 bg-cyan-600 hover:bg-cyan-500 text-white font-pixel text-[9px] rounded-lg cursor-pointer flex items-center gap-1"
+                      >
+                        <Copy className="w-3 h-3" />
+                        <span>COPY BACKUP</span>
+                      </button>
+                    </div>
+                    {backupCode && (
+                      <textarea
+                        readOnly
+                        value={backupCode}
+                        onFocus={(e) => e.currentTarget.select()}
+                        rows={2}
+                        className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-[10px] font-mono text-cyan-200 focus:outline-none"
+                      />
+                    )}
+                    <div className="flex gap-1.5">
+                      <input
+                        type="text"
+                        placeholder="Paste DIGIPET1:... backup code to restore"
+                        value={restoreInput}
+                        onChange={(e) => setRestoreInput(e.target.value)}
+                        className="flex-1 bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-emerald-400 font-mono"
+                      />
+                      <button
+                        onClick={handleRestoreSaveBackup}
+                        className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-pixel text-[10px] rounded-lg cursor-pointer font-bold flex items-center gap-1"
+                      >
+                        <Upload className="w-3 h-3" />
+                        <span>RESTORE</span>
+                      </button>
+                    </div>
+                    {backupStatusMsg && (
+                      <p className="text-[10px] text-emerald-300">{backupStatusMsg}</p>
+                    )}
                   </div>
 
                   {/* Reset to Default Cloud Server Button */}

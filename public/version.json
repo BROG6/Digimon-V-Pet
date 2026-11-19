@@ -1,17 +1,17 @@
 {
-  "versionName": "1.2.1",
-  "versionCode": 4,
-  "releaseDate": "2026-11-06",
-  "releaseName": "Elevated Speech Bubbles, Digimon AI Chat & GitHub Releases Backup",
+  "versionName": "1.2.4",
+  "versionCode": 124,
+  "releaseDate": "2026-11-18",
+  "releaseName": "Permanent APK Signing Key Fix & Save Backup/Restore v1.2.4",
   "changelog": [
-    "Speech bubbles positioned higher and behind Digimon heads in the floating companion overlay",
-    "Interactive Digimon AI dialogue engine: chat directly with your companion powered by Gemini",
-    "GitHub Releases auto-updater backup: automatically detects releases and updates from GitHub repository",
-    "Colosseum battle attack animations: dynamic lunges, critical hit flashes, screen shakes & floating damage numbers",
-    "Native in-app auto-updater: background APK download & seamless installer"
+    "Fixed Android package conflict on in-app updates using a permanent signing keystore across all builds",
+    "Added 1-tap Pet Save Backup & Restore in Digi-Auto Updater for seamless migration from legacy builds",
+    "Retro pixel-art meat, vitamin pill, bad meat, golden poop, and swinging punching bag sprites",
+    "Strict build.gradle versionName auto-updater comparison & per-push GitHub APK releases"
   ],
   "apkDownloadUrl": "https://ais-pre-hwfiiqh77iufzd3mdqoptd-750449911930.asia-northeast1.run.app/api/download-apk",
-  "apkFileName": "digipet-v1.2.1.apk",
+  "directDownloadUrl": "https://github.com/BROG6/Digimon-V-Pet/releases/latest/download/digipet-latest.apk",
+  "apkFileName": "digipet-v1.2.4.apk",
   "apkFileSize": "19.2 MB",
   "isMandatory": false
 }

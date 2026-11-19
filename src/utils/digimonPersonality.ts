@@ -1,10 +1,11 @@
 /**
  * DigiPet AI & Personality Engine
  * Provides authentic, species-specific personalities and dialogues.
- * Integrates with server-side Gemini 3.8 Flash with rich offline fallbacks.
+ * Integrates with server-side Gemini AI with species-aware offline quotes.
  */
 
 import { resolveFullUrl } from './appUpdater';
+import { DIGIMON_DATABASE } from '../data/digidex';
 
 export interface DigimonPersonalityProfile {
   name: string;
@@ -317,12 +318,53 @@ export const DEFAULT_PERSONALITY: DigimonPersonalityProfile = {
 };
 
 /**
- * Gets the profile for a species with safe fallback
+ * Gets the profile for a species with dynamic synthesis from DIGIMON_DATABASE
  */
 export function getPersonalityProfile(speciesId?: string): DigimonPersonalityProfile {
   if (!speciesId) return DEFAULT_PERSONALITY;
   const key = speciesId.toLowerCase().replace(/[^a-z0-9]/g, '');
-  return SPECIES_PERSONALITIES[key] || DEFAULT_PERSONALITY;
+  if (SPECIES_PERSONALITIES[key]) {
+    return SPECIES_PERSONALITIES[key];
+  }
+
+  const dbMon = DIGIMON_DATABASE[speciesId] || DIGIMON_DATABASE[key];
+  if (!dbMon) return DEFAULT_PERSONALITY;
+
+  const moveName = dbMon.signatureMove?.name || 'Digi-Strike';
+  const stageLabel = dbMon.stage.toUpperCase();
+
+  return {
+    name: dbMon.name,
+    speciesId: dbMon.id,
+    stage: dbMon.stage,
+    vibe: dbMon.description,
+    catchphrases: [`${moveName}!`, `I'm ${dbMon.name}!`, `For the Crest of ${dbMon.crest}!`],
+    hungryQuotes: [
+      `${dbMon.name}'s energy core is running low! Got any Big Meat, Tamer? 🍖`,
+      `Even a ${dbMon.stage} ${dbMon.type} Digimon gets super hungry! Feed me! 🥩`,
+    ],
+    sickQuotes: [
+      `Ugh... ${dbMon.name} caught a digital bug. Need vitamins fast! 💊`,
+      `My ${dbMon.attribute} data feels scrambled... help me recover, Tamer! 🩹`,
+    ],
+    poopQuotes: [
+      `Uh oh... Tamer, can you flush that mess for ${dbMon.name}? 💩`,
+      `Oops! Better tidy up the screen before we train! 🧹`,
+    ],
+    happyQuotes: [
+      `Hehe! Hanging out with you makes ${dbMon.name} unstoppable! ✨`,
+      `Our bond shines with the Crest of ${dbMon.crest}! 💖`,
+    ],
+    idleQuotes: [
+      `${dbMon.name} (${stageLabel}) standing by! Ready to guard your screen! 🛡️`,
+      `Practicing ${moveName} so we're ready for the Colosseum! ⚡`,
+      `Hey Tamer! Check my stats or let's train at the Dojo! 🥊`,
+      `Feeling proud to be your ${dbMon.type} Digimon partner! 🐾`,
+    ],
+    battleQuotes: [
+      `${moveName}, full power! Let's win this, Tamer! ⚔️🔥`,
+    ],
+  };
 }
 
 /**
@@ -369,31 +411,64 @@ export function getContextualQuote(
   return idleList[Math.floor(Math.random() * idleList.length)];
 }
 
-/**
- * Requests an AI-powered conversational line from the server's Gemini 3.8 Flash model.
- * Falls back gracefully to contextual quotes if network or API key is absent.
- */
-export async function fetchDigimonAiDialogue(params: {
+export interface DigimonChatTurn {
+  role: 'user' | 'model';
+  text: string;
+}
+
+export interface DigimonTalkParams {
   speciesName: string;
   speciesId?: string;
   stage?: string;
+  attribute?: string;
+  type?: string;
+  description?: string;
+  signatureMove?: string;
+  crestName?: string;
+  tamerName?: string;
   hunger?: number;
   happiness?: number;
   energy?: number;
+  strength?: number;
+  weight?: number;
   isSick?: boolean;
   poopCount?: number;
+  battlesWon?: number;
+  battlesTotal?: number;
+  careMistakes?: number;
   userMessage?: string;
   actionContext?: string;
-}): Promise<string> {
-  const profile = getPersonalityProfile(params.speciesId);
+  history?: DigimonChatTurn[];
+}
+
+export interface DigimonTalkResult {
+  text: string;
+  source: 'ai' | 'offline';
+  error?: string;
+}
+
+/**
+ * Requests an AI-powered conversational reply from the server's Gemini endpoint.
+ * Propagates server/API errors transparently and only uses local quotes when offline.
+ */
+export async function fetchDigimonAiDialogue(params: DigimonTalkParams): Promise<DigimonTalkResult> {
   const targetUrl = resolveFullUrl('/api/digimon/talk');
+  const dbMon = params.speciesId ? DIGIMON_DATABASE[params.speciesId] : undefined;
+
+  const payload: DigimonTalkParams = {
+    ...params,
+    attribute: params.attribute || dbMon?.attribute,
+    type: params.type || dbMon?.type,
+    description: params.description || dbMon?.description,
+    signatureMove: params.signatureMove || dbMon?.signatureMove?.name,
+  };
 
   const controller = new AbortController();
   const timeoutId = setTimeout(() => {
     try {
       controller.abort();
     } catch {}
-  }, 4000);
+  }, 12000);
 
   try {
     const res = await fetch(targetUrl, {
@@ -401,53 +476,49 @@ export async function fetchDigimonAiDialogue(params: {
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(params),
+      body: JSON.stringify(payload),
       signal: controller.signal,
     });
 
     clearTimeout(timeoutId);
 
-    if (res.ok) {
-      const data = await res.json();
-      if (data && typeof data.text === 'string' && data.text.trim()) {
-        return data.text.trim();
-      }
+    const data = await res.json().catch(() => null);
+
+    if (res.ok && data && typeof data.text === 'string' && data.text.trim()) {
+      return {
+        text: data.text.trim(),
+        source: 'ai',
+      };
     }
-  } catch (err) {
-    console.warn('Gemini AI talk request failed or timed out, using local personality:', err);
+
+    const errMsg = data?.error || `Server returned ${res.status}`;
+    return {
+      text: `(${params.speciesName} couldn't connect right now: ${errMsg})`,
+      source: 'offline',
+      error: errMsg,
+    };
+  } catch (err: any) {
+    console.warn('Gemini AI talk request failed or timed out:', err);
+    if (!params.userMessage) {
+      return {
+        text: getContextualQuote(params.speciesId, {
+          isSick: params.isSick,
+          hunger: params.hunger,
+          poopCount: params.poopCount,
+          happiness: params.happiness,
+        }),
+        source: 'offline',
+      };
+    }
+    const reason = err?.name === 'AbortError'
+      ? 'Connection timed out. Please try again!'
+      : 'Network unreachable right now.';
+    return {
+      text: `(${params.speciesName} couldn't reach the Digi-Network: ${reason})`,
+      source: 'offline',
+      error: reason,
+    };
   } finally {
     clearTimeout(timeoutId);
   }
-
-  // Smart in-character conversational fallback when offline or AI call times out
-  if (params.userMessage) {
-    const lower = params.userMessage.toLowerCase();
-    if (lower.includes('meat') || lower.includes('food') || lower.includes('eat') || lower.includes('hungry')) {
-      return profile.hungryQuotes[0] || `${params.speciesName} loves Big Meat! Feed me! 🍖`;
-    }
-    if (lower.includes('battle') || lower.includes('fight') || lower.includes('arena') || lower.includes('colosseum')) {
-      return profile.battleQuotes[0] || `Let's fight with all our power in the Colosseum! ⚔️🔥`;
-    }
-    if (lower.includes('friend') || lower.includes('love') || lower.includes('best') || lower.includes('pet')) {
-      return profile.happyQuotes[0] || `You're the best Tamer ever! I'll protect you always! 💖`;
-    }
-    if (lower.includes('evolve') || lower.includes('digivolve') || lower.includes('mega') || lower.includes('strong')) {
-      return `Train hard at the punching bag and we'll reach Mega evolution! 🥊✨`;
-    }
-    if (lower.includes('attack') || lower.includes('special')) {
-      return `${profile.catchphrases[0] || 'Digi-Power!'} Let's show them! 🔥💥`;
-    }
-    if (lower.includes('hello') || lower.includes('hi') || lower.includes('hey')) {
-      return `Hey Tamer! ${params.speciesName} is right here with you! 🐾`;
-    }
-    return `I hear you loud and clear, Tamer! Let's conquer the Digital World together! ✨`;
-  }
-
-  // Graceful in-character fallback
-  return getContextualQuote(params.speciesId, {
-    isSick: params.isSick,
-    hunger: params.hunger,
-    poopCount: params.poopCount,
-    happiness: params.happiness,
-  });
 }

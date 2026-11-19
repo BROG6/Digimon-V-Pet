@@ -1,10 +1,10 @@
 import { DigimonSpriteConfig, NEW_DIGIMON_SPRITES } from './newDigimonSprites';
 import bakedSpriteOverrides from './savedSpriteOverrides.json';
 
-const STORAGE_KEY = 'digipet_custom_sprites_v1';
+const STORAGE_KEY = 'digipet_custom_sprites_v4';
 const HIDE_GALLERY_KEY = 'digipet_hide_gallery_button_v1';
 
-// Available uploaded spritesheets in /public/assets/aistudio/
+// Available uploaded spritesheets in /public/assets/
 export interface AvailableSpritesheet {
   filename: string;
   path: string;
@@ -12,7 +12,15 @@ export interface AvailableSpritesheet {
   displayName: string;
 }
 
+const DIGIDESTINED_SPRITESHEETS: AvailableSpritesheet[] = Object.keys(NEW_DIGIMON_SPRITES).map((id) => ({
+  filename: `${id}.png`,
+  path: `/assets/digidestined/${id}.png`,
+  speciesKeywords: [id],
+  displayName: `${id.charAt(0).toUpperCase() + id.slice(1)} (Original Digidestined)`,
+}));
+
 export const ALL_AVAILABLE_SPRITESHEETS: AvailableSpritesheet[] = [
+  ...DIGIDESTINED_SPRITESHEETS,
   // Multi-sheet species
   { filename: 'Copy_of_WarGreymon_9adf0908.png', path: '/assets/aistudio/Copy_of_WarGreymon_9adf0908.png', speciesKeywords: ['wargreymon'], displayName: 'WarGreymon (Sheet 1)' },
   { filename: 'Copy_of_WarGreymon_2_721b4ff0.png', path: '/assets/aistudio/Copy_of_WarGreymon_2_721b4ff0.png', speciesKeywords: ['wargreymon'], displayName: 'WarGreymon (Sheet 2 - Alt)' },

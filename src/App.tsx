@@ -7,9 +7,9 @@ import {
   FurnitureItem, 
   DigimonStage 
 } from './types/digimon';
-import { DIGI_EGGS, DIGIMON_DATABASE, FURNITURE_SHOP, ROOM_THEMES, HELLOPET_QUOTES } from './data/digidex';
-import { getPersonalityProfile } from './utils/digimonPersonality';
+import { DIGI_EGGS, DIGIMON_DATABASE, FURNITURE_SHOP, ROOM_THEMES } from './data/digidex';
 import { DigiviceHUD } from './components/DigiviceHUD';
+import { PixelMeatIcon, PixelVitaminIcon, PixelPoopIcon } from './components/PixelItemIcons';
 import { FloatingOverlay } from './components/FloatingOverlay';
 import { EggSelectionModal } from './components/EggSelectionModal';
 import { TrainingArena } from './components/TrainingArena';
@@ -23,19 +23,40 @@ import { ShopModal } from './components/ShopModal';
 import { PwaInstallModal } from './components/PwaInstallModal';
 import { NativePipOverlay } from './components/NativePipOverlay';
 import { DigiChat } from './components/DigiChat';
+import { DigimonTalkModal } from './components/DigimonTalkModal';
 import { DigimonGallery } from './components/DigimonGallery';
 import { AppUpdateModal } from './components/AppUpdateModal';
-import { checkForUpdate, UpdateManifest, getAutoCheckEnabled } from './utils/appUpdater';
-import { getHideGalleryButtonPref, syncOverridesToRepository, getEffectiveSpriteConfig } from './utils/customSpriteManager';
-import { NEW_DIGIMON_SPRITES } from './utils/newDigimonSprites';
+import { GridAlignmentModal } from './components/GridAlignmentModal';
+import {
+  GRID_RATIOS_CHANGED_EVENT,
+  getSavedGridPreset,
+  hasCustomRowRatios,
+} from './utils/petOverlayEngine';
+import {
+  checkForUpdate,
+  UpdateManifest,
+  UpdateCheckResult,
+  getAutoCheckEnabled,
+  markUpdateNotified,
+  dismissUpdateVersion,
+} from './utils/appUpdater';
+import { getHideGalleryButtonPref, syncOverridesToRepository } from './utils/customSpriteManager';
 import { Capacitor } from '@capacitor/core';
 import { 
   checkOverlayPermission, 
   requestOverlayPermission, 
   startNativeFloatingOverlay, 
   stopNativeFloatingOverlay, 
-  isNativeOverlayActive 
+  isNativeOverlayActive,
+  consumeNativeOverlayEvolution,
+  consumeNativeOverlayCareActions,
 } from './utils/nativeOverlay';
+import {
+  applyEvolutionToPetState,
+  buildNativeOverlayPayload,
+  checkEvolutionEligibility,
+  computeNaturalEvoTiming,
+} from './utils/evolutionEngine';
 import { sound, triggerHaptic } from './utils/audio';
 import { 
   Sparkles, 
@@ -60,7 +81,8 @@ import {
   ChevronUp,
   Utensils,
   ExternalLink,
-  Download
+  Download,
+  SlidersHorizontal
 } from 'lucide-react';
 
 const STORAGE_KEY = 'digipet_vpet_save_v1';
@@ -124,28 +146,50 @@ export default function App() {
   const [isPwaModalOpen, setIsPwaModalOpen] = useState<boolean>(false);
   const [isNativePipOpen, setIsNativePipOpen] = useState<boolean>(false);
   const [isChatOpen, setIsChatOpen] = useState<boolean>(false);
+  const [isTalkModalOpen, setIsTalkModalOpen] = useState<boolean>(false);
   const [isGalleryOpen, setIsGalleryOpen] = useState<boolean>(false);
   const [isGalleryHidden, setIsGalleryHidden] = useState<boolean>(() => getHideGalleryButtonPref());
   const [isCareSheetOpen, setIsCareSheetOpen] = useState<boolean>(false);
   const [isMoreSheetOpen, setIsMoreSheetOpen] = useState<boolean>(false);
+  const [isGridModalOpen, setIsGridModalOpen] = useState<boolean>(false);
+  const [isGridCustom, setIsGridCustom] = useState<boolean>(() => hasCustomRowRatios(getSavedGridPreset()));
   const [isUpdateModalOpen, setIsUpdateModalOpen] = useState<boolean>(false);
   const [updateManifest, setUpdateManifest] = useState<UpdateManifest | null>(null);
   const [hasUpdateAvailable, setHasUpdateAvailable] = useState<boolean>(false);
 
-  // Background Auto-Updater check on startup
   useEffect(() => {
+    const syncGridFlag = () => setIsGridCustom(hasCustomRowRatios(getSavedGridPreset()));
+    window.addEventListener(GRID_RATIOS_CHANGED_EVENT, syncGridFlag);
+    return () => window.removeEventListener(GRID_RATIOS_CHANGED_EVENT, syncGridFlag);
+  }, []);
+
+  // Background Auto-Updater check on startup (Native APK builds only — Web app is always up to date)
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
     if (!getAutoCheckEnabled()) return;
+    let cancelled = false;
     const timer = setTimeout(() => {
       checkForUpdate()
         .then((res) => {
+          if (cancelled) return;
           if (res.updateAvailable && res.manifest) {
             setUpdateManifest(res.manifest);
-            setHasUpdateAvailable(true);
+            setHasUpdateAvailable(res.shouldShowBanner);
+            if (res.shouldNotify) {
+              markUpdateNotified(res.manifest.versionName);
+              setStatusNotification(`New update v${res.manifest.versionName} available! Tap UPDATE NOW to install.`);
+              setTimeout(() => setStatusNotification(null), 5000);
+            }
+          } else {
+            setHasUpdateAvailable(false);
           }
         })
         .catch(() => {});
     }, 2400);
-    return () => clearTimeout(timer);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
   }, []);
 
   // Listen for hide gallery button preference changes
@@ -183,6 +227,7 @@ export default function App() {
 
   const [isMuted, setIsMuted] = useState<boolean>(sound.getMuted());
   const [statusNotification, setStatusNotification] = useState<string | null>(null);
+  const [hudAction, setHudAction] = useState<{ pose: 'eating' | 'happy' | 'flushing'; nonce: number; eatItem?: 'meat' | 'vitamin' } | null>(null);
 
   // Android Safe Area & Status Bar Clearance Custom Offset
   const [extraTopPad, setExtraTopPad] = useState<number>(() => {
@@ -242,36 +287,12 @@ export default function App() {
           return;
         }
 
-        const currentSpeciesConf = getEffectiveSpriteConfig(pet.currentSpeciesId) || NEW_DIGIMON_SPRITES[pet.currentSpeciesId] || NEW_DIGIMON_SPRITES['agumon'];
-        const standingFrames = currentSpeciesConf?.frames?.standing || [];
-        const walkingFrames = currentSpeciesConf?.frames?.walking || standingFrames;
-        const activeFrame = walkingFrames[0] || standingFrames[0] || { x: 2, y: 2, w: 48, h: 48 };
-
-        const profile = getPersonalityProfile(currentSpecies?.id);
-        const speciesQuotes = [
-          ...profile.catchphrases,
-          ...profile.idleQuotes,
-          ...profile.happyQuotes,
-          ...profile.hungryQuotes,
-          ...profile.battleQuotes,
-          ...HELLOPET_QUOTES,
-        ];
-
-        const ok = await startNativeFloatingOverlay({
-          speciesName: currentSpecies?.name || 'Digimon',
-          spriteUrl: currentSpeciesConf?.sheetPath || '/assets/aistudio/Copy_of_Agumon_Adventure_04d0832a.png',
-          sheetWidth: currentSpeciesConf?.sheetWidth || 200,
-          sheetHeight: currentSpeciesConf?.sheetHeight || 200,
-          groundOffset: currentSpeciesConf?.groundOffset || 0,
-          frameX: activeFrame.x || 0,
-          frameY: activeFrame.y || 0,
-          frameW: activeFrame.w || 48,
-          frameH: activeFrame.h || 48,
-          frameRotate: activeFrame.rotate || 0,
-          standingFramesJson: JSON.stringify(standingFrames),
-          walkingFramesJson: JSON.stringify(walkingFrames),
-          quotesJson: JSON.stringify(speciesQuotes),
-        });
+        const ok = await startNativeFloatingOverlay(
+          buildNativeOverlayPayload({
+            pet,
+            species: currentSpecies,
+          })
+        );
 
         if (ok) {
           setStatusNotification(`✓ ${currentSpecies?.name || 'Digimon'} is now floating over all apps! Drag to move.`);
@@ -362,77 +383,193 @@ export default function App() {
     return () => clearInterval(careInterval);
   }, []);
 
-  // Determine if ready to evolve
-  const checkCanEvolve = (): { can: boolean; nextId?: string } => {
-    if (!currentSpecies || !currentSpecies.nextEvolutions || currentSpecies.nextEvolutions.length === 0) {
-      return { can: false };
+  const [evoNowMs, setEvoNowMs] = useState<number>(() => Date.now());
+  const evoElig = checkEvolutionEligibility(pet, currentSpecies);
+  const evoTiming = computeNaturalEvoTiming(pet, currentSpecies, evoNowMs);
+  const evolutionCheck = { can: evoElig.goalsMet, nextId: evoElig.nextId };
+
+  // Stamp goal-met anchor cleanly when requirements are satisfied
+  useEffect(() => {
+    if (evoElig.goalsMet && !pet.evoGoalMetAt) {
+      const now = Date.now();
+      setEvoNowMs(now);
+      setPet((prev) => ({
+        ...prev,
+        stageEnteredAt: prev.stageEnteredAt ?? prev.birthTimestamp ?? now,
+        evoGoalMetAt: now,
+      }));
+    } else if (!evoElig.goalsMet && pet.evoGoalMetAt) {
+      setPet((prev) => ({
+        ...prev,
+        evoGoalMetAt: undefined,
+      }));
     }
+  }, [evoElig.goalsMet, pet.evoGoalMetAt, pet.currentSpeciesId]);
 
-    const nextOption = currentSpecies.nextEvolutions[0];
-    const targetSpecies = DIGIMON_DATABASE[nextOption.speciesId];
-    if (!targetSpecies) return { can: false };
+  // 1s clock tick while counting down toward natural digivolution
+  useEffect(() => {
+    if (!evoElig.goalsMet) return;
+    setEvoNowMs(Date.now());
+    const id = setInterval(() => {
+      setEvoNowMs(Date.now());
+    }, 1000);
+    return () => clearInterval(id);
+  }, [evoElig.goalsMet, pet.currentSpeciesId]);
 
-    // Stage evolution criteria
-    if (pet.stage === 'fresh') {
-      return { can: true, nextId: nextOption.speciesId };
-    }
-
-    if (pet.stage === 'in-training') {
-      const minTrain = nextOption.minTraining || 1;
-      if (pet.trainingCount >= minTrain) {
-        return { can: true, nextId: nextOption.speciesId };
-      }
-    }
-
-    if (pet.stage === 'rookie') {
-      const minBattles = nextOption.minBattles || 2;
-      const minTraining = nextOption.minTraining || 4;
-      if (pet.battlesWon >= minBattles && pet.trainingCount >= minTraining) {
-        return { can: true, nextId: nextOption.speciesId };
-      }
-    }
-
-    if (pet.stage === 'champion') {
-      const minBattles = nextOption.minBattles || 5;
-      const minTraining = nextOption.minTraining || 8;
-      if (pet.battlesWon >= minBattles && pet.trainingCount >= minTraining) {
-        return { can: true, nextId: nextOption.speciesId };
-      }
-    }
-
-    if (pet.stage === 'ultimate') {
-      const minBattles = nextOption.minBattles || 10;
-      const minTraining = nextOption.minTraining || 15;
-      if (pet.battlesWon >= minBattles && pet.trainingCount >= minTraining) {
-        return { can: true, nextId: nextOption.speciesId };
-      }
-    }
-
-    return { can: false, nextId: nextOption.speciesId };
-  };
-
-  const evolutionCheck = checkCanEvolve();
-
-  // Evolution Trigger
-  const triggerEvolution = (targetSpeciesId?: string) => {
+  // Evolution Trigger (supports silent in-place updates while overlay is active)
+  const triggerEvolution = (targetSpeciesId?: string, opts?: { silentForOverlay?: boolean }) => {
     const targetId = targetSpeciesId || evolutionCheck.nextId;
     if (!targetId || !DIGIMON_DATABASE[targetId]) return;
 
+    const prevName = currentSpecies?.name || pet.nickname || 'Digimon';
     const target = DIGIMON_DATABASE[targetId];
-    setPrevEvoSpecies(currentSpecies);
-    setNextEvoSpecies(target);
-    setIsEvolutionModalOpen(true);
 
-    setPet((prev) => ({
-      ...prev,
-      currentSpeciesId: target.id,
-      stage: target.stage,
-      weight: prev.weight + 8,
-      strength: prev.strength + 30,
-      dpPoints: prev.dpPoints + 40,
-      happiness: 100,
-    }));
+    if (opts?.silentForOverlay) {
+      sound.playEvolution();
+      showNotification(`⚡ ${prevName} naturally Digivolved into ${target.name}!`);
+    } else {
+      setPrevEvoSpecies(currentSpecies);
+      setNextEvoSpecies(target);
+      setIsEvolutionModalOpen(true);
+    }
+
+    setPet((prev) => applyEvolutionToPetState(prev, target));
   };
+
+  // Automatic natural evolution over time once goals are met
+  useEffect(() => {
+    if (!evoTiming.readyToEvolve || !evoTiming.nextId) return;
+    if (
+      pet.isSleeping ||
+      isTrainingOpen ||
+      isFoodGameOpen ||
+      isColosseumOpen ||
+      isEvolutionModalOpen ||
+      isEggModalOpen ||
+      isDigidexOpen ||
+      isShopOpen ||
+      isRoomOpen
+    ) {
+      return;
+    }
+
+    triggerEvolution(evoTiming.nextId, { silentForOverlay: isOverlayMode });
+  }, [
+    evoTiming.readyToEvolve,
+    evoTiming.nextId,
+    pet.isSleeping,
+    isOverlayMode,
+    isTrainingOpen,
+    isFoodGameOpen,
+    isColosseumOpen,
+    isEvolutionModalOpen,
+    isEggModalOpen,
+    isDigidexOpen,
+    isShopOpen,
+    isRoomOpen,
+  ]);
+
+  // Native Android Overlay: sync evolutions done in background & push live updates in-place
+  const lastNativeSpeciesRef = useRef<string>(pet.currentSpeciesId);
+  const skipNativeEvoBubbleForRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+
+    let isPulling = false;
+    const pullNativeOverlayEvolution = async () => {
+      if (isPulling) return;
+      isPulling = true;
+      try {
+        const pending = await consumeNativeOverlayEvolution();
+        if (pending.speciesId && DIGIMON_DATABASE[pending.speciesId]) {
+          const evolvedSpecies = DIGIMON_DATABASE[pending.speciesId];
+          skipNativeEvoBubbleForRef.current = pending.speciesId;
+          setPet((prev) => {
+            if (prev.currentSpeciesId === evolvedSpecies.id) return prev;
+            return applyEvolutionToPetState(prev, evolvedSpecies, pending.evolvedAt || Date.now());
+          });
+          showNotification(`⚡ ${evolvedSpecies.name} naturally Digivolved while roaming!`);
+        }
+
+        const care = await consumeNativeOverlayCareActions();
+        if (care.meatUsed > 0 || care.vitUsed > 0 || care.praiseCount > 0) {
+          setPet((prev) => {
+            const usedMeat = Math.min(prev.bigMeatStock, Math.max(0, care.meatUsed));
+            const usedVit = Math.min(prev.vitaminStock, Math.max(0, care.vitUsed));
+            const praises = Math.max(0, care.praiseCount);
+            return {
+              ...prev,
+              bigMeatStock: prev.bigMeatStock - usedMeat,
+              vitaminStock: prev.vitaminStock - usedVit,
+              hunger: Math.min(100, prev.hunger + usedMeat * 35),
+              weight: prev.weight + usedMeat,
+              energy: Math.min(100, prev.energy + usedVit * 10),
+              isSick: usedVit > 0 ? false : prev.isSick,
+              happiness: Math.min(100, prev.happiness + usedMeat * 8 + usedVit * 20 + praises * 15),
+            };
+          });
+        }
+      } finally {
+        isPulling = false;
+      }
+    };
+
+    pullNativeOverlayEvolution();
+    const syncTimer = setInterval(() => {
+      if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+        pullNativeOverlayEvolution();
+      }
+    }, 2500);
+    const onFocusOrVisible = () => {
+      if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+        pullNativeOverlayEvolution();
+      }
+    };
+    window.addEventListener('focus', onFocusOrVisible);
+    document.addEventListener('visibilitychange', onFocusOrVisible);
+    return () => {
+      clearInterval(syncTimer);
+      window.removeEventListener('focus', onFocusOrVisible);
+      document.removeEventListener('visibilitychange', onFocusOrVisible);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) {
+      lastNativeSpeciesRef.current = pet.currentSpeciesId;
+      return;
+    }
+
+    const prevSpeciesId = lastNativeSpeciesRef.current;
+    const speciesChanged = prevSpeciesId !== pet.currentSpeciesId;
+    lastNativeSpeciesRef.current = pet.currentSpeciesId;
+
+    let evolvedMessage: string | undefined;
+    if (speciesChanged) {
+      if (skipNativeEvoBubbleForRef.current === pet.currentSpeciesId) {
+        skipNativeEvoBubbleForRef.current = null;
+      } else {
+        evolvedMessage = `Digivolved into ${currentSpecies?.name || 'Digimon'}!`;
+      }
+    }
+
+    let cancelled = false;
+    isNativeOverlayActive().then((active) => {
+      if (cancelled || !active) return;
+      startNativeFloatingOverlay(
+        buildNativeOverlayPayload({
+          pet,
+          species: currentSpecies,
+          evolvedMessage,
+        })
+      ).catch(() => {});
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pet.currentSpeciesId, pet.hunger, pet.happiness, pet.bigMeatStock, pet.vitaminStock, pet.isSleeping, pet.lightsOff, pet.evoGoalMetAt, pet.stageEnteredAt]);
 
   // CARE ACTIONS
   const handleFeedMeat = () => {
@@ -442,6 +579,7 @@ export default function App() {
       return;
     }
     sound.playEat();
+    setHudAction({ pose: 'eating', nonce: Date.now() + Math.random(), eatItem: 'meat' });
     setPet((prev) => ({
       ...prev,
       bigMeatStock: prev.bigMeatStock - 1,
@@ -449,16 +587,17 @@ export default function App() {
       weight: prev.weight + 1,
       happiness: Math.min(100, prev.happiness + 10),
     }));
-    showNotification('Fed delicious Big Meat! 🍖 (+25 Hunger, +1g)');
+    showNotification('Fed delicious Big Meat! (+25 Hunger, +1g)');
   };
 
   const handleGiveVitamin = () => {
     if (pet.vitaminStock <= 0) {
       sound.playAlert();
-      showNotification('Out of Vitamins! Buy some from the Digi-Shop or catch in mini-game 💊');
+      showNotification('Out of Vitamins! Buy some from the Digi-Shop or catch in mini-game');
       return;
     }
     sound.playMedicine();
+    setHudAction({ pose: 'eating', nonce: Date.now() + Math.random(), eatItem: 'vitamin' });
     setPet((prev) => ({
       ...prev,
       vitaminStock: prev.vitaminStock - 1,
@@ -472,6 +611,7 @@ export default function App() {
 
   const handleCleanPoop = () => {
     sound.playFlush();
+    setHudAction({ pose: 'flushing', nonce: Date.now() + Math.random() });
     setPet((prev) => ({
       ...prev,
       poopCount: 0,
@@ -500,6 +640,7 @@ export default function App() {
 
   const handlePetDigimon = () => {
     sound.playButton();
+    setHudAction({ pose: 'happy', nonce: Date.now() + Math.random() });
     setPet((prev) => ({
       ...prev,
       happiness: Math.min(100, prev.happiness + 15),
@@ -535,15 +676,17 @@ export default function App() {
     }
   };
 
-  const handleFoodGameComplete = (score: number, meatEarned: number, coinsEarned: number) => {
+  const handleFoodGameComplete = (_score: number, meatEarned: number, vitaminsEarned: number, coinsEarned: number) => {
     setPet((prev) => ({
       ...prev,
       bigMeatStock: prev.bigMeatStock + meatEarned,
+      vitaminStock: prev.vitaminStock + vitaminsEarned,
       digiBits: prev.digiBits + coinsEarned,
       hunger: Math.min(100, prev.hunger + 30),
       happiness: Math.min(100, prev.happiness + 20),
     }));
-    showNotification(`Feast Over! Earned +${meatEarned} Big Meat 🍖 & +${coinsEarned} Bits 🪙!`);
+    const vitText = vitaminsEarned > 0 ? `, +${vitaminsEarned} Vitamin${vitaminsEarned === 1 ? '' : 's'} 💊` : '';
+    showNotification(`Feast Over! Earned +${meatEarned} Big Meat 🍖${vitText} & +${coinsEarned} Bits 🪙!`);
   };
 
   const handleBattleEnd = (won: boolean, coinsReward: number, dpReward: number) => {
@@ -675,6 +818,8 @@ export default function App() {
       stage: 'fresh',
       nickname,
       birthTimestamp: Date.now(),
+      stageEnteredAt: Date.now(),
+      evoGoalMetAt: undefined,
       hunger: 90,
       energy: 100,
       happiness: 100,
@@ -725,6 +870,22 @@ export default function App() {
         onGiveVitamin={handleGiveVitamin}
         onCleanPoop={handleCleanPoop}
         onPet={handlePetDigimon}
+        onForageReward={(reward) => {
+          if (reward === 'meat') {
+            setPet((prev) => ({
+              ...prev,
+              bigMeatStock: prev.bigMeatStock + 1,
+              happiness: Math.min(100, prev.happiness + 4),
+            }));
+            showNotification(`${pet.nickname || 'Digimon'} returned from foraging with +1 Big Meat!`);
+          } else {
+            setPet((prev) => ({
+              ...prev,
+              happiness: Math.min(100, prev.happiness + 10),
+            }));
+            showNotification(`${pet.nickname || 'Digimon'} visited friends! (+10 Happiness)`);
+          }
+        }}
         onOpenRoom={() => setIsRoomOpen(true)}
         onOpenColosseum={() => setIsColosseumOpen(true)}
         onOpenDigivice={() => setIsOverlayMode(false)}
@@ -761,9 +922,13 @@ export default function App() {
             <div className="text-[10px] text-slate-400 flex items-center gap-1.5 truncate">
               <span className="text-amber-300 font-pixel text-[9px]">🪙 {pet.digiBits}</span>
               <span>•</span>
-              <span className="text-orange-300 font-pixel text-[9px]">🍖 {pet.bigMeatStock}</span>
+              <span className="text-orange-300 font-pixel text-[9px] inline-flex items-center gap-1">
+                <PixelMeatIcon className="w-3.5 h-3.5" /> {pet.bigMeatStock}
+              </span>
               <span>•</span>
-              <span className="text-purple-300 font-pixel text-[9px]">💊 {pet.vitaminStock}</span>
+              <span className="text-purple-300 font-pixel text-[9px] inline-flex items-center gap-1">
+                <PixelVitaminIcon className="w-3.5 h-3.5" /> {pet.vitaminStock}
+              </span>
             </div>
           </div>
         </div>
@@ -807,17 +972,17 @@ export default function App() {
               setIsUpdateModalOpen(true);
             }}
             className={`relative p-1.5 rounded-xl border transition-colors cursor-pointer ${
-              hasUpdateAvailable
+              Capacitor.isNativePlatform() && hasUpdateAvailable
                 ? 'bg-amber-950/80 border-amber-500/70 text-amber-300 shadow-md shadow-amber-500/30'
                 : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-300'
             }`}
             title="App Updates & Auto-Updater"
           >
-            <Download className={`w-3.5 h-3.5 ${hasUpdateAvailable ? 'text-amber-400 animate-bounce' : 'text-cyan-400'}`} />
-            {hasUpdateAvailable && (
+            <Download className={`w-3.5 h-3.5 ${Capacitor.isNativePlatform() && hasUpdateAvailable ? 'text-amber-400 animate-bounce' : 'text-cyan-400'}`} />
+            {Capacitor.isNativePlatform() && hasUpdateAvailable && (
               <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-amber-400 rounded-full animate-ping" />
             )}
-            {hasUpdateAvailable && (
+            {Capacitor.isNativePlatform() && hasUpdateAvailable && (
               <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-amber-400 rounded-full border border-slate-950" />
             )}
           </button>
@@ -848,53 +1013,79 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* MAIN VIEWPORT: PURE MOBILE PORTRAIT LAYOUT */}
-      <main className="flex-1 flex flex-col items-center justify-start px-3 py-2 relative z-10 max-w-md mx-auto w-full pb-24">
+      {/* MAIN VIEWPORT: EDGE-TO-EDGE MOBILE & TABLET LAYOUT */}
+      <main className="flex-1 flex flex-col items-center justify-start px-0 py-2 relative z-10 max-w-2xl mx-auto w-full pb-24">
         
-        {/* Prominent Auto-Update Available Callout Banner */}
-        {hasUpdateAvailable && updateManifest && (
-          <motion.button
-            initial={{ scale: 0.95, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            whileTap={{ scale: 0.96 }}
-            onClick={() => {
-              sound.playButton();
-              setIsUpdateModalOpen(true);
-            }}
-            className="w-full mb-2 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-500 text-slate-950 py-2.5 px-3.5 rounded-2xl font-pixel text-xs font-bold shadow-lg shadow-amber-500/25 flex items-center justify-between cursor-pointer active:scale-98 border-2 border-amber-300"
-          >
-            <div className="flex items-center gap-2">
-              <Download className="w-4 h-4 text-slate-950 animate-bounce shrink-0" />
-              <span className="truncate">NEW UPDATE: v{updateManifest.versionName} AVAILABLE!</span>
-            </div>
-            <span className="bg-slate-950 text-amber-300 px-2.5 py-0.5 rounded-full text-[9px] shrink-0 font-bold border border-amber-400/50">
-              UPDATE NOW
-            </span>
-          </motion.button>
+        {/* Prominent Auto-Update Available Callout Banner (Native Android APK only — Web is always up-to-date) */}
+        {Capacitor.isNativePlatform() && hasUpdateAvailable && updateManifest && (
+          <div className="w-full px-2.5 sm:px-4">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              className="w-full mb-2 bg-gradient-to-r from-amber-500 via-orange-500 to-amber-500 text-slate-950 py-2 px-3 rounded-2xl font-pixel text-xs font-bold shadow-lg shadow-amber-500/25 flex items-center justify-between gap-2 border-2 border-amber-300"
+            >
+              <button
+                onClick={() => {
+                  sound.playButton();
+                  markUpdateNotified(updateManifest.versionName);
+                  setIsUpdateModalOpen(true);
+                }}
+                className="flex-1 min-w-0 flex items-center justify-between gap-2 cursor-pointer text-left"
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <Download className="w-4 h-4 text-slate-950 animate-bounce shrink-0" />
+                  <span className="truncate">NEW UPDATE: v{updateManifest.versionName} AVAILABLE!</span>
+                </div>
+                <span className="bg-slate-950 text-amber-300 px-2.5 py-0.5 rounded-full text-[9px] shrink-0 font-bold border border-amber-400/50">
+                  UPDATE NOW
+                </span>
+              </button>
+              {!updateManifest.isMandatory && (
+                <button
+                  onClick={() => {
+                    sound.playButton();
+                    dismissUpdateVersion(updateManifest.versionName);
+                    setHasUpdateAvailable(false);
+                  }}
+                  className="p-1 rounded-full hover:bg-slate-950/15 text-slate-950 shrink-0 cursor-pointer"
+                  aria-label="Dismiss update notification"
+                  title="Dismiss notification for this version"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </motion.div>
+          </div>
         )}
         
         {/* Prominent Evolution Ready Callout Banner */}
         {evolutionCheck.can && (
-          <motion.button
-            animate={{ scale: [1, 1.03, 1] }}
-            transition={{ repeat: Infinity, duration: 0.8 }}
-            onClick={() => {
-              triggerHaptic('success');
-              triggerEvolution();
-            }}
-            className="w-full mb-2.5 bg-gradient-to-r from-amber-400 via-orange-400 to-amber-300 text-slate-950 py-2.5 px-4 rounded-2xl font-pixel text-xs font-bold shadow-xl shadow-amber-500/30 border-2 border-amber-300 cursor-pointer flex items-center justify-center gap-2 active:scale-95 transition-transform"
-          >
-            <Sparkles className="w-4 h-4 text-slate-950 animate-spin" />
-            <span>⚡ DIGIVOLUTION READY! (TAP TO EVOLVE) ⚡</span>
-          </motion.button>
+          <div className="w-full px-2.5 sm:px-4">
+            <motion.button
+              animate={{ scale: [1, 1.03, 1] }}
+              transition={{ repeat: Infinity, duration: 0.8 }}
+              onClick={() => {
+                triggerHaptic('success');
+                triggerEvolution();
+              }}
+              className="w-full mb-2.5 bg-gradient-to-r from-amber-400 via-orange-400 to-amber-300 text-slate-950 py-2.5 px-4 rounded-2xl font-pixel text-xs font-bold shadow-xl shadow-amber-500/30 border-2 border-amber-300 cursor-pointer flex items-center justify-center gap-2 active:scale-95 transition-transform"
+            >
+              <Sparkles className="w-4 h-4 text-slate-950 animate-spin" />
+              <span>
+                {evoTiming.remainingMs > 0
+                  ? `⚡ DIGIVOLVING IN ${Math.ceil(evoTiming.remainingMs / 1000)}S (OR TAP NOW!) ⚡`
+                  : '⚡ DIGIVOLUTION READY! (TAP TO EVOLVE) ⚡'}
+              </span>
+            </motion.button>
+          </div>
         )}
 
         {/* Mobile Vitals Dashboard Bar */}
-        <div className="w-full grid grid-cols-4 gap-1.5 mb-2.5 text-[9px] font-pixel">
+        <div className="w-full px-2.5 sm:px-4 grid grid-cols-4 gap-1.5 mb-2.5 text-[9px] font-pixel">
           {/* Hunger */}
           <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-1.5 flex flex-col items-center">
             <div className="flex items-center gap-1 text-amber-300">
-              <span>🍖</span>
+              <PixelMeatIcon className="w-3.5 h-3.5" />
               <span>{pet.hunger}%</span>
             </div>
             <div className="w-full bg-slate-800 rounded-full h-1 mt-1 overflow-hidden">
@@ -936,7 +1127,7 @@ export default function App() {
           </div>
         </div>
 
-        {/* 1997 Digivice Hardware Shell */}
+        {/* 1997 Digivice Hardware Shell (Edge-to-Edge) */}
         <DigiviceHUD
           pet={pet}
           species={currentSpecies}
@@ -955,19 +1146,20 @@ export default function App() {
           onEvolveTrigger={() => triggerEvolution()}
           onResetEgg={() => setIsEggModalOpen(true)}
           canEvolve={evolutionCheck.can}
+          externalAction={hudAction}
         />
 
         {/* Quick Care Actions Ribbon */}
-        <div className="w-full grid grid-cols-2 gap-2 mt-3">
+        <div className="w-full px-2.5 sm:px-4 grid grid-cols-3 gap-2 mt-3">
           <button
             onClick={() => {
               handleFeedMeat();
               triggerHaptic('heavy');
             }}
-            className="py-2.5 px-3 bg-slate-900/90 hover:bg-slate-800 border border-amber-500/40 rounded-2xl flex items-center justify-center gap-2 font-pixel text-[11px] text-amber-300 shadow-md active:scale-95 transition-all cursor-pointer"
+            className="py-2.5 px-2 bg-slate-900/90 hover:bg-slate-800 border border-amber-500/40 rounded-2xl flex items-center justify-center gap-1.5 font-pixel text-[10px] text-amber-300 shadow-md active:scale-95 transition-all cursor-pointer"
           >
-            <span className="text-base">🍖</span>
-            <span>FEED MEAT ({pet.bigMeatStock})</span>
+            <PixelMeatIcon className="w-5 h-5" />
+            <span className="truncate">MEAT ({pet.bigMeatStock})</span>
           </button>
 
           <button
@@ -975,16 +1167,28 @@ export default function App() {
               handleGiveVitamin();
               triggerHaptic('heavy');
             }}
-            className="py-2.5 px-3 bg-slate-900/90 hover:bg-slate-800 border border-purple-500/40 rounded-2xl flex items-center justify-center gap-2 font-pixel text-[11px] text-purple-300 shadow-md active:scale-95 transition-all cursor-pointer"
+            className="py-2.5 px-2 bg-slate-900/90 hover:bg-slate-800 border border-purple-500/40 rounded-2xl flex items-center justify-center gap-1.5 font-pixel text-[10px] text-purple-300 shadow-md active:scale-95 transition-all cursor-pointer"
           >
-            <span className="text-base">💊</span>
-            <span>VITAMIN ({pet.vitaminStock})</span>
+            <PixelVitaminIcon className="w-5 h-5" />
+            <span className="truncate">VIT ({pet.vitaminStock})</span>
+          </button>
+
+          <button
+            onClick={() => {
+              sound.playButton();
+              triggerHaptic('light');
+              setIsTalkModalOpen(true);
+            }}
+            className="py-2.5 px-2 bg-slate-900/90 hover:bg-slate-800 border border-cyan-500/40 rounded-2xl flex items-center justify-center gap-1.5 font-pixel text-[10px] text-cyan-300 shadow-md active:scale-95 transition-all cursor-pointer"
+          >
+            <MessageSquare className="w-4 h-4 text-cyan-400 shrink-0" />
+            <span className="truncate">TALK</span>
           </button>
         </div>
 
         {/* Poop cleaning / Sickness urgent alerts */}
         {(pet.poopCount > 0 || pet.isSick) && (
-          <div className="w-full flex gap-2 mt-2">
+          <div className="w-full px-2.5 sm:px-4 flex gap-2 mt-2">
             {pet.poopCount > 0 && (
               <button
                 onClick={() => {
@@ -993,7 +1197,7 @@ export default function App() {
                 }}
                 className="flex-1 py-2 px-3 bg-amber-950/70 border border-amber-500 rounded-xl flex items-center justify-center gap-1.5 font-pixel text-[10px] text-amber-200 animate-pulse active:scale-95 cursor-pointer"
               >
-                <span>💩</span>
+                <PixelPoopIcon className="w-4 h-4" />
                 <span>FLUSH {pet.poopCount} POOP(S)</span>
               </button>
             )}
@@ -1034,7 +1238,7 @@ export default function App() {
               <div className="w-12 h-1 bg-slate-700 rounded-full mx-auto mb-3" />
               <div className="flex items-center justify-between mb-3">
                 <h3 className="font-pixel text-xs text-amber-300 flex items-center gap-1.5">
-                  <span>🍖</span>
+                  <PixelMeatIcon className="w-4 h-4" />
                   <span>DIGIPET CARE CENTER</span>
                 </h3>
                 <button
@@ -1053,7 +1257,7 @@ export default function App() {
                   }}
                   className="p-3 bg-slate-800 hover:bg-amber-950/60 border border-amber-500/40 rounded-2xl flex flex-col items-center gap-1 text-amber-300 active:scale-95 transition-all cursor-pointer"
                 >
-                  <span className="text-2xl">🍖</span>
+                  <PixelMeatIcon className="w-7 h-7" />
                   <span>FEED MEAT</span>
                   <span className="text-[9px] text-slate-400">Stock: {pet.bigMeatStock}</span>
                 </button>
@@ -1065,7 +1269,7 @@ export default function App() {
                   }}
                   className="p-3 bg-slate-800 hover:bg-purple-950/60 border border-purple-500/40 rounded-2xl flex flex-col items-center gap-1 text-purple-300 active:scale-95 transition-all cursor-pointer"
                 >
-                  <span className="text-2xl">💊</span>
+                  <PixelVitaminIcon className="w-7 h-7" />
                   <span>GIVE VITAMIN</span>
                   <span className="text-[9px] text-slate-400">Stock: {pet.vitaminStock}</span>
                 </button>
@@ -1074,10 +1278,11 @@ export default function App() {
                   onClick={() => {
                     handleCleanPoop();
                     triggerHaptic('medium');
+                    setIsCareSheetOpen(false);
                   }}
                   className="p-3 bg-slate-800 hover:bg-slate-700 border border-amber-500/40 rounded-2xl flex flex-col items-center gap-1 text-amber-300 active:scale-95 transition-all cursor-pointer"
                 >
-                  <span className="text-2xl">💩</span>
+                  <PixelPoopIcon className="w-7 h-7" />
                   <span>FLUSH POOP</span>
                   <span className="text-[9px] text-slate-400">{pet.poopCount > 0 ? `${pet.poopCount} on screen` : 'Clean!'}</span>
                 </button>
@@ -1188,7 +1393,7 @@ export default function App() {
                   }}
                   className="p-3 bg-slate-800 hover:bg-amber-950/60 border border-amber-500/40 rounded-2xl flex items-center gap-2.5 text-amber-300 cursor-pointer"
                 >
-                  <span className="text-xl shrink-0">🍖</span>
+                  <PixelMeatIcon className="w-5 h-5" />
                   <span className="truncate">MEAT CATCH GAME</span>
                 </button>
 
@@ -1240,7 +1445,7 @@ export default function App() {
                 >
                   <Download className="w-5 h-5 text-amber-400 shrink-0" />
                   <span className="truncate">AUTO UPDATER</span>
-                  {hasUpdateAvailable && (
+                  {Capacitor.isNativePlatform() && hasUpdateAvailable && (
                     <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-amber-400 animate-ping" />
                   )}
                 </button>
@@ -1255,6 +1460,20 @@ export default function App() {
                 >
                   <Smartphone className="w-5 h-5 text-emerald-400 shrink-0" />
                   <span className="truncate">INSTALL APK</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    sound.playButton();
+                    setIsMoreSheetOpen(false);
+                    setIsGridModalOpen(true);
+                  }}
+                  className="p-3 bg-slate-800 hover:bg-cyan-950/60 border border-cyan-500/40 rounded-2xl flex items-center gap-2.5 text-cyan-300 cursor-pointer relative"
+                >
+                  <SlidersHorizontal className="w-5 h-5 text-cyan-400 shrink-0" />
+                  <span className="truncate text-xs">
+                    GRID LINES{isGridCustom ? ' • CUSTOM' : ''}
+                  </span>
                 </button>
 
                 <button
@@ -1314,7 +1533,7 @@ export default function App() {
               isCareSheetOpen ? 'bg-amber-950/80 text-amber-300 ring-1 ring-amber-400' : 'text-amber-400 hover:bg-slate-800'
             }`}
           >
-            <span className="text-lg">🍖</span>
+            <PixelMeatIcon className="w-5 h-5" />
             <span className="font-pixel text-[8px] mt-0.5">CARE</span>
             {(pet.poopCount > 0 || pet.isSick) && (
               <span className="absolute top-0 right-1 w-2 h-2 rounded-full bg-rose-500 animate-ping" />
@@ -1471,10 +1690,22 @@ export default function App() {
         species={currentSpecies}
         isOpen={isNativePipOpen}
         onClose={() => setIsNativePipOpen(false)}
+        onOpenGridAlignment={() => {
+          setIsNativePipOpen(false);
+          setIsGridModalOpen(true);
+        }}
         onStartInAppOverlay={() => {
           setIsOverlayMode(true);
           showNotification(`✨ ${currentSpecies?.name || 'Digimon'} is now roaming on screen! Drag to move.`);
         }}
+      />
+
+      <GridAlignmentModal
+        isOpen={isGridModalOpen}
+        onClose={() => setIsGridModalOpen(false)}
+        pet={pet}
+        species={currentSpecies}
+        onNotify={showNotification}
       />
 
       <DigiChat
@@ -1482,6 +1713,14 @@ export default function App() {
         species={currentSpecies}
         isOpen={isChatOpen}
         onClose={() => setIsChatOpen(false)}
+      />
+
+      <DigimonTalkModal
+        pet={pet}
+        species={currentSpecies}
+        egg={pet.stage === 'egg' ? currentEgg : undefined}
+        isOpen={isTalkModalOpen}
+        onClose={() => setIsTalkModalOpen(false)}
       />
 
       <EvolutionModal
@@ -1501,7 +1740,26 @@ export default function App() {
         isOpen={isUpdateModalOpen}
         onClose={() => setIsUpdateModalOpen(false)}
         initialManifest={updateManifest}
-        onUpdateDownloaded={() => setHasUpdateAvailable(false)}
+        onUpdateDownloaded={() => {
+          if (updateManifest?.versionName) {
+            markUpdateNotified(updateManifest.versionName);
+          }
+          setHasUpdateAvailable(false);
+        }}
+        onCheckComplete={(res: UpdateCheckResult) => {
+          setUpdateManifest(res.manifest);
+          setHasUpdateAvailable(Boolean(res.updateAvailable && res.manifest && res.shouldShowBanner));
+        }}
+        onSaveRestored={() => {
+          try {
+            const saved = localStorage.getItem(STORAGE_KEY);
+            if (saved) {
+              const parsed = JSON.parse(saved);
+              setPet(parsed);
+              showNotification(`Restored ${parsed.nickname || 'Digimon'} save successfully!`);
+            }
+          } catch {}
+        }}
       />
 
     </div>

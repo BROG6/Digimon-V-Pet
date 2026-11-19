@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { PetState, DigimonSpecies } from '../types/digimon';
 import { sound } from '../utils/audio';
-import { ExternalLink, Sparkles, AlertCircle, Smartphone, Zap, X, ShieldCheck, CheckCircle2, Play } from 'lucide-react';
+import { ExternalLink, Sparkles, AlertCircle, Smartphone, Zap, X, ShieldCheck, CheckCircle2, LayoutGrid, SlidersHorizontal } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
 import { 
   checkOverlayPermission, 
@@ -12,8 +12,19 @@ import {
 } from '../utils/nativeOverlay';
 import { getEffectiveSpriteConfig } from '../utils/customSpriteManager';
 import { DigimonSpriteConfig, SpriteFrame } from '../utils/newDigimonSprites';
-import { HELLOPET_QUOTES } from '../data/digidex';
-import { getPersonalityProfile } from '../utils/digimonPersonality';
+import {
+  GridLayoutPresetId,
+  GRID_LAYOUT_PRESETS,
+  GRID_RATIOS_CHANGED_EVENT,
+  getSavedGridPreset,
+  setSavedGridPreset,
+  getGridRowRatios,
+  isFlyingSpecies,
+  computeSurfaceRowYs,
+  computeParabolicJumpPoint,
+  stepWaypointFlight,
+} from '../utils/petOverlayEngine';
+import { buildNativeOverlayPayload } from '../utils/evolutionEngine';
 
 interface NativePipOverlayProps {
   pet: PetState;
@@ -21,6 +32,7 @@ interface NativePipOverlayProps {
   isOpen: boolean;
   onClose: () => void;
   onStartInAppOverlay?: () => void;
+  onOpenGridAlignment?: () => void;
 }
 
 export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
@@ -29,6 +41,7 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
   isOpen,
   onClose,
   onStartInAppOverlay,
+  onOpenGridAlignment,
 }) => {
   const [isPipActive, setIsPipActive] = useState<boolean>(false);
   const [wakeLockActive, setWakeLockActive] = useState<boolean>(false);
@@ -36,6 +49,10 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
   const [isImgLoaded, setIsImgLoaded] = useState<boolean>(false);
   const [hasAndroidPermission, setHasAndroidPermission] = useState<boolean | null>(null);
   const [isCheckingPerm, setIsCheckingPerm] = useState<boolean>(false);
+  const [gridPreset, setGridPreset] = useState<GridLayoutPresetId>(() => getSavedGridPreset());
+  const [gridRevision, setGridRevision] = useState<number>(0);
+
+  const isFlying = isFlyingSpecies(species);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -151,14 +168,23 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
     };
   }, [isOpen]);
 
-  // Re-check permission when window regains focus (e.g. user returned from Android Settings)
+  // Re-check permission and sync grid preset/ratios when window regains focus or grid changes
   useEffect(() => {
     if (!isOpen) return;
+    setGridPreset(getSavedGridPreset());
     const handleFocus = () => {
       checkPermStatus();
     };
+    const handleGridChange = () => {
+      setGridPreset(getSavedGridPreset());
+      setGridRevision((v) => v + 1);
+    };
     window.addEventListener('focus', handleFocus);
-    return () => window.removeEventListener('focus', handleFocus);
+    window.addEventListener(GRID_RATIOS_CHANGED_EVENT, handleGridChange);
+    return () => {
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener(GRID_RATIOS_CHANGED_EVENT, handleGridChange);
+    };
   }, [isOpen]);
 
   // Canvas drawing loop for Video PiP fallback
@@ -178,8 +204,21 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
 
     let isCancelled = false;
     let frame = 0;
-    let xPos = 40;
+    const rowRatios = getGridRowRatios(gridPreset);
+    const previewRowYs = computeSurfaceRowYs(canvas.height, rowRatios);
+    let currentRow = Math.max(0, previewRowYs.length - 1);
+    let xPos = 60;
+    let yPos = isFlying ? canvas.height * 0.45 : (previewRowYs[currentRow] || canvas.height - 24);
+    let targetX = canvas.width - 60;
+    let targetY = yPos;
     let dir = 1;
+    let mode: 'walk' | 'jump' | 'fly' = isFlying ? 'fly' : 'walk';
+    let jumpStartX = xPos;
+    let jumpStartY = yPos;
+    let jumpEndX = xPos;
+    let jumpEndY = yPos;
+    let jumpTargetRow = currentRow;
+    let jumpProgress = 0;
 
     const renderLoop = () => {
       if (isCancelled) return;
@@ -209,32 +248,73 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
           ctx.stroke();
         }
 
+        // Draw surface row shelves for grounded platforming
+        if (!isFlying) {
+          previewRowYs.forEach((ry, idx) => {
+            const isDock = idx === previewRowYs.length - 1;
+            ctx.strokeStyle = isDock ? '#22c55e' : 'rgba(56, 189, 248, 0.28)';
+            ctx.lineWidth = isDock ? 2 : 1;
+            ctx.beginPath();
+            ctx.moveTo(12, ry);
+            ctx.lineTo(canvas.width - 12, ry);
+            ctx.stroke();
+          });
+        }
+
         // Title header
         ctx.fillStyle = '#38bdf8';
-        ctx.font = 'bold 12px monospace';
+        ctx.font = 'bold 11px monospace';
         ctx.textAlign = 'center';
-        ctx.fillText(species?.name ? species.name.toUpperCase() : 'DIGIMON COMPANION', canvas.width / 2, 20);
+        ctx.fillText(species?.name ? species.name.toUpperCase() : 'DIGIMON COMPANION', canvas.width / 2, 16);
 
-        // Status HUD
-        ctx.fillStyle = '#94a3b8';
-        ctx.font = '10px monospace';
-        ctx.fillText(`♥ H:${pet?.hunger ?? 80}%  ⚡ E:${pet?.energy ?? 80}%  ★ STR:${pet?.strength ?? 20}`, canvas.width / 2, 36);
+        // Update preview physics state
+        if (isFlying) {
+          const step = stepWaypointFlight(xPos, yPos, targetX, targetY, 1.35);
+          xPos = step.x;
+          yPos = step.y;
+          dir = step.dx >= 0 ? 1 : -1;
+          if (step.arrived) {
+            targetX = 36 + Math.random() * (canvas.width - 72);
+            targetY = 54 + Math.random() * (canvas.height - 84);
+          }
+        } else if (mode === 'jump') {
+          jumpProgress += 0.045;
+          if (jumpProgress >= 1) {
+            xPos = jumpEndX;
+            yPos = jumpEndY;
+            currentRow = jumpTargetRow;
+            mode = 'walk';
+            targetX = xPos < canvas.width / 2 ? canvas.width - 44 : 44;
+          } else {
+            const pt = computeParabolicJumpPoint(jumpStartX, jumpStartY, jumpEndX, jumpEndY, jumpProgress, 26);
+            xPos = pt.x;
+            yPos = pt.y;
+          }
+        } else {
+          const walkSpeed = 1.05;
+          const dx = targetX - xPos;
+          dir = dx >= 0 ? 1 : -1;
+          if (Math.abs(dx) <= walkSpeed) {
+            xPos = targetX;
+            if (previewRowYs.length > 1 && Math.random() < 0.65) {
+              jumpTargetRow = currentRow === 0 ? 1 : currentRow === previewRowYs.length - 1 ? currentRow - 1 : (Math.random() < 0.5 ? currentRow - 1 : currentRow + 1);
+              jumpStartX = xPos;
+              jumpStartY = previewRowYs[currentRow];
+              jumpEndX = 44 + Math.random() * (canvas.width - 88);
+              jumpEndY = previewRowYs[jumpTargetRow];
+              jumpProgress = 0;
+              dir = jumpEndX >= jumpStartX ? 1 : -1;
+              mode = 'jump';
+            } else {
+              targetX = xPos < canvas.width / 2 ? canvas.width - 44 : 44;
+            }
+          } else {
+            xPos += dir * walkSpeed;
+          }
+          yPos = previewRowYs[currentRow] || canvas.height - 24;
+        }
 
-        // Ground baseline line
-        const floorY = canvas.height - 32;
-        ctx.strokeStyle = '#22c55e';
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(8, floorY);
-        ctx.lineTo(canvas.width - 8, floorY);
-        ctx.stroke();
-
-        // Walking motion
-        const walkSpeed = 0.5;
-        xPos += walkSpeed * dir;
-        if (xPos > canvas.width - 50) dir = -1;
-        if (xPos < 50) dir = 1;
-
+        const floorY = yPos;
         const config = configRef.current;
         const spriteImg = spriteImageRef.current;
 
@@ -244,7 +324,11 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
           ? config.frames.standing
           : [{ x: 0, y: 0, w: 32, h: 32 }];
 
-        const frameIndex = Math.floor(frame / 12) % Math.max(1, walkFrames.length);
+        const renderScale = 1.43;
+        const usesSharedStage = Boolean(config?.stageWidth && config?.stageHeight);
+        const frameIndex = usesSharedStage
+          ? Math.floor(performance.now() / 62.5) % Math.max(1, walkFrames.length)
+          : Math.floor(frame / 12) % Math.max(1, walkFrames.length);
         const currentFrame = walkFrames[frameIndex] || walkFrames[0] || { x: 0, y: 0, w: 32, h: 32 };
 
         const srcX = currentFrame.x || 0;
@@ -252,13 +336,23 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
         const srcW = Math.max(1, currentFrame.w || 32);
         const srcH = Math.max(1, currentFrame.h || 32);
 
-        const renderScale = 1.3;
         const destW = srcW * renderScale;
         const destH = srcH * renderScale;
 
-        const totalGroundOffset = (((currentFrame.offsetY || 0) + (config?.groundOffset || 0)) * renderScale) || 0;
-        const destY = floorY - destH - totalGroundOffset;
-        const destX = xPos - destW / 2;
+        let destX: number;
+        let destY: number;
+        if (usesSharedStage) {
+          const stageW = (config!.stageWidth || srcW) * renderScale;
+          const stageH = (config!.stageHeight || srcH) * renderScale;
+          const stageLeft = xPos - stageW / 2;
+          const stageTop = floorY - stageH;
+          destX = stageLeft + (currentFrame.offsetX || 0) * renderScale;
+          destY = stageTop + ((currentFrame.offsetY || 0) + (config?.groundOffset || 0)) * renderScale;
+        } else {
+          const totalGroundOffset = (((currentFrame.offsetY || 0) + (config?.groundOffset || 0)) * renderScale) || 0;
+          destY = floorY - destH - totalGroundOffset;
+          destX = xPos - destW / 2;
+        }
 
         // Ground shadow beneath feet (safe ellipse / arc fallback)
         ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
@@ -320,7 +414,7 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
       isCancelled = true;
       cancelAnimationFrame(animFrameRef.current);
     };
-  }, [isOpen, pet, species, isImgLoaded]);
+  }, [isOpen, pet, species, isImgLoaded, gridPreset, gridRevision, isFlying]);
 
   if (!isOpen) return null;
 
@@ -346,36 +440,13 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
           return;
         }
 
-        const config = configRef.current;
-        const standingFrames = config?.frames?.standing || [];
-        const walkingFrames = config?.frames?.walking || standingFrames;
-        const activeFrame = walkingFrames[0] || standingFrames[0] || { x: 2, y: 2, w: 48, h: 48 };
-
-        const profile = getPersonalityProfile(species?.id);
-        const speciesQuotes = [
-          ...profile.catchphrases,
-          ...profile.idleQuotes,
-          ...profile.happyQuotes,
-          ...profile.hungryQuotes,
-          ...profile.battleQuotes,
-          ...HELLOPET_QUOTES,
-        ];
-
-        const ok = await startNativeFloatingOverlay({
-          speciesName: species?.name || 'Digimon',
-          spriteUrl: config?.sheetPath || '/assets/aistudio/Copy_of_Agumon_Adventure_04d0832a.png',
-          sheetWidth: config?.sheetWidth || 200,
-          sheetHeight: config?.sheetHeight || 200,
-          groundOffset: config?.groundOffset || 0,
-          frameX: activeFrame.x || 0,
-          frameY: activeFrame.y || 0,
-          frameW: activeFrame.w || 48,
-          frameH: activeFrame.h || 48,
-          frameRotate: activeFrame.rotate || 0,
-          standingFramesJson: JSON.stringify(standingFrames),
-          walkingFramesJson: JSON.stringify(walkingFrames),
-          quotesJson: JSON.stringify(speciesQuotes),
-        });
+        const ok = await startNativeFloatingOverlay(
+          buildNativeOverlayPayload({
+            pet,
+            species,
+            presetId: gridPreset,
+          })
+        );
 
         if (ok) {
           setIsPipActive(true);
@@ -424,7 +495,7 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
           <div style="width: 80px; height: 80px; display: flex; align-items: center; justify-content: center; position: relative; margin: 4px 0;">
             ${
               spriteSrc && walkFrame0
-                ? `<div style="width: ${walkFrame0.w}px; height: ${walkFrame0.h}px; background-image: url('${spriteSrc}'); background-position: -${walkFrame0.x}px -${walkFrame0.y}px; background-repeat: no-repeat; image-rendering: pixelated; transform: scale(1.4); transform-origin: center;"></div>`
+                ? `<div style="width: ${walkFrame0.w}px; height: ${walkFrame0.h}px; background-image: url('${spriteSrc}'); background-position: -${walkFrame0.x}px -${walkFrame0.y}px; background-repeat: no-repeat; image-rendering: pixelated; transform: scale(1.54); transform-origin: center;"></div>`
                 : `<div style="font-size: 40px;">👾</div>`
             }
           </div>
@@ -615,6 +686,70 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
               <span>✨ FLOAT PET ON THIS SCREEN (IN-APP MODE)</span>
             </button>
           )}
+
+          {/* Launcher Surface Grid & Navigation Mode Selector */}
+          <div className="p-3.5 bg-slate-950/90 border border-slate-800 rounded-2xl space-y-2.5">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2 text-cyan-300 font-chakra font-bold text-xs">
+                <LayoutGrid className="w-4 h-4 text-cyan-400" />
+                <span>LAUNCHER GRID NAVIGATION</span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                {onOpenGridAlignment && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      sound.playButton();
+                      onOpenGridAlignment();
+                    }}
+                    className="text-[9px] font-pixel px-2 py-0.5 rounded-full bg-amber-500/20 hover:bg-amber-500/35 text-amber-200 border border-amber-400/40 flex items-center gap-1 cursor-pointer"
+                  >
+                    <SlidersHorizontal className="w-2.5 h-2.5" />
+                    <span>ADJUST</span>
+                  </button>
+                )}
+                <span className="text-[9px] font-pixel px-2 py-0.5 rounded-full bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">
+                  {isFlying ? '360° FLIGHT' : 'GRID'}
+                </span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-3 gap-1.5">
+              {(Object.keys(GRID_LAYOUT_PRESETS) as GridLayoutPresetId[]).map((presetId) => {
+                const preset = GRID_LAYOUT_PRESETS[presetId];
+                const selected = gridPreset === presetId;
+                const shortTitle =
+                  presetId === 'asus-4row'
+                    ? '4-Row + Dock'
+                    : presetId === 'compact-5row'
+                    ? '5-Row + Dock'
+                    : 'Dock Only';
+                return (
+                  <button
+                    key={presetId}
+                    onClick={() => {
+                      sound.playButton();
+                      setSavedGridPreset(presetId);
+                      setGridPreset(presetId);
+                    }}
+                    className={`py-2 px-2 rounded-xl font-pixel text-[9px] border transition-all cursor-pointer ${
+                      selected
+                        ? 'bg-cyan-500/20 text-cyan-200 border-cyan-400 shadow-sm shadow-cyan-500/20'
+                        : 'bg-slate-900 hover:bg-slate-800 text-slate-400 border-slate-800'
+                    }`}
+                    title={preset.description}
+                  >
+                    {shortTitle}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-[11px] text-slate-400 leading-snug">
+              {isFlying
+                ? `${species?.name || 'Your partner'} flies freely across the full display and periodically ventures off-screen to forage.`
+                : `${GRID_LAYOUT_PRESETS[gridPreset].description}. Grounded pets jump between icon rows and wander off-screen to forage.`}
+            </p>
+          </div>
 
           {errorMsg && (
             <div className="p-3 bg-amber-500/20 border border-amber-500/40 rounded-xl text-amber-200 text-xs flex items-center gap-2">

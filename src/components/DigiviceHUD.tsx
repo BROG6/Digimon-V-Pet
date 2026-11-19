@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { PetState, DigimonSpecies, DigiEggInfo } from '../types/digimon';
 import { DigimonSprite, DigimonPose } from './DigimonSprite';
+import { PixelMeatIcon, PixelVitaminIcon, PixelPoopIcon } from './PixelItemIcons';
 import { sound } from '../utils/audio';
 import { 
   Heart, 
@@ -37,6 +38,7 @@ interface DigiviceHUDProps {
   onEvolveTrigger?: () => void;
   onResetEgg?: () => void;
   canEvolve: boolean;
+  externalAction?: { pose: DigimonPose | 'flushing'; nonce: number; eatItem?: 'meat' | 'vitamin' } | null;
 }
 
 // Authentic Bandai 1997 / Digimon Color Toy Shell Colorways (Original Photo & Releases)
@@ -158,6 +160,7 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
   onEvolveTrigger,
   onResetEgg,
   canEvolve,
+  externalAction,
 }) => {
   const [shellIndex, setShellIndex] = useState<number>(0);
   const [selectedMenuIdx, setSelectedMenuIdx] = useState<number>(0);
@@ -174,10 +177,53 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
   const nextEvo = species?.nextEvolutions && species.nextEvolutions.length > 0 ? species.nextEvolutions[0] : null;
 
   // AUTONOMOUS MOVEMENT ENGINE INSIDE LCD SCREEN
-  const [monX, setMonX] = useState<number>(50); // percentage 20% to 80%
+  const [monX, setMonX] = useState<number>(50); // percentage 15% to 85%
   const [facing, setFacing] = useState<'left' | 'right'>('right');
   const [internalPose, setInternalPose] = useState<DigimonPose>('standing');
+  const [activeEatItem, setActiveEatItem] = useState<'meat' | 'vitamin'>('meat');
+  const [isFlushing, setIsFlushing] = useState<boolean>(false);
+  const [flushKey, setFlushKey] = useState<number>(0);
+  const [flushedPoopCount, setFlushedPoopCount] = useState<number>(0);
+  const prevPoopCountRef = useRef<number>(pet.poopCount);
   const isMovingRef = useRef<boolean>(false);
+  const isActionLockedRef = useRef<boolean>(false);
+  const actionTimersRef = useRef<number[]>([]);
+
+  useEffect(() => {
+    if (pet.poopCount > 0) {
+      prevPoopCountRef.current = pet.poopCount;
+    }
+  }, [pet.poopCount]);
+
+  // PROPORTIONAL UNIFORM SCALING (Preserves authentic 1997 brick aspect ratio until hitting edges)
+  const BASE_WIDTH = 400;
+  const BASE_HEIGHT = 256;
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [hudScale, setHudScale] = useState<number>(1);
+
+  useEffect(() => {
+    const updateScale = () => {
+      const containerW = containerRef.current?.clientWidth || (typeof window !== 'undefined' ? window.innerWidth : BASE_WIDTH);
+      const winH = typeof window !== 'undefined' ? window.innerHeight : 800;
+      const availH = Math.max(210, winH - 375);
+      const scaleByW = containerW / BASE_WIDTH;
+      const scaleByH = availH / BASE_HEIGHT;
+      const nextScale = Math.max(0.75, Math.min(scaleByW, scaleByH));
+      setHudScale(Number(nextScale.toFixed(4)));
+    };
+
+    updateScale();
+    let ro: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined' && containerRef.current) {
+      ro = new ResizeObserver(updateScale);
+      ro.observe(containerRef.current);
+    }
+    window.addEventListener('resize', updateScale);
+    return () => {
+      window.removeEventListener('resize', updateScale);
+      ro?.disconnect();
+    };
+  }, []);
 
   // Active shell theme
   const currentShell = SHELL_STYLES[shellIndex];
@@ -227,30 +273,36 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
       setInternalPose('sleeping');
       return;
     }
-    if (pet.isSick) {
+    if (pet.isSick && !isActionLockedRef.current) {
       setInternalPose('sick');
       return;
     }
     if (activeSubMenu !== 'screen') return;
 
     const moveInterval = setInterval(() => {
-      if (isMovingRef.current) return;
+      if (isMovingRef.current || isActionLockedRef.current) return;
 
       const roll = Math.random();
       if (roll < 0.45) {
-        // Walk across the screen
-        const targetX = Math.random() < 0.5 ? Math.max(18, monX - 25) : Math.min(82, monX + 25);
+        // Walk widely across the expanded LCD screen (15% to 85%)
+        const goLeft = monX > 72 ? true : monX < 28 ? false : Math.random() < 0.5;
+        const step = 22 + Math.random() * 26;
+        const targetX = goLeft
+          ? Math.max(15, Math.round(monX - step))
+          : Math.min(85, Math.round(monX + step));
         const newFacing = targetX > monX ? 'right' : 'left';
         setFacing(newFacing);
         setInternalPose('walking');
         isMovingRef.current = true;
 
         setTimeout(() => {
-          setMonX(targetX);
+          if (!isActionLockedRef.current) setMonX(targetX);
         }, 100);
 
         setTimeout(() => {
-          setInternalPose(Math.random() < 0.3 ? 'sitting' : 'standing');
+          if (!isActionLockedRef.current) {
+            setInternalPose(Math.random() < 0.3 ? 'sitting' : 'standing');
+          }
           isMovingRef.current = false;
         }, 1800);
       } else if (roll < 0.75) {
@@ -261,7 +313,7 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
         // Cute happy jump
         setInternalPose('happy');
         setTimeout(() => {
-          setInternalPose('standing');
+          if (!isActionLockedRef.current) setInternalPose('standing');
         }, 1400);
       }
     }, 4200);
@@ -296,30 +348,86 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
     }
   };
 
+  const playPoseSequence = (pose: DigimonPose | 'flushing', eatItem: 'meat' | 'vitamin' = 'meat') => {
+    actionTimersRef.current.forEach((t) => clearTimeout(t));
+    actionTimersRef.current = [];
+    isActionLockedRef.current = true;
+    isMovingRef.current = true;
+    setActiveSubMenu('screen');
+
+    if (pose === 'flushing') {
+      const poopBeforeFlush = Math.max(pet.poopCount, prevPoopCountRef.current);
+      setFlushedPoopCount(poopBeforeFlush);
+      setIsFlushing(true);
+      setFlushKey((k) => k + 1);
+      setInternalPose('standing');
+
+      const t1 = window.setTimeout(() => {
+        setIsFlushing(false);
+        setFlushedPoopCount(0);
+        prevPoopCountRef.current = 0;
+        setInternalPose('happy');
+        const t2 = window.setTimeout(() => {
+          isActionLockedRef.current = false;
+          isMovingRef.current = false;
+          setInternalPose(pet.isSleeping || pet.lightsOff ? 'sleeping' : pet.isSick ? 'sick' : 'standing');
+        }, 900);
+        actionTimersRef.current.push(t2);
+      }, 880);
+      actionTimersRef.current.push(t1);
+    } else if (pose === 'eating') {
+      // Center Digimon inside LCD facing right so the meat prop is never clipped at screen edge
+      setMonX(46);
+      setFacing('right');
+      setActiveEatItem(eatItem);
+      setInternalPose('eating');
+
+      const t1 = window.setTimeout(() => {
+        setInternalPose('happy');
+        const t2 = window.setTimeout(() => {
+          isActionLockedRef.current = false;
+          isMovingRef.current = false;
+          setInternalPose(pet.isSleeping || pet.lightsOff ? 'sleeping' : pet.isSick ? 'sick' : 'standing');
+        }, 1150);
+        actionTimersRef.current.push(t2);
+      }, 1750);
+      actionTimersRef.current.push(t1);
+    } else {
+      setInternalPose(pose);
+      const t1 = window.setTimeout(() => {
+        isActionLockedRef.current = false;
+        isMovingRef.current = false;
+        setInternalPose(pet.isSleeping || pet.lightsOff ? 'sleeping' : pet.isSick ? 'sick' : 'standing');
+      }, 1400);
+      actionTimersRef.current.push(t1);
+    }
+  };
+
+  useEffect(() => {
+    if (externalAction?.nonce) {
+      playPoseSequence(externalAction.pose, externalAction.eatItem || 'meat');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [externalAction?.nonce]);
+
+  useEffect(() => {
+    return () => {
+      actionTimersRef.current.forEach((t) => clearTimeout(t));
+    };
+  }, []);
+
   // Trigger animations
   const triggerFeedMeatAnimation = () => {
-    setInternalPose('eating');
     onFeedMeat();
-    setTimeout(() => {
-      setInternalPose('happy');
-      setTimeout(() => setInternalPose('standing'), 1200);
-    }, 1500);
   };
 
   const triggerFeedVitaminAnimation = () => {
-    setInternalPose('eating');
     onGiveVitamin();
-    setTimeout(() => {
-      setInternalPose('happy');
-      setTimeout(() => setInternalPose('standing'), 1200);
-    }, 1500);
   };
 
   const triggerPoopClean = () => {
     sound.playClean();
-    setInternalPose('happy');
     onCleanPoop();
-    setTimeout(() => setInternalPose('standing'), 1500);
   };
 
   const handleKeychainJingle = () => {
@@ -333,10 +441,10 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
   const screenBorderColor = isLightsOff ? 'border-[#22c55e]/50' : 'border-[#0a120c]/40';
 
   return (
-    <div className="flex flex-col items-center justify-center p-2 sm:p-4 select-none">
+    <div ref={containerRef} className="w-full flex flex-col items-center justify-center py-1 sm:py-2 px-0 select-none">
       
       {/* AUTHENTIC DIGIVICE TOY COLORWAYS SELECTOR */}
-      <div className="flex flex-col items-center mb-3">
+      <div className="flex flex-col items-center mb-3 px-2">
         <div className="flex items-center gap-1.5 px-3 py-1 bg-slate-900/90 rounded-full border border-slate-700/80 shadow-md">
           <Palette className="w-3.5 h-3.5 text-amber-400" />
           <span className="font-pixel text-[9px] text-slate-300">
@@ -364,7 +472,10 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
       </div>
 
       {/* QUICK STATUS BAR: DIGIBITS & EVOLUTION BADGE (OUTSIDE THE TOY CASING) */}
-      <div className="flex items-center justify-between w-[360px] sm:w-[430px] mb-2 px-2 z-10">
+      <div
+        className="flex items-center justify-between mb-2 px-2 z-10"
+        style={{ width: `${Math.round(BASE_WIDTH * hudScale)}px`, maxWidth: '100%' }}
+      >
         <div className="flex items-center gap-2">
           {canEvolve && (
             <motion.button
@@ -391,10 +502,27 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
         </div>
       </div>
 
-      {/* ========================================================== */}
-      {/* 1997 BANDAI BRICK DIGIVICE HARDWARE CHASSIS (PHOTO REPLICA) */}
-      {/* ========================================================== */}
-      <div className="relative flex items-center">
+      {/* ==================================================================== */}
+      {/* 1997 BANDAI BRICK DIGIVICE HARDWARE CHASSIS (PROPORTIONAL SCALING)   */}
+      {/* ==================================================================== */}
+      <div
+        className="relative flex justify-center shrink-0"
+        style={{
+          width: `${Math.round(BASE_WIDTH * hudScale)}px`,
+          height: `${Math.round(BASE_HEIGHT * hudScale)}px`,
+          marginTop: `${Math.round(10 * hudScale)}px`,
+          marginBottom: `${Math.round(46 * hudScale)}px`,
+        }}
+      >
+      <div
+        className="relative flex items-center shrink-0"
+        style={{
+          width: `${BASE_WIDTH}px`,
+          height: `${BASE_HEIGHT}px`,
+          transform: `scale(${hudScale})`,
+          transformOrigin: 'top center',
+        }}
+      >
         
         {/* Top authentic molded connectors & pins on top edge */}
         <div className="absolute -top-3 left-1/3 -translate-x-1/2 flex items-end gap-3 pointer-events-none z-20">
@@ -405,9 +533,9 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
           <div className="w-2.5 h-2 bg-[#94a3b8] rounded-t-sm border border-[#475569] shadow-sm" />
         </div>
 
-        {/* Master Brick Casing with Chamfered Corners */}
+        {/* Master Brick Casing with Chamfered Corners (Authentic Aspect Ratio) */}
         <div 
-          className={`relative w-full max-w-[370px] sm:max-w-[430px] h-[245px] sm:h-[265px] ${currentShell.bg} border-4 ${currentShell.border} p-2 sm:p-4 shadow-[0_25px_50px_rgba(0,0,0,0.85),inset_0_2px_4px_rgba(255,255,255,0.35),inset_0_-3px_6px_rgba(0,0,0,0.6)] flex items-center justify-between mx-auto`}
+          className={`relative w-[400px] h-[256px] ${currentShell.bg} border-4 ${currentShell.border} p-3.5 shadow-[0_25px_50px_rgba(0,0,0,0.85),inset_0_2px_4px_rgba(255,255,255,0.35),inset_0_-3px_6px_rgba(0,0,0,0.6)] flex items-center justify-between`}
           style={{
             // Authentic 45-degree chamfered beveled corners
             clipPath: 'polygon(16px 0, calc(100% - 16px) 0, 100% 16px, 100% calc(100% - 16px), calc(100% - 16px) 100%, 16px 100%, 0 calc(100% - 16px), 0 16px)',
@@ -436,8 +564,8 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
             <div className="absolute top-[75%] bottom-0 left-[86%] w-[2.5px] bg-black/55" />
           </div>
 
-          {/* LEFT CHASSIS: BRUSHED METAL SCREEN CAGE & LCD SCREEN */}
-          <div className="relative z-10 w-[228px] sm:w-[285px] h-[210px] sm:h-[225px] flex items-center justify-center shrink-0">
+          {/* LEFT CHASSIS: BRUSHED METAL SCREEN CAGE & EXPANDED LCD SCREEN */}
+          <div className="relative z-10 w-[266px] h-[220px] flex items-center justify-center shrink-0">
             
             {/* THE BRUSHED METAL CAGE (FRAMING THE LCD SCREEN) */}
             {/* Top Rail with Claws */}
@@ -476,7 +604,7 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
 
             {/* THE LCD SCREEN WINDOW (FULL-COLOR DIGITAL WORLD LANDSCAPE) */}
             <div 
-              className={`relative w-[202px] sm:w-[255px] h-[175px] sm:h-[190px] rounded-lg border-2 border-[#090d16] p-1 sm:p-1.5 overflow-hidden flex flex-col justify-between shadow-[inset_0_4px_10px_rgba(0,0,0,0.8)] z-20 ${
+              className={`absolute top-3 bottom-3 left-3 right-7 rounded-lg border-2 border-[#090d16] p-1.5 sm:p-2 overflow-hidden flex flex-col justify-between shadow-[inset_0_4px_10px_rgba(0,0,0,0.8)] z-20 ${
                 isLightsOff ? 'bg-[#081813]' : 'bg-gradient-to-b from-[#38bdf8] via-[#7dd3fc] 55% to-[#16a34a]'
               }`}
             >
@@ -547,33 +675,89 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
                   )}
 
                   {/* Poop on LCD screen if present */}
-                  {pet.poopCount > 0 && (
+                  {!isFlushing && pet.poopCount > 0 && (
                     <motion.div
                       animate={{ y: [-1, 1, -1] }}
                       transition={{ repeat: Infinity, duration: 0.8 }}
                       onClick={triggerPoopClean}
-                      className="absolute bottom-4 right-2 text-xl cursor-pointer z-20 filter drop-shadow"
+                      className="absolute bottom-4 right-2 cursor-pointer z-20 filter drop-shadow flex items-end gap-0.5"
                       title="Click to Flush!"
                     >
-                      💩
+                      {Array.from({ length: Math.min(3, pet.poopCount) }).map((_, i) => (
+                        <PixelPoopIcon key={i} className="w-6 h-6" />
+                      ))}
                     </motion.div>
                   )}
 
-                  {/* Center stage: Digimon Sprite walking and moving inside LCD */}
-                  <div className="relative flex-1 flex items-end justify-center pb-0.5">
+                  {/* Classic 1997 Digivice Screen Flush Wave sweeping right-to-left */}
+                  <AnimatePresence>
+                    {isFlushing && (
+                      <motion.div
+                        key={`flush-sweep-${flushKey}`}
+                        initial={{ x: '115%' }}
+                        animate={{ x: '-135%' }}
+                        transition={{ duration: 0.85, ease: 'linear' }}
+                        className="absolute inset-y-0 left-0 w-full z-40 pointer-events-none flex items-stretch"
+                      >
+                        {/* Swept poops pushed right off the left edge ahead of the water wall */}
+                        {flushedPoopCount > 0 && (
+                          <div className="self-end mb-4 -ml-7 mr-1 flex items-end gap-0.5">
+                            {Array.from({ length: Math.min(3, flushedPoopCount) }).map((_, i) => (
+                              <PixelPoopIcon key={i} className="w-6 h-6" />
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Pixelated wavy water leading edge */}
+                        <svg
+                          viewBox="0 0 12 40"
+                          preserveAspectRatio="none"
+                          shapeRendering="crispEdges"
+                          className="h-full w-6 shrink-0 pixel-art"
+                          style={{ imageRendering: 'pixelated' }}
+                          aria-hidden="true"
+                        >
+                          <rect x="4" y="0" width="8" height="4" fill="#38bdf8" />
+                          <rect x="1" y="4" width="11" height="4" fill="#e0f2fe" />
+                          <rect x="3" y="8" width="9" height="4" fill="#0284c7" />
+                          <rect x="0" y="12" width="12" height="4" fill="#38bdf8" />
+                          <rect x="2" y="16" width="10" height="4" fill="#ffffff" />
+                          <rect x="4" y="20" width="8" height="4" fill="#0284c7" />
+                          <rect x="1" y="24" width="11" height="4" fill="#38bdf8" />
+                          <rect x="3" y="28" width="9" height="4" fill="#e0f2fe" />
+                          <rect x="0" y="32" width="12" height="4" fill="#38bdf8" />
+                          <rect x="2" y="36" width="10" height="4" fill="#0284c7" />
+                        </svg>
+
+                        {/* Trailing translucent LCD water sheet with bubbles */}
+                        <div className="flex-1 h-full bg-gradient-to-r from-sky-400/75 via-cyan-300/45 to-transparent relative overflow-hidden">
+                          <div className="absolute top-[18%] left-3 w-2 h-2 bg-white/90" />
+                          <div className="absolute top-[44%] left-8 w-2.5 h-2.5 bg-sky-100/85" />
+                          <div className="absolute top-[70%] left-4 w-2 h-2 bg-white/90" />
+                          <div className="absolute top-[30%] left-16 w-1.5 h-1.5 bg-cyan-100/80" />
+                          <div className="absolute top-[60%] left-20 w-2 h-2 bg-white/80" />
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
+                  {/* Center stage: Digimon Sprite walking and moving across full LCD width */}
+                  <div className="relative flex-1 w-full pb-0.5">
                     <div
-                      className="transition-all duration-700 ease-linear flex flex-col items-center z-10"
+                      className="absolute bottom-0.5 transition-[left] duration-[1600ms] ease-linear flex flex-col items-center z-10"
                       style={{
-                        transform: `translateX(${(monX - 50) * 0.9}px)`,
+                        left: `${monX}%`,
+                        transform: 'translateX(-50%)',
                       }}
                     >
                       <DigimonSprite
                         species={species}
                         egg={pet.stage === 'egg' ? egg : undefined}
                         pose={internalPose}
+                        eatItem={activeEatItem}
                         facing={facing}
                         lcdMode={false}
-                        scale={0.85}
+                        scale={0.92}
                       />
                     </div>
                   </div>
@@ -680,7 +864,7 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
                       }}
                       className="flex flex-col items-center p-1 bg-slate-900 border border-amber-500/50 hover:bg-slate-800 rounded cursor-pointer"
                     >
-                      <span className="text-base">🍖</span>
+                      <PixelMeatIcon className="w-5 h-5" />
                       <span className="text-[7px] font-pixel text-white mt-0.5">MEAT ({pet.bigMeatStock})</span>
                     </button>
                     <button
@@ -690,7 +874,7 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
                       }}
                       className="flex flex-col items-center p-1 bg-slate-900 border border-purple-500/50 hover:bg-slate-800 rounded cursor-pointer"
                     >
-                      <span className="text-base">💊</span>
+                      <PixelVitaminIcon className="w-5 h-5" />
                       <span className="text-[7px] font-pixel text-white mt-0.5">VIT ({pet.vitaminStock})</span>
                     </button>
                   </div>
@@ -732,7 +916,7 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
           </div>
 
           {/* RIGHT CHASSIS: MOLDED CIRCULAR WELLS & 3 DARK CHARCOAL BUTTONS (A, B, C) */}
-          <div className="relative z-10 flex flex-col items-center justify-between h-[215px] sm:h-[225px] pr-1 sm:pr-2">
+          <div className="relative z-10 shrink-0 flex flex-col items-center justify-between h-[220px] pl-1 pr-1">
             
             {/* BUTTON A: Select (with molded UP arrow above it) */}
             <div className="flex flex-col items-center">
@@ -813,7 +997,7 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
         {/* BOTTOM-RIGHT MOLDED CORNER EYELET LUG & AUTHENTIC CHROME KEYCHAIN (MATCHING PHOTO) */}
         <div 
           onClick={handleKeychainJingle}
-          className="absolute -bottom-14 right-1 z-30 cursor-pointer flex flex-col items-center group pointer-events-auto"
+          className="absolute -bottom-14 right-2 z-30 cursor-pointer flex flex-col items-center group pointer-events-auto"
           title="Click to jingle Digivice Keychain!"
         >
           {/* Triangular molded plastic lug on corner */}
@@ -835,6 +1019,7 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
           </div>
         </div>
 
+      </div>
       </div>
 
     </div>

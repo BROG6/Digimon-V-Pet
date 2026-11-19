@@ -24,11 +24,17 @@ jobs:
     steps:
       - name: 📥 Check out repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: 🟢 Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
+
+      - name: 🏷️ Auto-Bump Version & Prepare Release
+        id: prep_release
+        run: node scripts/ci-prepare-release.mjs
 
       - name: 📦 Install dependencies
         run: npm install --legacy-peer-deps
@@ -37,19 +43,23 @@ jobs:
         run: npm run build
 
       - name: ☕ Set up Java (JDK 21)
+        if: steps.prep_release.outputs.should_release == 'true' || github.event_name == 'pull_request'
         uses: actions/setup-java@v4
         with:
           distribution: 'temurin'
           java-version: '21'
 
       - name: 🐘 Set up Gradle
+        if: steps.prep_release.outputs.should_release == 'true' || github.event_name == 'pull_request'
         uses: gradle/actions/setup-gradle@v3
 
       - name: 🔌 Sync Capacitor Android platform
+        if: steps.prep_release.outputs.should_release == 'true' || github.event_name == 'pull_request'
         run: |
           npx cap sync android || ./node_modules/.bin/cap sync android || true
 
       - name: 🛡️ Ensure Overlay & Network Permissions in AndroidManifest
+        if: steps.prep_release.outputs.should_release == 'true' || github.event_name == 'pull_request'
         run: |
           MANIFEST="android/app/src/main/AndroidManifest.xml"
           if [ -f "$MANIFEST" ]; then
@@ -59,7 +69,14 @@ jobs:
             fi
           fi
 
+      - name: 🔐 Verify Persistent APK Signing Keystore
+        if: steps.prep_release.outputs.should_release == 'true' || github.event_name == 'pull_request'
+        run: |
+          test -f android/app/digipet-debug.keystore
+          keytool -list -v -storetype PKCS12 -keystore android/app/digipet-debug.keystore -storepass android | grep -E "Alias name:|SHA256:"
+
       - name: ⚙️ Compile Debug APK with Gradle
+        if: steps.prep_release.outputs.should_release == 'true' || github.event_name == 'pull_request'
         working-directory: android
         run: |
           if [ -f "./gradlew" ]; then
@@ -71,39 +88,35 @@ jobs:
           fi
 
       - name: 📤 Upload Downloadable APK Artifact
+        if: steps.prep_release.outputs.should_release == 'true' || github.event_name == 'pull_request'
         uses: actions/upload-artifact@v4
         with:
           name: DigiPet-Native-Android-APK
           path: android/app/build/outputs/apk/debug/app-debug.apk
           retention-days: 30
 
-      - name: 🏷️ Extract Version and Prepare Release Artifacts
-        id: prep_release
+      - name: 📦 Prepare Release APK Filenames
+        if: steps.prep_release.outputs.should_release == 'true'
         run: |
-          VERSION=$(node -p "require('./package.json').version")
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "tag=v$VERSION" >> $GITHUB_OUTPUT
+          VERSION="${{ steps.prep_release.outputs.version }}"
           cp android/app/build/outputs/apk/debug/app-debug.apk android/app/build/outputs/apk/debug/digipet-latest.apk
           cp android/app/build/outputs/apk/debug/app-debug.apk "android/app/build/outputs/apk/debug/digipet-v${VERSION}.apk"
 
       - name: 🚀 Publish GitHub Release with APK Assets
-        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+        if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && steps.prep_release.outputs.should_release == 'true'
         uses: softprops/action-gh-release@v2
         with:
           files: |
             android/app/build/outputs/apk/debug/app-debug.apk
             android/app/build/outputs/apk/debug/digipet-latest.apk
             android/app/build/outputs/apk/debug/digipet-v*.apk
-          tag_name: v${{ steps.prep_release.outputs.version }}
-          name: DigiPet v${{ steps.prep_release.outputs.version }}
+          tag_name: ${{ steps.prep_release.outputs.tag }}
+          name: DigiPet ${{ steps.prep_release.outputs.tag }}
           body: |
-            ## 🎮 DigiPet Companion v${{ steps.prep_release.outputs.version }}
+            ## 🎮 DigiPet Companion ${{ steps.prep_release.outputs.tag }} (Build ${{ steps.prep_release.outputs.version_code }})
 
             ### ✨ What's New:
-            - **Elevated speech bubbles**: Positioned higher and layered behind Digimon heads in the floating companion overlay.
-            - **Interactive Digimon AI dialogue engine**: Chat live with your companion powered by Gemini AI!
-            - **Colosseum battle attack animations**: Dynamic lunges, screen shake, hit flashes, and floating damage numbers.
-            - **GitHub Releases auto-updater backup**: Directly query and update from this repository.
+            ${{ steps.prep_release.outputs.notes }}
 
             ### 📲 How to Install:
             1. Download `app-debug.apk` or `digipet-latest.apk` below on your Android phone.

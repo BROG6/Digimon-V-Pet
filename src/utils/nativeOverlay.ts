@@ -5,6 +5,8 @@ export interface OverlayLaunchParams {
   spriteUrl: string;
   sheetWidth?: number;
   sheetHeight?: number;
+  stageWidth?: number;
+  stageHeight?: number;
   groundOffset?: number;
   frameX: number;
   frameY: number;
@@ -13,7 +15,19 @@ export interface OverlayLaunchParams {
   frameRotate?: number;
   standingFramesJson?: string;
   walkingFramesJson?: string;
+  sleepingFramesJson?: string;
   quotesJson?: string;
+  isFlying?: boolean;
+  isSleeping?: boolean;
+  gridRowRatiosJson?: string;
+  previewRowIndex?: number;
+  hunger?: number;
+  happiness?: number;
+  bigMeatStock?: number;
+  vitaminStock?: number;
+  evolvedMessage?: string;
+  nextEvoTriggerMsStr?: string;
+  nextEvoPayloadJson?: string;
 }
 
 export interface OverlayPluginInterface {
@@ -22,6 +36,8 @@ export interface OverlayPluginInterface {
   startOverlay(options: OverlayLaunchParams): Promise<{ success: boolean }>;
   stopOverlay(): Promise<{ success: boolean }>;
   isOverlayActive(): Promise<{ active: boolean }>;
+  consumePendingEvolution(): Promise<{ speciesId: string | null; evolvedAt: number }>;
+  consumePendingCareActions(): Promise<{ meatUsed: number; vitUsed: number; praiseCount: number }>;
   enterPip(): Promise<{ success: boolean }>;
 }
 
@@ -84,5 +100,36 @@ export async function isNativeOverlayActive(): Promise<boolean> {
     return !!res?.active;
   } catch {
     return false;
+  }
+}
+
+export async function consumeNativeOverlayEvolution(): Promise<{ speciesId: string | null; evolvedAt: number }> {
+  if (!Capacitor.isNativePlatform()) return { speciesId: null, evolvedAt: 0 };
+  try {
+    const res = await OverlayPlugin.consumePendingEvolution();
+    return {
+      speciesId: res?.speciesId || null,
+      evolvedAt: typeof res?.evolvedAt === 'number' ? res.evolvedAt : 0,
+    };
+  } catch {
+    return { speciesId: null, evolvedAt: 0 };
+  }
+}
+
+export async function consumeNativeOverlayCareActions(): Promise<{
+  meatUsed: number;
+  vitUsed: number;
+  praiseCount: number;
+}> {
+  if (!Capacitor.isNativePlatform()) return { meatUsed: 0, vitUsed: 0, praiseCount: 0 };
+  try {
+    const res = await OverlayPlugin.consumePendingCareActions();
+    return {
+      meatUsed: typeof res?.meatUsed === 'number' ? res.meatUsed : 0,
+      vitUsed: typeof res?.vitUsed === 'number' ? res.vitUsed : 0,
+      praiseCount: typeof res?.praiseCount === 'number' ? res.praiseCount : 0,
+    };
+  } catch {
+    return { meatUsed: 0, vitUsed: 0, praiseCount: 0 };
   }
 }

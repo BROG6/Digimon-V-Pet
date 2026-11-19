@@ -1,6 +1,7 @@
 import React from 'react';
 import { ShoppingBag, X, Plus, Sparkles, Check } from 'lucide-react';
 import { PetState } from '../types/digimon';
+import { PixelMeatIcon, PixelVitaminIcon } from './PixelItemIcons';
 import { sound } from '../utils/audio';
 
 interface ShopModalProps {
@@ -21,22 +22,29 @@ export const ShopModal: React.FC<ShopModalProps> = ({
   const items = [
     {
       id: 'meat' as const,
-      name: 'Big Meat 🍖',
+      name: 'Big Meat',
       category: 'Food',
       description: 'Classic Digital Monster meat. Satisfies +25 hunger and adds 1g healthy weight.',
       price: 10,
       rewardText: '+1 Big Meat',
-      icon: '🍖',
+      icon: <PixelMeatIcon className="w-8 h-8" />,
       currentStock: pet.bigMeatStock,
     },
     {
       id: 'meat_bundle' as const,
-      name: 'Meat Pack (x5) 🍖',
+      name: 'Meat Pack (x5)',
       category: 'Food',
       description: 'Bulk butcher box of 5 Big Meats for growing Digimon! Saves 5 bits.',
       price: 45,
       rewardText: '+5 Big Meats',
-      icon: '📦',
+      icon: (
+        <div className="relative flex items-center justify-center">
+          <PixelMeatIcon className="w-8 h-8" />
+          <span className="absolute -bottom-1 -right-1.5 text-[8px] font-pixel bg-amber-500 text-slate-950 px-1 rounded font-bold">
+            x5
+          </span>
+        </div>
+      ),
       currentStock: pet.bigMeatStock,
       discountBadge: 'POPULAR SAVE 10%',
     },
@@ -52,22 +60,29 @@ export const ShopModal: React.FC<ShopModalProps> = ({
     },
     {
       id: 'vitamin' as const,
-      name: 'Digi-Vitamin 💊',
+      name: 'Digi-Vitamin',
       category: 'Medicine & Stats',
       description: 'Potent protein supplement. Builds +15 Strength and charges +20 DP power.',
       price: 15,
       rewardText: '+1 Vitamin',
-      icon: '💊',
+      icon: <PixelVitaminIcon className="w-7 h-7" />,
       currentStock: pet.vitaminStock,
     },
     {
       id: 'vitamin_bundle' as const,
-      name: 'Vitamin Pack (x5) 💊',
+      name: 'Vitamin Pack (x5)',
       category: 'Medicine & Stats',
       description: 'Heavy training box with 5 concentrated vitamin capsules for battle prep.',
       price: 65,
       rewardText: '+5 Vitamins',
-      icon: '🧪',
+      icon: (
+        <div className="relative flex items-center justify-center">
+          <PixelVitaminIcon className="w-7 h-7" />
+          <span className="absolute -bottom-1 -right-1.5 text-[8px] font-pixel bg-purple-400 text-slate-950 px-1 rounded font-bold">
+            x5
+          </span>
+        </div>
+      ),
       currentStock: pet.vitaminStock,
       discountBadge: 'VALUE PACK',
     },
@@ -138,11 +153,15 @@ export const ShopModal: React.FC<ShopModalProps> = ({
         {/* Current Supplies Banner */}
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 py-3 border-b border-slate-800/60 font-pixel text-[10px]">
           <div className="bg-slate-950/80 p-2 rounded-xl border border-slate-800 flex items-center justify-between">
-            <span className="text-slate-400">🍖 Big Meat:</span>
+            <span className="text-slate-400 inline-flex items-center gap-1.5">
+              <PixelMeatIcon className="w-4 h-4" /> Big Meat:
+            </span>
             <span className="text-amber-300 font-bold text-xs">{pet.bigMeatStock} in bag</span>
           </div>
           <div className="bg-slate-950/80 p-2 rounded-xl border border-slate-800 flex items-center justify-between">
-            <span className="text-slate-400">💊 Vitamins:</span>
+            <span className="text-slate-400 inline-flex items-center gap-1.5">
+              <PixelVitaminIcon className="w-4 h-4" /> Vitamins:
+            </span>
             <span className="text-cyan-300 font-bold text-xs">{pet.vitaminStock} in bag</span>
           </div>
           <div className="bg-slate-950/80 p-2 rounded-xl border border-slate-800 col-span-2 sm:col-span-1 flex items-center justify-between">

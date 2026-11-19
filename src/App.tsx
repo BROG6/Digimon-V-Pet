@@ -6,7 +6,8 @@ import {
   DigiEggInfo, 
   FurnitureItem, 
   DigimonStage,
-  SpecialItemId
+  SpecialItemId,
+  AdventureBattleResult
 } from './types/digimon';
 import { DIGI_EGGS, DIGIMON_DATABASE, FURNITURE_SHOP, ROOM_THEMES, SPECIAL_ITEMS } from './data/digidex';
 import { DigiviceHUD } from './components/DigiviceHUD';
@@ -16,6 +17,7 @@ import { EggSelectionModal } from './components/EggSelectionModal';
 import { TrainingArena } from './components/TrainingArena';
 import { FoodCatchGame } from './components/FoodCatchGame';
 import { ColosseumBattle } from './components/ColosseumBattle';
+import { AdventureModal } from './components/AdventureModal';
 import { EvolutionModal } from './components/EvolutionModal';
 import { DigiRoom } from './components/DigiRoom';
 import { DigidexModal } from './components/DigidexModal';
@@ -83,7 +85,9 @@ import {
   Utensils,
   ExternalLink,
   Download,
-  SlidersHorizontal
+  SlidersHorizontal,
+  Compass,
+  ChevronRight
 } from 'lucide-react';
 
 const STORAGE_KEY = 'digipet_vpet_save_v1';
@@ -103,6 +107,8 @@ export default function App() {
           stageTrainingCount: parsed.trainingCount ?? 0,
           equippedSpecialItem: null,
           ownedSpecialItems: [],
+          adventureClearedWave: {},
+          battleExp: 0,
           ...parsed,
           currentSpeciesId: DIGIMON_DATABASE[parsed.currentSpeciesId] ? parsed.currentSpeciesId : 'botamon',
         };
@@ -148,6 +154,8 @@ export default function App() {
         { instanceId: 'init-2', furnitureId: 'cozy-cushion', x: 74, y: 72 },
       ],
       lastCareCheck: Date.now(),
+      adventureClearedWave: {},
+      battleExp: 0,
     };
   });
 
@@ -161,6 +169,7 @@ export default function App() {
   const [isTrainingOpen, setIsTrainingOpen] = useState<boolean>(false);
   const [isFoodGameOpen, setIsFoodGameOpen] = useState<boolean>(false);
   const [isColosseumOpen, setIsColosseumOpen] = useState<boolean>(false);
+  const [isAdventureOpen, setIsAdventureOpen] = useState<boolean>(false);
   const [isRoomOpen, setIsRoomOpen] = useState<boolean>(false);
   const [isDigidexOpen, setIsDigidexOpen] = useState<boolean>(false);
   const [isStatsOpen, setIsStatsOpen] = useState<boolean>(false);
@@ -735,6 +744,53 @@ export default function App() {
     );
   };
 
+  const handleAdventureComplete = (result: AdventureBattleResult) => {
+    setPet((prev) => {
+      const prevCleared = prev.adventureClearedWave?.[result.zoneId] ?? 0;
+      const nextCleared = result.won ? Math.max(prevCleared, result.waveNumber) : prevCleared;
+      const existingRelics = prev.ownedSpecialItems || [];
+      const nextRelics =
+        result.unlockedRelicId && !existingRelics.includes(result.unlockedRelicId)
+          ? [...existingRelics, result.unlockedRelicId]
+          : existingRelics;
+      const unlockedRelicInfo = result.unlockedRelicId ? SPECIAL_ITEMS[result.unlockedRelicId] : undefined;
+      const shouldAutoEquip = unlockedRelicInfo && prev.eggId === unlockedRelicInfo.eggId;
+
+      return {
+        ...prev,
+        battlesTotal: prev.battlesTotal + 1,
+        battlesWon: result.won ? prev.battlesWon + 1 : prev.battlesWon,
+        stageBattlesTotal: (prev.stageBattlesTotal ?? 0) + 1,
+        stageBattlesWon: result.won ? (prev.stageBattlesWon ?? 0) + 1 : (prev.stageBattlesWon ?? 0),
+        strength: prev.strength + result.strengthGained,
+        dpPoints: prev.dpPoints + result.dpGained,
+        battleExp: (prev.battleExp ?? 0) + result.strengthGained * 10 + result.dpGained,
+        effort: Math.min(10, (prev.effort ?? 0) + result.effortGained),
+        digiBits: prev.digiBits + result.bitsGained,
+        bigMeatStock: Math.max(0, prev.bigMeatStock - result.meatUsed) + result.meatGained,
+        vitaminStock: Math.max(0, prev.vitaminStock - result.vitaminsUsed) + result.vitaminsGained,
+        energy: Math.max(10, prev.energy - 12),
+        ownedSpecialItems: nextRelics,
+        equippedSpecialItem: shouldAutoEquip ? result.unlockedRelicId : prev.equippedSpecialItem,
+        adventureClearedWave: {
+          ...(prev.adventureClearedWave || {}),
+          [result.zoneId]: nextCleared,
+        },
+      };
+    });
+
+    if (result.won) {
+      const relicNote = result.unlockedRelicId
+        ? ` · Unlocked ${SPECIAL_ITEMS[result.unlockedRelicId]?.shortName || result.unlockedRelicId}!`
+        : '';
+      showNotification(
+        `Adventure Wave ${result.waveNumber} Cleared! +${result.strengthGained} STR, +${result.bitsGained} Bits & Items${relicNote}`
+      );
+    } else {
+      showNotification(`Adventure Battle Exp: +${result.strengthGained} STR & +${result.dpGained} DP gained!`);
+    }
+  };
+
   // ROOM CUSTOMIZATION
   const handleBuyFurniture = (item: FurnitureItem) => {
     setPet((prev) => ({
@@ -919,6 +975,8 @@ export default function App() {
         ? prev.placedFurniture
         : [{ instanceId: 'init-1', furnitureId: 'meat-grill', x: 28, y: 68 }],
       lastCareCheck: Date.now(),
+      adventureClearedWave: prev.adventureClearedWave || {},
+      battleExp: prev.battleExp ?? 0,
     }));
     setIsEggModalOpen(false);
     showNotification(`Hatched Egg #${String(egg.eggNumber).padStart(2, '0')} (${egg.crestName})! Welcome, ${nickname}! ✨`);
@@ -1263,6 +1321,33 @@ export default function App() {
           </button>
         </div>
 
+        {/* Adventure Mode Expedition Launcher */}
+        <div className="w-full px-2.5 sm:px-4 mt-2">
+          <button
+            onClick={() => {
+              sound.playButton();
+              triggerHaptic('medium');
+              setIsAdventureOpen(true);
+            }}
+            className="w-full min-h-[48px] px-3.5 py-2.5 bg-gradient-to-r from-emerald-950/90 via-slate-900 to-teal-950/80 hover:brightness-110 border border-emerald-500/40 rounded-2xl flex items-center justify-between gap-2 text-left shadow-md active:scale-[0.99] transition-all cursor-pointer"
+          >
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-8 h-8 rounded-xl bg-emerald-500/20 border border-emerald-400/35 flex items-center justify-center shrink-0">
+                <Compass className="w-4 h-4 text-emerald-300" />
+              </div>
+              <div className="min-w-0">
+                <div className="font-chakra font-bold text-sm text-white truncate">
+                  World Adventure Mode
+                </div>
+                <div className="text-[11px] text-emerald-200/80 truncate tabular-nums">
+                  7 Biomes · Rookie to Mega Waves · Earn Strength & Items
+                </div>
+              </div>
+            </div>
+            <ChevronRight className="w-4 h-4 text-emerald-300 shrink-0" />
+          </button>
+        </div>
+
         {/* Poop cleaning / Sickness urgent alerts */}
         {(pet.poopCount > 0 || pet.isSick) && (
           <div className="w-full px-2.5 sm:px-4 flex gap-2 mt-2">
@@ -1438,6 +1523,18 @@ export default function App() {
               </div>
 
               <div className="grid grid-cols-2 gap-2 text-xs font-chakra font-bold">
+                <button
+                  onClick={() => {
+                    sound.playButton();
+                    setIsMoreSheetOpen(false);
+                    setIsAdventureOpen(true);
+                  }}
+                  className="p-3 bg-slate-800 hover:bg-emerald-950/60 border border-emerald-500/40 rounded-2xl flex items-center gap-2.5 text-emerald-300 cursor-pointer"
+                >
+                  <Compass className="w-5 h-5 text-emerald-400 shrink-0" />
+                  <span className="truncate">ADVENTURE MODE</span>
+                </button>
+
                 <button
                   onClick={() => {
                     sound.playButton();
@@ -1717,6 +1814,18 @@ export default function App() {
         isOpen={isColosseumOpen}
         onClose={() => setIsColosseumOpen(false)}
         onBattleEnd={handleBattleEnd}
+        onOpenAdventure={() => {
+          setIsColosseumOpen(false);
+          setIsAdventureOpen(true);
+        }}
+      />
+
+      <AdventureModal
+        pet={pet}
+        species={currentSpecies}
+        isOpen={isAdventureOpen}
+        onClose={() => setIsAdventureOpen(false)}
+        onAdventureComplete={handleAdventureComplete}
       />
 
       <DigiRoom
@@ -1849,6 +1958,8 @@ export default function App() {
                 stageTrainingCount: parsed.trainingCount ?? 0,
                 equippedSpecialItem: null,
                 ownedSpecialItems: [],
+                adventureClearedWave: {},
+                battleExp: 0,
                 ...parsed,
                 currentSpeciesId: DIGIMON_DATABASE[parsed.currentSpeciesId] ? parsed.currentSpeciesId : 'botamon',
               });

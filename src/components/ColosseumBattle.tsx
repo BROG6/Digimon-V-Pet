@@ -16,7 +16,8 @@ import {
   Globe, 
   Wifi, 
   RefreshCw,
-  Sparkles
+  Sparkles,
+  Compass
 } from 'lucide-react';
 
 interface ColosseumBattleProps {
@@ -25,6 +26,7 @@ interface ColosseumBattleProps {
   isOpen: boolean;
   onClose: () => void;
   onBattleEnd: (won: boolean, coinsReward: number, dpReward: number) => void;
+  onOpenAdventure?: () => void;
 }
 
 export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
@@ -33,6 +35,7 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
   isOpen,
   onClose,
   onBattleEnd,
+  onOpenAdventure,
 }) => {
   const [matchState, setMatchState] = useState<'lobby' | 'matching' | 'battling' | 'victory' | 'defeat'>('lobby');
   const [roomCode, setRoomCode] = useState<string>('');
@@ -518,6 +521,33 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
                 </button>
               </div>
             </div>
+
+            {onOpenAdventure && (
+              <div
+                onClick={() => {
+                  sound.playButton();
+                  onOpenAdventure();
+                }}
+                className="p-4 bg-gradient-to-r from-emerald-950/90 to-slate-900 border-2 border-emerald-500/40 hover:border-emerald-400 rounded-2xl cursor-pointer transition-all flex items-center justify-between gap-3"
+              >
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-11 h-11 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center shrink-0">
+                    <Compass className="w-6 h-6 text-emerald-300" />
+                  </div>
+                  <div className="min-w-0">
+                    <h5 className="font-chakra font-bold text-white text-base">
+                      WORLD ADVENTURE MODE
+                    </h5>
+                    <p className="text-slate-300 text-xs truncate">
+                      7 Biomes · Rookie to Mega Waves · Farm Strength EXP & Items
+                    </p>
+                  </div>
+                </div>
+                <button className="px-4 py-2 bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-chakra text-xs font-bold rounded-xl shrink-0 cursor-pointer whitespace-nowrap">
+                  Enter Adventure
+                </button>
+              </div>
+            )}
           </div>
         )}
 

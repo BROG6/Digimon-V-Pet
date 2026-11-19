@@ -186,6 +186,54 @@ export interface PetState {
   lastCareCheck: number;
   stageEnteredAt?: number;
   evoGoalMetAt?: number;
+  adventureClearedWave?: Record<string, number>;
+  battleExp?: number;
+}
+
+export interface AdventureWave {
+  waveNumber: number;
+  title: string;
+  speciesId: string;
+  stageLabel: 'Rookie' | 'Champion' | 'Ultimate' | 'Mega';
+  statMultiplier: number;
+  strengthReward: number;
+  dpReward: number;
+  effortReward: number;
+  bitsReward: number;
+  meatDrop: number;
+  vitaminDrop: number;
+  bossFlavor: string;
+}
+
+export interface AdventureZone {
+  id: string;
+  order: number;
+  name: string;
+  subtitle: string;
+  environmentTag: string;
+  recommendedStrength: number;
+  backdropClass: string;
+  groundClass: string;
+  accentHex: string;
+  firstClearRelicId?: SpecialItemId;
+  firstClearBonusText: string;
+  waves: AdventureWave[];
+}
+
+export interface AdventureBattleResult {
+  zoneId: string;
+  waveNumber: number;
+  won: boolean;
+  strengthGained: number;
+  dpGained: number;
+  effortGained: number;
+  bitsGained: number;
+  meatGained: number;
+  vitaminsGained: number;
+  unlockedRelicId?: SpecialItemId;
+  meatUsed: number;
+  vitaminsUsed: number;
+  isFirstClearOfWave: boolean;
 }
 
 export interface BattleFighter {

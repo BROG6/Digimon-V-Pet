@@ -5,9 +5,10 @@ import {
   DigimonSpecies, 
   DigiEggInfo, 
   FurnitureItem, 
-  DigimonStage 
+  DigimonStage,
+  SpecialItemId
 } from './types/digimon';
-import { DIGI_EGGS, DIGIMON_DATABASE, FURNITURE_SHOP, ROOM_THEMES } from './data/digidex';
+import { DIGI_EGGS, DIGIMON_DATABASE, FURNITURE_SHOP, ROOM_THEMES, SPECIAL_ITEMS } from './data/digidex';
 import { DigiviceHUD } from './components/DigiviceHUD';
 import { PixelMeatIcon, PixelVitaminIcon, PixelPoopIcon } from './components/PixelItemIcons';
 import { FloatingOverlay } from './components/FloatingOverlay';
@@ -92,16 +93,31 @@ export default function App() {
   const [pet, setPet] = useState<PetState>(() => {
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) return JSON.parse(saved);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return {
+          playerName: '',
+          effort: 0,
+          stageBattlesWon: parsed.battlesWon ?? 0,
+          stageBattlesTotal: parsed.battlesTotal ?? 0,
+          stageTrainingCount: parsed.trainingCount ?? 0,
+          equippedSpecialItem: null,
+          ownedSpecialItems: [],
+          ...parsed,
+          currentSpeciesId: DIGIMON_DATABASE[parsed.currentSpeciesId] ? parsed.currentSpeciesId : 'botamon',
+        };
+      }
     } catch (e) {}
 
-    // Default starting state (Tai Kamiya / Courage egg)
+    // Default starting state (Egg 01: Dragon / Fire)
     return {
       eggId: 'egg-courage',
       currentSpeciesId: 'botamon',
       stage: 'fresh',
       nickname: 'Agumon',
+      playerName: '',
       birthTimestamp: Date.now(),
+      stageEnteredAt: Date.now(),
       hunger: 75,
       energy: 90,
       happiness: 80,
@@ -109,6 +125,7 @@ export default function App() {
       weight: 15,
       strength: 20,
       dpPoints: 35,
+      effort: 0,
       isSick: false,
       isSleeping: false,
       lightsOff: false,
@@ -117,6 +134,11 @@ export default function App() {
       battlesWon: 0,
       battlesTotal: 0,
       trainingCount: 0,
+      stageBattlesWon: 0,
+      stageBattlesTotal: 0,
+      stageTrainingCount: 0,
+      equippedSpecialItem: null,
+      ownedSpecialItems: [],
       digiBits: 150,
       bigMeatStock: 6,
       vitaminStock: 4,
@@ -569,7 +591,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [pet.currentSpeciesId, pet.hunger, pet.happiness, pet.bigMeatStock, pet.vitaminStock, pet.isSleeping, pet.lightsOff, pet.evoGoalMetAt, pet.stageEnteredAt]);
+  }, [pet.currentSpeciesId, pet.playerName, pet.hunger, pet.happiness, pet.bigMeatStock, pet.vitaminStock, pet.isSleeping, pet.lightsOff, pet.evoGoalMetAt, pet.stageEnteredAt]);
 
   // CARE ACTIONS
   const handleFeedMeat = () => {
@@ -584,10 +606,10 @@ export default function App() {
       ...prev,
       bigMeatStock: prev.bigMeatStock - 1,
       hunger: Math.min(100, prev.hunger + 25),
-      weight: prev.weight + 1,
+      weight: prev.weight + 2,
       happiness: Math.min(100, prev.happiness + 10),
     }));
-    showNotification('Fed delicious Big Meat! (+25 Hunger, +1g)');
+    showNotification('Fed delicious Big Meat! (+25 Hunger, +2g Weight)');
   };
 
   const handleGiveVitamin = () => {
@@ -659,20 +681,24 @@ export default function App() {
       setPet((prev) => ({
         ...prev,
         trainingCount: prev.trainingCount + 1,
+        stageTrainingCount: (prev.stageTrainingCount ?? 0) + 1,
+        effort: Math.min(10, (prev.effort ?? 0) + 2),
         strength: prev.strength + 10,
         dpPoints: prev.dpPoints + 15,
         weight: Math.max(10, prev.weight - 2),
         happiness: Math.min(100, prev.happiness + 15),
         digiBits: prev.digiBits + 25,
       }));
-      showNotification('Dojo Workout Complete! 🥊 (+15 DP, -2g Weight, +25 Bits)');
+      showNotification('Dojo Workout Complete! 🥊 (+2 Effort, +15 DP, -2g, +25 Bits)');
     } else {
       setPet((prev) => ({
         ...prev,
         trainingCount: prev.trainingCount + 1,
+        stageTrainingCount: (prev.stageTrainingCount ?? 0) + 1,
+        effort: Math.min(10, (prev.effort ?? 0) + 1),
         weight: Math.max(10, prev.weight - 1),
       }));
-      showNotification('Training round finished! Keep practicing!');
+      showNotification('Training round finished! (+1 Effort) Keep practicing!');
     }
   };
 
@@ -684,9 +710,11 @@ export default function App() {
       digiBits: prev.digiBits + coinsEarned,
       hunger: Math.min(100, prev.hunger + 30),
       happiness: Math.min(100, prev.happiness + 20),
+      stageTrainingCount: (prev.stageTrainingCount ?? 0) + 1,
+      effort: Math.min(10, (prev.effort ?? 0) + 2),
     }));
     const vitText = vitaminsEarned > 0 ? `, +${vitaminsEarned} Vitamin${vitaminsEarned === 1 ? '' : 's'} 💊` : '';
-    showNotification(`Feast Over! Earned +${meatEarned} Big Meat 🍖${vitText} & +${coinsEarned} Bits 🪙!`);
+    showNotification(`Feast Over! +2 Effort, +${meatEarned} Big Meat 🍖${vitText} & +${coinsEarned} Bits 🪙!`);
   };
 
   const handleBattleEnd = (won: boolean, coinsReward: number, dpReward: number) => {
@@ -694,6 +722,8 @@ export default function App() {
       ...prev,
       battlesTotal: prev.battlesTotal + 1,
       battlesWon: won ? prev.battlesWon + 1 : prev.battlesWon,
+      stageBattlesTotal: (prev.stageBattlesTotal ?? 0) + 1,
+      stageBattlesWon: won ? (prev.stageBattlesWon ?? 0) + 1 : (prev.stageBattlesWon ?? 0),
       digiBits: prev.digiBits + coinsReward,
       dpPoints: prev.dpPoints + dpReward,
       energy: Math.max(10, prev.energy - 15),
@@ -792,6 +822,41 @@ export default function App() {
     showNotification(`Purchased item from Bazaar! 🪙 (-${cost} Bits)`);
   };
 
+  const handleBuySpecialItem = (itemId: SpecialItemId, cost: number) => {
+    if (pet.digiBits < cost) {
+      sound.playAlert();
+      showNotification('Not enough DigiBits to purchase this Relic!');
+      return;
+    }
+    const relic = SPECIAL_ITEMS[itemId];
+    setPet((prev) => {
+      const existing = prev.ownedSpecialItems || [];
+      if (existing.includes(itemId)) return prev;
+      const nextOwned = [...existing, itemId];
+      const shouldAutoEquip = relic && prev.eggId === relic.eggId;
+      return {
+        ...prev,
+        digiBits: prev.digiBits - cost,
+        ownedSpecialItems: nextOwned,
+        equippedSpecialItem: shouldAutoEquip ? itemId : prev.equippedSpecialItem,
+      };
+    });
+    showNotification(`Acquired ${relic?.shortName || itemId}! ✨ Ready in Special Item slot.`);
+  };
+
+  const handleEquipSpecialItem = (itemId: SpecialItemId | null) => {
+    setPet((prev) => ({
+      ...prev,
+      equippedSpecialItem: itemId,
+    }));
+    if (itemId) {
+      const relic = SPECIAL_ITEMS[itemId];
+      showNotification(`Equipped ${relic?.shortName || itemId}! Check Stats & Matrix for Armor Evolution.`);
+    } else {
+      showNotification('Unequipped Special Relic — Standard Matrix active.');
+    }
+  };
+
   const handleChangeTheme = (themeId: string) => {
     setPet((prev) => ({
       ...prev,
@@ -799,24 +864,29 @@ export default function App() {
     }));
   };
 
-  // NEW EGG / RESET
-  const handleSelectNewEgg = (egg: DigiEggInfo, nickname: string) => {
-    const starterSpecies = {
-      'courage': 'botamon',
-      'friendship': 'punimon',
-      'love': 'nyokimon',
-      'knowledge': 'pabumon',
-      'sincerity': 'yuramon',
-      'reliability': 'pichimon',
-      'hope': 'poyomon',
-      'light': 'yukimibotamon',
-    }[egg.crest] || 'botamon';
+  const handleUpdatePlayerName = (name: string) => {
+    const clean = name.trim();
+    setPet((prev) => ({
+      ...prev,
+      playerName: clean,
+    }));
+    showNotification(
+      clean
+        ? `Saved your name (${clean})! Your Digimon will call you by name!`
+        : 'Cleared custom name — Digimon will call you Tamer.'
+    );
+  };
 
-    setPet({
+  // NEW EGG / RESET
+  const handleSelectNewEgg = (egg: DigiEggInfo, nickname: string, playerName?: string) => {
+    const starterSpecies = egg.baby1Id || 'botamon';
+
+    setPet((prev) => ({
       eggId: egg.id,
       currentSpeciesId: starterSpecies,
       stage: 'fresh',
       nickname,
+      playerName: playerName !== undefined ? playerName.trim() : (prev.playerName || ''),
       birthTimestamp: Date.now(),
       stageEnteredAt: Date.now(),
       evoGoalMetAt: undefined,
@@ -827,6 +897,7 @@ export default function App() {
       weight: 12,
       strength: 15,
       dpPoints: 20,
+      effort: 0,
       isSick: false,
       isSleeping: false,
       lightsOff: false,
@@ -835,17 +906,22 @@ export default function App() {
       battlesWon: 0,
       battlesTotal: 0,
       trainingCount: 0,
-      digiBits: 100,
+      stageBattlesWon: 0,
+      stageBattlesTotal: 0,
+      stageTrainingCount: 0,
+      equippedSpecialItem: null,
+      ownedSpecialItems: prev.ownedSpecialItems || [],
+      digiBits: Math.max(100, prev.digiBits),
       bigMeatStock: 8,
       vitaminStock: 5,
-      activeRoomTheme: 'file-island',
-      placedFurniture: [
-        { instanceId: 'init-1', furnitureId: 'meat-grill', x: 28, y: 68 },
-      ],
+      activeRoomTheme: prev.activeRoomTheme || 'file-island',
+      placedFurniture: prev.placedFurniture?.length
+        ? prev.placedFurniture
+        : [{ instanceId: 'init-1', furnitureId: 'meat-grill', x: 28, y: 68 }],
       lastCareCheck: Date.now(),
-    });
+    }));
     setIsEggModalOpen(false);
-    showNotification(`Hatched the ${egg.crestName}! Welcome, ${nickname}! ✨`);
+    showNotification(`Hatched Egg #${String(egg.eggNumber).padStart(2, '0')} (${egg.crestName})! Welcome, ${nickname}! ✨`);
   };
 
   const toggleSound = () => {
@@ -891,6 +967,7 @@ export default function App() {
         onOpenDigivice={() => setIsOverlayMode(false)}
         onOpenTraining={() => setIsTrainingOpen(true)}
         onOpenNativePip={() => setIsNativePipOpen(true)}
+        onUpdatePlayerName={handleUpdatePlayerName}
         isOverlayActive={isOverlayMode}
         onToggleOverlay={() => setIsOverlayMode(false)}
       />
@@ -1614,6 +1691,7 @@ export default function App() {
       {/* MODALS */}
       <EggSelectionModal
         isOpen={isEggModalOpen}
+        currentPlayerName={pet.playerName}
         onSelectEgg={handleSelectNewEgg}
       />
 
@@ -1655,7 +1733,9 @@ export default function App() {
 
       <DigidexModal
         currentCrest={currentEgg.crest}
+        currentEggId={pet.eggId}
         currentSpeciesId={pet.currentSpeciesId}
+        pet={pet}
         isOpen={isDigidexOpen}
         onClose={() => setIsDigidexOpen(false)}
         onSelectSpecies={(speciesId) => triggerEvolution(speciesId)}
@@ -1670,6 +1750,9 @@ export default function App() {
         onOpenTraining={() => setIsTrainingOpen(true)}
         onOpenColosseum={() => setIsColosseumOpen(true)}
         onOpenDigidex={() => setIsDigidexOpen(true)}
+        onOpenShop={() => setIsShopOpen(true)}
+        onEquipSpecialItem={handleEquipSpecialItem}
+        onUpdatePlayerName={handleUpdatePlayerName}
       />
 
       <ShopModal
@@ -1677,6 +1760,8 @@ export default function App() {
         onClose={() => setIsShopOpen(false)}
         pet={pet}
         onBuyItem={handleBuyShopItem}
+        onBuySpecialItem={handleBuySpecialItem}
+        onEquipSpecialItem={handleEquipSpecialItem}
       />
 
       <PwaInstallModal
@@ -1721,6 +1806,7 @@ export default function App() {
         egg={pet.stage === 'egg' ? currentEgg : undefined}
         isOpen={isTalkModalOpen}
         onClose={() => setIsTalkModalOpen(false)}
+        onUpdatePlayerName={handleUpdatePlayerName}
       />
 
       <EvolutionModal
@@ -1755,7 +1841,17 @@ export default function App() {
             const saved = localStorage.getItem(STORAGE_KEY);
             if (saved) {
               const parsed = JSON.parse(saved);
-              setPet(parsed);
+              setPet({
+                playerName: '',
+                effort: 0,
+                stageBattlesWon: parsed.battlesWon ?? 0,
+                stageBattlesTotal: parsed.battlesTotal ?? 0,
+                stageTrainingCount: parsed.trainingCount ?? 0,
+                equippedSpecialItem: null,
+                ownedSpecialItems: [],
+                ...parsed,
+                currentSpeciesId: DIGIMON_DATABASE[parsed.currentSpeciesId] ? parsed.currentSpeciesId : 'botamon',
+              });
               showNotification(`Restored ${parsed.nickname || 'Digimon'} save successfully!`);
             }
           } catch {}

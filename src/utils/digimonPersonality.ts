@@ -368,11 +368,26 @@ export function getPersonalityProfile(speciesId?: string): DigimonPersonalityPro
 }
 
 /**
+ * Replaces direct-address "Tamer" / "partner" vocatives with the user's chosen name when set
+ */
+export function personalizeQuoteForPlayer(quote: string, playerName?: string): string {
+  const name = playerName?.trim();
+  if (!name) return quote;
+  return quote
+    .replace(/\b(Hey|Hi|Thanks|Love you|miss you)\s+Tamer\b/gi, `$1 ${name}`)
+    .replace(/\bTamer(?=[!,?])/g, name)
+    .replace(/,\s*Tamer\b/g, `, ${name}`)
+    .replace(/\bloves Tamer\b/gi, `loves ${name}`)
+    .replace(/\bpartner(?=[!,?])/g, name);
+}
+
+/**
  * Smart contextual dialogue generator (Instant offline fallback)
  */
 export function getContextualQuote(
   speciesId?: string,
   state?: {
+    playerName?: string;
     isSick?: boolean;
     hunger?: number;
     poopCount?: number;
@@ -383,32 +398,33 @@ export function getContextualQuote(
   }
 ): string {
   const profile = getPersonalityProfile(speciesId);
+  const finalize = (q: string) => personalizeQuoteForPlayer(q, state?.playerName);
 
   if (state?.isSleeping) {
-    return "Zzz... counting sheep-mon in the Digital Dream... 💤";
+    return finalize("Zzz... counting sheep-mon in the Digital Dream... 💤");
   }
   if (state?.isSick) {
     const list = profile.sickQuotes.length ? profile.sickQuotes : DEFAULT_PERSONALITY.sickQuotes;
-    return list[Math.floor(Math.random() * list.length)];
+    return finalize(list[Math.floor(Math.random() * list.length)]);
   }
   if ((state?.hunger ?? 100) < 30) {
     const list = profile.hungryQuotes.length ? profile.hungryQuotes : DEFAULT_PERSONALITY.hungryQuotes;
-    return list[Math.floor(Math.random() * list.length)];
+    return finalize(list[Math.floor(Math.random() * list.length)]);
   }
   if ((state?.poopCount ?? 0) > 0) {
     const list = profile.poopQuotes.length ? profile.poopQuotes : DEFAULT_PERSONALITY.poopQuotes;
-    return list[Math.floor(Math.random() * list.length)];
+    return finalize(list[Math.floor(Math.random() * list.length)]);
   }
   if (state?.batteryLevel && state.batteryLevel <= 20) {
-    return `Battery at ${state.batteryLevel}%! Tamer, please plug in our device! ⚡`;
+    return finalize(`Battery at ${state.batteryLevel}%! Tamer, please plug in our device! ⚡`);
   }
   if (Math.random() < 0.25 && state?.happiness && state.happiness > 75) {
     const list = profile.happyQuotes.length ? profile.happyQuotes : DEFAULT_PERSONALITY.happyQuotes;
-    return list[Math.floor(Math.random() * list.length)];
+    return finalize(list[Math.floor(Math.random() * list.length)]);
   }
 
   const idleList = profile.idleQuotes.length ? profile.idleQuotes : DEFAULT_PERSONALITY.idleQuotes;
-  return idleList[Math.floor(Math.random() * idleList.length)];
+  return finalize(idleList[Math.floor(Math.random() * idleList.length)]);
 }
 
 export interface DigimonChatTurn {
@@ -426,6 +442,7 @@ export interface DigimonTalkParams {
   signatureMove?: string;
   crestName?: string;
   tamerName?: string;
+  playerName?: string;
   hunger?: number;
   happiness?: number;
   energy?: number;
@@ -461,6 +478,7 @@ export async function fetchDigimonAiDialogue(params: DigimonTalkParams): Promise
     type: params.type || dbMon?.type,
     description: params.description || dbMon?.description,
     signatureMove: params.signatureMove || dbMon?.signatureMove?.name,
+    playerName: params.playerName?.trim() || undefined,
   };
 
   const controller = new AbortController();
@@ -502,6 +520,7 @@ export async function fetchDigimonAiDialogue(params: DigimonTalkParams): Promise
     if (!params.userMessage) {
       return {
         text: getContextualQuote(params.speciesId, {
+          playerName: params.playerName,
           isSick: params.isSick,
           hunger: params.hunger,
           poopCount: params.poopCount,

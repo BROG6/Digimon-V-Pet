@@ -4,6 +4,8 @@ import { PetState, DigimonSpecies, DigiEggInfo } from '../types/digimon';
 import { DigimonSprite, DigimonPose } from './DigimonSprite';
 import { PixelMeatIcon, PixelVitaminIcon, PixelPoopIcon } from './PixelItemIcons';
 import { sound } from '../utils/audio';
+import { checkEvolutionEligibility } from '../utils/evolutionEngine';
+import { DIGIMON_DATABASE } from '../data/digidex';
 import { 
   Heart, 
   Scale, 
@@ -174,7 +176,8 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
   const winRate = pet.battlesTotal > 0 ? Math.round((pet.battlesWon / pet.battlesTotal) * 100) : 0;
   const trainingAtkBonus = Math.floor(pet.trainingCount * 2);
   const totalAtk = (species?.baseAtk || 20) + trainingAtkBonus;
-  const nextEvo = species?.nextEvolutions && species.nextEvolutions.length > 0 ? species.nextEvolutions[0] : null;
+  const evoElig = checkEvolutionEligibility(pet, species);
+  const predictedNextSpecies = evoElig.nextId ? DIGIMON_DATABASE[evoElig.nextId] : undefined;
 
   // AUTONOMOUS MOVEMENT ENGINE INSIDE LCD SCREEN
   const [monX, setMonX] = useState<number>(50); // percentage 15% to 85%
@@ -835,8 +838,14 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
                         <span className="font-bold text-amber-300">{pet.trainingCount}x</span>
                       </div>
                       <div className="flex justify-between">
-                        <span>NEXT EVO:</span>
-                        <span className="font-bold text-amber-400 uppercase">{nextEvo ? nextEvo.speciesId : 'MAX'}</span>
+                        <span>EFFORT / WT:</span>
+                        <span className="font-bold text-cyan-300">EF {evoElig.effort}/10 • {evoElig.weightClass}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>NEXT ({evoElig.archetype.toUpperCase()}):</span>
+                        <span className="font-bold text-amber-400 uppercase truncate max-w-[92px]">
+                          {predictedNextSpecies ? predictedNextSpecies.name : 'MAX'}
+                        </span>
                       </div>
                     </div>
                   )}

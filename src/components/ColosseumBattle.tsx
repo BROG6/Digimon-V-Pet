@@ -104,7 +104,7 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
       name: pet.nickname || species.name,
       speciesId: species.id,
       stage: pet.stage,
-      crest: pet.eggId ? (pet.eggId.replace('egg-', '') as any) : 'courage',
+      crest: species.crest || 'courage',
       currentHp: baseHp,
       maxHp: baseHp,
       sp: 30,

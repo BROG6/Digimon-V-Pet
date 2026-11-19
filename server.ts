@@ -183,7 +183,11 @@ function readGradleVersion(): { versionName: string; versionCode: number } {
               for (const [speciesId, customConfig] of Object.entries(mergedOverrides)) {
                 existingSprites[speciesId] = customConfig;
               }
-              const updatedSection = `${prefix}${JSON.stringify(existingSprites, null, 2)};\n`;
+              const compactEntries = Object.entries(existingSprites)
+                .sort(([a], [b]) => a.localeCompare(b))
+                .map(([k, v]) => `  ${JSON.stringify(k)}: ${JSON.stringify(v)}`)
+                .join(',\n');
+              const updatedSection = `${prefix}{\n${compactEntries}\n};\n`;
               const newTsCode = tsCode.substring(0, startIndex) + updatedSection;
               fs.writeFileSync(SPRITES_TS_FILE, newTsCode, 'utf-8');
               codeUpdated = true;
@@ -220,6 +224,7 @@ function readGradleVersion(): { versionName: string; versionCode: number } {
         signatureMove = '',
         crestName = '',
         tamerName = '',
+        playerName = '',
         hunger = 50,
         happiness = 80,
         energy = 80,
@@ -242,14 +247,17 @@ function readGradleVersion(): { versionName: string; versionCode: number } {
         });
       }
 
-      const systemInstruction = `You are ${speciesName}, a living Digimon virtual pet companion bonded with your human Tamer on their device.
+      const cleanPlayerName = String(playerName || '').trim();
+
+      const systemInstruction = `You are ${speciesName}, a living Digimon virtual pet companion bonded with your human partner${cleanPlayerName ? `, ${cleanPlayerName},` : ' (Tamer)'} on their device.
 
 IDENTITY & LORE:
 - Species: ${speciesName} (Stage: ${stage}, Attribute: ${attribute}, Type: ${type})
-${crestName ? `- Crest Lineage: ${crestName}` : ''}
+${crestName ? `- Egg / Crest Lineage: ${crestName}` : ''}
 ${signatureMove ? `- Signature Attack: ${signatureMove}` : ''}
 ${description ? `- Lore: ${description}` : ''}
-${tamerName ? `- Classic Anime Partner Lore: ${tamerName} (refer to your current player warmly as "Tamer" or "partner", while optionally referencing your adventure spirit)` : ''}
+${cleanPlayerName ? `- Your Human Partner's Name: ${cleanPlayerName} — IMPORTANT: Address them directly by their name "${cleanPlayerName}" warmly and naturally when talking to them!` : '- Human Partner Name: Not set yet (call them warmly "Tamer" or "partner").'}
+${tamerName ? `- Egg Baby Lineage / Lore Note: ${tamerName}` : ''}
 
 CURRENT LIVE VITALS & RECORD:
 - Hunger: ${hunger}/100 (${hunger < 30 ? 'STARVING — craving Big Meat!' : hunger > 80 ? 'Full & satisfied' : 'Normal'})
@@ -270,7 +278,7 @@ VOICE & ROLEPLAY GUIDELINES:
   * Patamon/Angemon lineage: hopeful, earnest, cheerful, fiercely protective of peace.
   * Tentomon/Kabuterimon lineage: clever, analytical, curious about technology and battle stats.
   * Palmon/Biyomon/Gatomon/Gomamon/Veemon/Guilmon/Renamon: match their signature anime personality!
-- ACTUALLY ANSWER the Tamer's question or comment directly! Don't give generic non-sequiturs. If they ask a question (e.g., about food, battles, your feelings, your attacks, advice, jokes, or real-world topics), respond thoughtfully and creatively from ${speciesName}'s perspective.
+- ACTUALLY ANSWER ${cleanPlayerName || 'the Tamer'}'s question or comment directly! Don't give generic non-sequiturs. If they ask a question (e.g., about food, battles, your feelings, your attacks, advice, jokes, or real-world topics), respond thoughtfully and creatively from ${speciesName}'s perspective.
 - Length: 1 to 3 concise, natural sentences (roughly 15–45 words). Punchy, expressive, and fun to read in a chat bubble.
 - Use 1–2 fitting emojis.
 - Never say you are an AI, chatbot, or language model.`;
@@ -289,7 +297,7 @@ VOICE & ROLEPLAY GUIDELINES:
 
       const userPrompt = userMessage && String(userMessage).trim()
         ? String(userMessage).trim()
-        : `Say a spontaneous, personality-filled remark to your Tamer reacting to your current mood, vitals, or surroundings.`;
+        : `Say a spontaneous, personality-filled remark to ${cleanPlayerName || 'your Tamer'} reacting to your current mood, vitals, or surroundings.`;
 
       const contents = cleanHistory.length > 0
         ? [

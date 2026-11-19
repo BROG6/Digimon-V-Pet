@@ -1,33 +1,93 @@
-export type CrestType = 
-  | 'courage' 
-  | 'friendship' 
-  | 'love' 
-  | 'knowledge' 
-  | 'sincerity' 
-  | 'reliability' 
-  | 'hope' 
-  | 'light';
+export type CrestType =
+  | 'courage'
+  | 'friendship'
+  | 'love'
+  | 'knowledge'
+  | 'sincerity'
+  | 'reliability'
+  | 'hope'
+  | 'light'
+  | 'miracles'
+  | 'shadow'
+  | 'wind'
+  | 'earth'
+  | 'hazard'
+  | 'mech'
+  | 'mystic';
 
-export type DigimonStage = 
-  | 'egg' 
-  | 'fresh' 
-  | 'in-training' 
-  | 'rookie' 
-  | 'champion' 
-  | 'ultimate' 
+export type DigimonStage =
+  | 'egg'
+  | 'fresh'
+  | 'in-training'
+  | 'rookie'
+  | 'champion'
+  | 'ultimate'
   | 'mega';
+
+export type EvolutionArchetype = 'vaccine' | 'data' | 'virus' | 'corrupted' | 'armor';
+
+export type WeightClass = 'Light' | 'Normal' | 'Heavy';
+
+export type SpecialItemId =
+  | 'courage_crest'
+  | 'love_crest'
+  | 'knowledge_crest'
+  | 'hope_crest'
+  | 'light_crest'
+  | 'destiny_egg';
+
+export interface SpecialItemInfo {
+  id: SpecialItemId;
+  name: string;
+  shortName: string;
+  icon: string;
+  price: number;
+  eggId: string;
+  armorSpeciesId: string;
+  description: string;
+}
 
 export interface DigiEggInfo {
   id: string;
+  eggNumber: number;
   crest: CrestType;
   crestName: string;
+  archetypeTitle: string;
   crestColor: string;
   tamerName: string;
   partnerRookie: string;
+  baby1Id: string;
+  baby2Id: string;
+  rookiePreviewIds: {
+    vaccine: string;
+    data: string;
+    virus: string;
+    corrupted: string;
+  };
+  armorOption?: {
+    speciesId: string;
+    itemId: SpecialItemId;
+    itemLabel: string;
+  };
   description: string;
   eggPrimaryColor: string;
   eggPatternColor: string;
-  eggPattern: 'stripes' | 'spots' | 'flames' | 'circuit' | 'flower' | 'cross' | 'star' | 'sacred';
+  eggPattern:
+    | 'stripes'
+    | 'spots'
+    | 'flames'
+    | 'circuit'
+    | 'flower'
+    | 'cross'
+    | 'star'
+    | 'sacred'
+    | 'dragon'
+    | 'ninja'
+    | 'wind'
+    | 'earth'
+    | 'hazard'
+    | 'mech'
+    | 'moon';
 }
 
 export interface AttackMove {
@@ -38,13 +98,30 @@ export interface AttackMove {
   soundType: 'blast' | 'punch' | 'laser' | 'howl';
 }
 
+export interface EvolutionTarget {
+  speciesId: string;
+  requiredStage: DigimonStage;
+  archetype?: EvolutionArchetype;
+  requiredSpecialItem?: SpecialItemId;
+  minBattles?: number;
+  minTraining?: number;
+  maxMistakes?: number;
+  minEffort?: number;
+  minWinRate?: number;
+  weightClass?: WeightClass;
+}
+
 export interface DigimonSpecies {
   id: string;
   name: string;
   japaneseName: string;
   stage: DigimonStage;
   crest: CrestType;
-  attribute: 'Vaccine' | 'Data' | 'Virus' | 'Free';
+  eggIds?: string[];
+  archetype?: EvolutionArchetype;
+  spriteId?: string;
+  spriteFilter?: string;
+  attribute: 'Vaccine' | 'Data' | 'Virus' | 'Free' | 'Unknown';
   type: string;
   colorTheme: string;
   description: string;
@@ -53,13 +130,7 @@ export interface DigimonSpecies {
   baseDef: number;
   baseSpd: number;
   signatureMove: AttackMove;
-  nextEvolutions?: {
-    speciesId: string;
-    requiredStage: DigimonStage;
-    minBattles?: number;
-    minTraining?: number;
-    maxMistakes?: number;
-  }[];
+  nextEvolutions?: EvolutionTarget[];
 }
 
 export interface PlacedFurniture {
@@ -84,6 +155,7 @@ export interface PetState {
   currentSpeciesId: string;
   stage: DigimonStage;
   nickname: string;
+  playerName?: string;
   birthTimestamp: number;
   hunger: number; // 0 (starving) to 100 (full)
   energy: number; // 0 (exhausted) to 100 (ready)
@@ -92,6 +164,7 @@ export interface PetState {
   weight: number; // grams
   strength: number; // training stat
   dpPoints: number; // digimon power points
+  effort?: number; // 0 to 10 Effort / Training score in current stage
   isSick: boolean;
   isSleeping: boolean;
   lightsOff: boolean;
@@ -100,6 +173,11 @@ export interface PetState {
   battlesWon: number;
   battlesTotal: number;
   trainingCount: number;
+  stageBattlesWon?: number;
+  stageBattlesTotal?: number;
+  stageTrainingCount?: number;
+  equippedSpecialItem?: SpecialItemId | null;
+  ownedSpecialItems?: SpecialItemId[];
   digiBits: number; // currency
   bigMeatStock: number;
   vitaminStock: number;

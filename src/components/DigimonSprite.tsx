@@ -90,7 +90,8 @@ export const DigimonSprite: React.FC<DigimonSpriteProps> = ({
 
     let count = 4;
     let hasSharedStage = false;
-    const config = species?.id ? getEffectiveSpriteConfig(species.id) : undefined;
+    const spriteLookupId = species?.spriteId || species?.id;
+    const config = spriteLookupId ? getEffectiveSpriteConfig(spriteLookupId) : undefined;
     if (config) {
       const poseKey = activePose === 'pooping' ? 'sitting' : activePose;
       const frames = config.frames[poseKey] || config.frames.standing || [];
@@ -184,6 +185,52 @@ export const DigimonSprite: React.FC<DigimonSpriteProps> = ({
                 <path d="M 22,105 Q 50,115 78,105" fill="none" />
               </g>
             )}
+            {!lcdMode && (eggInfo.eggPattern === 'spots' || eggInfo.eggPattern === 'wind') && (
+              <g fill={eggInfo.eggPatternColor} opacity="0.8">
+                <circle cx="34" cy="60" r="8" />
+                <circle cx="66" cy="54" r="7" />
+                <circle cx="52" cy="84" r="10" />
+                <circle cx="30" cy="96" r="6" />
+                <circle cx="70" cy="98" r="7" />
+              </g>
+            )}
+            {!lcdMode && (eggInfo.eggPattern === 'circuit' || eggInfo.eggPattern === 'mech') && (
+              <g stroke={eggInfo.eggPatternColor} strokeWidth="3.5" fill="none" opacity="0.85">
+                <path d="M 22,58 H 42 V 76 H 68" />
+                <path d="M 78,94 H 54 V 110 H 32" />
+                <circle cx="42" cy="58" r="4" fill={eggInfo.eggPatternColor} />
+                <circle cx="68" cy="76" r="4" fill={eggInfo.eggPatternColor} />
+                <circle cx="54" cy="94" r="4" fill={eggInfo.eggPatternColor} />
+              </g>
+            )}
+            {!lcdMode && eggInfo.eggPattern === 'flower' && (
+              <g fill={eggInfo.eggPatternColor} opacity="0.82">
+                <circle cx="50" cy="68" r="6" />
+                <circle cx="50" cy="54" r="6" />
+                <circle cx="50" cy="82" r="6" />
+                <circle cx="36" cy="68" r="6" />
+                <circle cx="64" cy="68" r="6" />
+                <circle cx="50" cy="68" r="5" fill="#fef08a" />
+              </g>
+            )}
+            {!lcdMode && (eggInfo.eggPattern === 'cross' || eggInfo.eggPattern === 'earth') && (
+              <g fill={eggInfo.eggPatternColor} opacity="0.82">
+                <rect x="44" y="46" width="12" height="52" rx="3" />
+                <rect x="26" y="66" width="48" height="12" rx="3" />
+              </g>
+            )}
+            {!lcdMode && (eggInfo.eggPattern === 'star' || eggInfo.eggPattern === 'sacred' || eggInfo.eggPattern === 'moon') && (
+              <g fill={eggInfo.eggPatternColor} opacity="0.85">
+                <polygon points="50,42 56,60 75,60 60,71 66,89 50,78 34,89 40,71 25,60 44,60" />
+                <circle cx="50" cy="103" r="6" />
+              </g>
+            )}
+            {!lcdMode && (eggInfo.eggPattern === 'dragon' || eggInfo.eggPattern === 'ninja' || eggInfo.eggPattern === 'hazard') && (
+              <g stroke={eggInfo.eggPatternColor} strokeWidth="6" strokeLinecap="round" fill="none" opacity="0.88">
+                <path d="M 30,52 L 50,78 L 70,52" />
+                <path d="M 26,84 L 50,108 L 74,84" />
+              </g>
+            )}
             <ellipse cx="36" cy="38" rx="8" ry="16" transform="rotate(-25, 36, 38)" fill="#ffffff" opacity={lcdMode ? '0' : '0.6'} />
           </svg>
         </motion.div>
@@ -194,7 +241,8 @@ export const DigimonSprite: React.FC<DigimonSpriteProps> = ({
   // =========================================================================
   // AUTHENTIC NEW SPRITE SHEET RENDERER (ALL DIGIMON SPECIES)
   // =========================================================================
-  const newConfig = getEffectiveSpriteConfig(species.id);
+  const spriteLookupId = species.spriteId || species.id;
+  const newConfig = getEffectiveSpriteConfig(spriteLookupId);
   if (newConfig) {
     const poseKey = activePose === 'pooping' ? 'sitting' : activePose;
     const poseFrames = newConfig.frames[poseKey] || newConfig.frames.standing || [];
@@ -385,7 +433,9 @@ export const DigimonSprite: React.FC<DigimonSpriteProps> = ({
                         left: `-${currentFrame.x * pixelScale}px`,
                         top: `-${currentFrame.y * pixelScale}px`,
                         imageRendering: 'pixelated',
-                        filter: lcdMode ? 'grayscale(100%) contrast(150%) brightness(0.65)' : undefined,
+                        filter: lcdMode
+                          ? 'grayscale(100%) contrast(150%) brightness(0.65)'
+                          : species.spriteFilter || undefined,
                       }}
                     />
                   </div>
@@ -443,7 +493,9 @@ export const DigimonSprite: React.FC<DigimonSpriteProps> = ({
                     left: `-${currentFrame.x * pixelScale}px`,
                     top: `-${currentFrame.y * pixelScale}px`,
                     imageRendering: 'pixelated',
-                    filter: lcdMode ? 'grayscale(100%) contrast(150%) brightness(0.65)' : undefined,
+                    filter: lcdMode
+                      ? 'grayscale(100%) contrast(150%) brightness(0.65)'
+                      : species.spriteFilter || undefined,
                   }}
                 />
               </div>

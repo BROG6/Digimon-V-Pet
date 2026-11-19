@@ -95,9 +95,12 @@ export const DigiChat: React.FC<DigiChatProps> = ({
     if (!newPostText.trim()) return;
 
     sound.playAlert();
+    const authorName =
+      pet.playerName?.trim() ||
+      (pet.nickname ? `${pet.nickname}'s Tamer` : 'DigiDestined Tamer');
     const newPost: CommunityPost = {
       id: `post-${Date.now()}`,
-      author: pet.nickname ? `${pet.nickname}'s Tamer` : 'DigiDestined Tamer',
+      author: authorName,
       tamerTitle: 'Active Tamer',
       digimonName: species?.name || 'Digimon',
       stage: pet.stage.toUpperCase(),

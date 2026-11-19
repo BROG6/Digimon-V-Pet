@@ -4,7 +4,7 @@ import { PetState, DigimonSpecies, DigiEggInfo } from '../types/digimon';
 import { DigimonSprite } from './DigimonSprite';
 import { fetchDigimonAiDialogue, DigimonChatTurn } from '../utils/digimonPersonality';
 import { sound } from '../utils/audio';
-import { Sparkles, Send, X, MessageSquare } from 'lucide-react';
+import { Sparkles, Send, X, MessageSquare, User, Check, Pencil } from 'lucide-react';
 
 interface DigimonTalkModalProps {
   pet: PetState;
@@ -12,6 +12,7 @@ interface DigimonTalkModalProps {
   egg?: DigiEggInfo;
   isOpen: boolean;
   onClose: () => void;
+  onUpdatePlayerName?: (name: string) => void;
 }
 
 export const DigimonTalkModal: React.FC<DigimonTalkModalProps> = ({
@@ -20,12 +21,23 @@ export const DigimonTalkModal: React.FC<DigimonTalkModalProps> = ({
   egg,
   isOpen,
   onClose,
+  onUpdatePlayerName,
 }) => {
   const [messages, setMessages] = useState<DigimonChatTurn[]>([]);
   const [inputText, setInputText] = useState<string>('');
   const [isThinking, setIsThinking] = useState<boolean>(false);
   const [moodAction, setMoodAction] = useState<'idle' | 'happy'>('idle');
+  const [isEditingName, setIsEditingName] = useState<boolean>(false);
+  const [draftName, setDraftName] = useState<string>(pet.playerName || '');
   const scrollRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (isOpen) {
+      const saved = pet.playerName || '';
+      setDraftName(saved);
+      setIsEditingName(!saved.trim());
+    }
+  }, [isOpen, pet.playerName]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -36,10 +48,25 @@ export const DigimonTalkModal: React.FC<DigimonTalkModalProps> = ({
   if (!isOpen) return null;
 
   const speciesName = species?.name || pet.nickname || 'Digimon';
+  const savedPlayerName = (pet.playerName || '').trim();
+
+  const commitName = (raw: string): string => {
+    const clean = raw.trim();
+    if (clean !== savedPlayerName) {
+      onUpdatePlayerName?.(clean);
+    }
+    if (clean) {
+      setIsEditingName(false);
+    }
+    return clean;
+  };
 
   const handleSend = async (rawText: string) => {
     const clean = rawText.trim();
     if (!clean || isThinking) return;
+
+    const activePlayerName =
+      isEditingName && draftName.trim() ? commitName(draftName) : savedPlayerName || draftName.trim();
 
     sound.playButton();
     const userTurn: DigimonChatTurn = { role: 'user', text: clean };
@@ -59,6 +86,7 @@ export const DigimonTalkModal: React.FC<DigimonTalkModalProps> = ({
         signatureMove: species?.signatureMove?.name,
         crestName: egg?.crestName,
         tamerName: egg?.tamerName,
+        playerName: activePlayerName || undefined,
         hunger: pet.hunger,
         happiness: pet.happiness,
         energy: pet.energy,
@@ -116,7 +144,7 @@ export const DigimonTalkModal: React.FC<DigimonTalkModalProps> = ({
         </div>
 
         {/* Live Partner Preview */}
-        <div className="my-3 py-2.5 px-3 bg-gradient-to-b from-sky-950/50 to-slate-950 border border-slate-800 rounded-2xl flex items-center gap-3">
+        <div className="mt-3 py-2.5 px-3 bg-gradient-to-b from-sky-950/50 to-slate-950 border border-slate-800 rounded-2xl flex items-center gap-3">
           <div className="shrink-0 flex items-center justify-center min-w-[64px]">
             <DigimonSprite
               species={species}
@@ -127,7 +155,7 @@ export const DigimonTalkModal: React.FC<DigimonTalkModalProps> = ({
           </div>
           <div className="flex-1 min-w-0 text-xs text-slate-300">
             <div className="font-chakra font-bold text-cyan-300 text-xs mb-0.5">
-              {speciesName} is listening!
+              {speciesName} is listening{savedPlayerName ? `, ${savedPlayerName}` : ''}!
             </div>
             <p className="text-[11px] text-slate-400 leading-snug line-clamp-2">
               {species?.description || `Your ${pet.stage} companion is ready to chat about adventures, training, or anything on your mind.`}
@@ -135,14 +163,68 @@ export const DigimonTalkModal: React.FC<DigimonTalkModalProps> = ({
           </div>
         </div>
 
+        {/* Player / Tamer Name Bar */}
+        <div className="my-2.5 px-3 py-2 rounded-xl bg-slate-950/90 border border-slate-800 flex items-center justify-between gap-2">
+          <div className="flex items-center gap-1.5 text-[11px] text-slate-300 shrink-0">
+            <User className="w-3.5 h-3.5 text-amber-400" />
+            <span className="font-pixel text-[9px] text-amber-300">YOUR NAME:</span>
+          </div>
+
+          {isEditingName ? (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                sound.playButton();
+                commitName(draftName);
+              }}
+              className="flex-1 flex items-center gap-1.5 min-w-0"
+            >
+              <input
+                type="text"
+                value={draftName}
+                onChange={(e) => setDraftName(e.target.value)}
+                maxLength={20}
+                placeholder={`Enter your name...`}
+                className="flex-1 min-w-0 bg-slate-900 border border-amber-500/40 rounded-lg px-2.5 py-1 text-xs text-white focus:outline-none focus:border-amber-400 placeholder:text-slate-500"
+              />
+              <button
+                type="submit"
+                className="px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-slate-950 font-pixel text-[9px] font-bold flex items-center gap-1 shrink-0 cursor-pointer"
+              >
+                <Check className="w-3 h-3" />
+                <span>SAVE</span>
+              </button>
+            </form>
+          ) : (
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-xs font-chakra font-bold text-white truncate">
+                {savedPlayerName || 'Tamer'}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  sound.playButton();
+                  setDraftName(savedPlayerName);
+                  setIsEditingName(true);
+                }}
+                className="px-2 py-0.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-slate-700 text-[9px] font-pixel flex items-center gap-1 shrink-0 cursor-pointer"
+              >
+                <Pencil className="w-2.5 h-2.5" />
+                <span>EDIT</span>
+              </button>
+            </div>
+          )}
+        </div>
+
         {/* Conversation Thread */}
         <div
           ref={scrollRef}
-          className="flex-1 min-h-[180px] max-h-[320px] overflow-y-auto space-y-2.5 pr-1 mb-3 bg-slate-950/70 border border-slate-800/80 rounded-2xl p-3"
+          className="flex-1 min-h-[170px] max-h-[300px] overflow-y-auto space-y-2.5 pr-1 mb-3 bg-slate-950/70 border border-slate-800/80 rounded-2xl p-3"
         >
           {messages.length === 0 && !isThinking && (
-            <div className="text-center text-slate-500 text-xs py-8 px-2">
-              Say hello to <span className="text-cyan-300 font-bold">{speciesName}</span> or tap a quick prompt below!
+            <div className="text-center text-slate-500 text-xs py-7 px-2">
+              Say hello to <span className="text-cyan-300 font-bold">{speciesName}</span>
+              {savedPlayerName ? `, ${savedPlayerName}` : ''} or tap a quick prompt below!
             </div>
           )}
 
@@ -220,3 +302,4 @@ export const DigimonTalkModal: React.FC<DigimonTalkModalProps> = ({
     </div>
   );
 };
+

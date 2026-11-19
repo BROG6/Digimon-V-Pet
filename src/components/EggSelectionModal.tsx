@@ -1,24 +1,33 @@
-import React, { useState } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
-import { DIGI_EGGS } from '../data/digidex';
+import React, { useState, useEffect } from 'react';
+import { motion } from 'motion/react';
+import { DIGI_EGGS, DIGIMON_DATABASE } from '../data/digidex';
 import { DigiEggInfo } from '../types/digimon';
 import { DigimonSprite } from './DigimonSprite';
 import { sound } from '../utils/audio';
 import confetti from 'canvas-confetti';
-import { Sparkles, Shield, ChevronRight, Check } from 'lucide-react';
+import { Sparkles, Check, Shield } from 'lucide-react';
 
 interface EggSelectionModalProps {
   isOpen: boolean;
-  onSelectEgg: (egg: DigiEggInfo, nickname: string) => void;
+  currentPlayerName?: string;
+  onSelectEgg: (egg: DigiEggInfo, nickname: string, playerName: string) => void;
 }
 
 export const EggSelectionModal: React.FC<EggSelectionModalProps> = ({
   isOpen,
+  currentPlayerName = '',
   onSelectEgg,
 }) => {
   const [selectedEgg, setSelectedEgg] = useState<DigiEggInfo>(DIGI_EGGS[0]);
   const [nickname, setNickname] = useState<string>(DIGI_EGGS[0].partnerRookie);
+  const [playerName, setPlayerName] = useState<string>(currentPlayerName);
   const [isHatching, setIsHatching] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      setPlayerName(currentPlayerName);
+    }
+  }, [isOpen, currentPlayerName]);
 
   if (!isOpen) return null;
 
@@ -44,35 +53,42 @@ export const EggSelectionModal: React.FC<EggSelectionModalProps> = ({
     }
 
     setTimeout(() => {
-      onSelectEgg(selectedEgg, nickname.trim() || selectedEgg.partnerRookie);
+      onSelectEgg(selectedEgg, nickname.trim() || selectedEgg.partnerRookie, playerName.trim());
       setIsHatching(false);
-    }, 1800);
+    }, 1500);
   };
 
+  const previewBranches = [
+    { label: 'VAC', id: selectedEgg.rookiePreviewIds.vaccine, badge: 'bg-sky-500/20 text-sky-300 border-sky-500/40' },
+    { label: 'DATA', id: selectedEgg.rookiePreviewIds.data, badge: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' },
+    { label: 'VIR', id: selectedEgg.rookiePreviewIds.virus, badge: 'bg-rose-500/20 text-rose-300 border-rose-500/40' },
+    { label: 'CORR', id: selectedEgg.rookiePreviewIds.corrupted, badge: 'bg-purple-500/20 text-purple-300 border-purple-500/40' },
+  ];
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md android-safe-modal">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/90 backdrop-blur-md android-safe-modal">
       <motion.div
-        initial={{ scale: 0.9, opacity: 0 }}
+        initial={{ scale: 0.92, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
-        exit={{ scale: 0.9, opacity: 0 }}
-        className="relative w-full max-w-4xl bg-slate-900 border-2 border-cyan-500/40 rounded-3xl p-6 shadow-2xl shadow-cyan-950/80 flex flex-col max-h-[92vh] overflow-y-auto"
+        exit={{ scale: 0.92, opacity: 0 }}
+        className="relative w-full max-w-5xl bg-slate-900 border-2 border-cyan-500/40 rounded-3xl p-4 sm:p-6 shadow-2xl shadow-cyan-950/80 flex flex-col max-h-[92vh] overflow-y-auto"
       >
         {/* Header */}
-        <div className="text-center mb-6">
+        <div className="text-center mb-4">
           <div className="inline-flex items-center gap-2 px-3 py-1 bg-cyan-500/20 border border-cyan-500/40 rounded-full text-cyan-300 text-xs font-pixel mb-2">
             <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
-            <span>ORIGINAL DIGIDESTINED NURSERY</span>
+            <span>DIGIMON UP • 15-EGG MATRIX NURSERY</span>
           </div>
-          <h2 className="text-2xl sm:text-3xl font-bold font-chakra text-white tracking-wide">
-            CHOOSE YOUR DESTINED DIGI-EGG
+          <h2 className="text-xl sm:text-3xl font-bold font-chakra text-white tracking-wide">
+            CHOOSE ONE OF 15 DESTINED DIGI-EGGS
           </h2>
-          <p className="text-slate-400 text-xs sm:text-sm mt-1 max-w-lg mx-auto">
-            Select one of the eight sacred Crest eggs from the 1999 DigiDestined. Your bond will guide its evolution to Mega!
+          <p className="text-slate-400 text-xs sm:text-sm mt-1 max-w-2xl mx-auto">
+            Every Egg branches into 4 Raise Archetypes (Vaccine, Data, Virus, Corrupted) plus Armor Evolutions across 263 sprites!
           </p>
         </div>
 
-        {/* 8 Digi-Eggs Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4 mb-6">
+        {/* 15 Digi-Eggs Grid */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2.5 sm:gap-3 mb-5">
           {DIGI_EGGS.map((egg) => {
             const isSelected = selectedEgg.id === egg.id;
             return (
@@ -81,37 +97,43 @@ export const EggSelectionModal: React.FC<EggSelectionModalProps> = ({
                 whileHover={{ scale: 1.03 }}
                 whileTap={{ scale: 0.98 }}
                 onClick={() => handleEggClick(egg)}
-                className={`cursor-pointer rounded-2xl p-3 border-2 transition-all flex flex-col items-center justify-between text-center ${
+                className={`cursor-pointer rounded-2xl p-2.5 border-2 transition-all flex flex-col items-center justify-between text-center ${
                   isSelected
-                    ? 'bg-slate-800/90 border-amber-400 shadow-lg shadow-amber-500/20 ring-2 ring-amber-400/30'
-                    : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'
+                    ? 'bg-slate-800/95 border-amber-400 shadow-lg shadow-amber-500/20 ring-2 ring-amber-400/30'
+                    : 'bg-slate-950/70 border-slate-800 hover:border-slate-700'
                 }`}
               >
-                {/* Crest Tag */}
+                {/* Egg Number & Archetype Header */}
                 <div
-                  className="w-full text-[10px] font-pixel py-0.5 rounded-full mb-1 font-bold truncate px-1 text-slate-950"
+                  className="w-full text-[9px] font-pixel py-0.5 rounded-full mb-1 font-bold truncate px-1.5 text-slate-950"
                   style={{ backgroundColor: egg.crestColor }}
                 >
-                  {egg.crest.toUpperCase()}
+                  #{String(egg.eggNumber).padStart(2, '0')} {egg.archetypeTitle}
                 </div>
 
                 {/* Animated Egg Sprite */}
-                <div className="my-2 h-24 flex items-center justify-center">
-                  <DigimonSprite egg={egg} scale={0.7} />
+                <div className="my-1 h-20 flex items-center justify-center">
+                  <DigimonSprite egg={egg} scale={0.6} />
                 </div>
 
-                {/* Rookie & Tamer info */}
-                <div className="mt-1">
-                  <div className="font-chakra font-bold text-sm text-white">
-                    {egg.partnerRookie}
+                {/* Baby Line & Armor Tag */}
+                <div className="w-full space-y-0.5">
+                  <div className="font-chakra font-bold text-xs text-white truncate">
+                    {egg.crestName}
                   </div>
-                  <div className="text-[11px] text-slate-400">
+                  <div className="text-[10px] text-slate-400 truncate">
                     {egg.tamerName}
                   </div>
+                  {egg.armorOption && (
+                    <div className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-500/15 border border-amber-500/30 text-[8px] font-pixel text-amber-300 mt-0.5">
+                      <Shield className="w-2.5 h-2.5" />
+                      <span>ARMOR READY</span>
+                    </div>
+                  )}
                 </div>
 
                 {isSelected && (
-                  <div className="mt-2 text-amber-400 flex items-center gap-1 text-[10px] font-pixel">
+                  <div className="mt-1 text-amber-400 flex items-center gap-1 text-[9px] font-pixel">
                     <Check className="w-3 h-3" />
                     <span>SELECTED</span>
                   </div>
@@ -121,56 +143,110 @@ export const EggSelectionModal: React.FC<EggSelectionModalProps> = ({
           })}
         </div>
 
-        {/* Selected Egg Detail Showcase */}
-        <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-4 sm:p-5 flex flex-col sm:flex-row items-center gap-5 justify-between">
-          <div className="flex items-center gap-4">
-            <div className="w-20 h-24 flex items-center justify-center">
-              <DigimonSprite egg={selectedEgg} scale={0.8} />
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="font-chakra text-lg font-bold text-white">
-                  {selectedEgg.crestName}
-                </span>
-                <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 font-pixel">
-                  {selectedEgg.tamerName}
-                </span>
+        {/* Selected Egg Detail & 4-Way Rookie Matrix Preview */}
+        <div className="bg-slate-950/90 border border-slate-800 rounded-2xl p-4 sm:p-5 flex flex-col gap-4">
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div className="w-20 h-24 flex items-center justify-center shrink-0">
+                <DigimonSprite egg={selectedEgg} scale={0.78} />
               </div>
-              <p className="text-slate-300 text-xs sm:text-sm mt-1 max-w-md">
-                {selectedEgg.description}
-              </p>
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span
+                    className="text-[10px] font-pixel px-2 py-0.5 rounded-full text-slate-950 font-bold"
+                    style={{ backgroundColor: selectedEgg.crestColor }}
+                  >
+                    EGG {String(selectedEgg.eggNumber).padStart(2, '0')}
+                  </span>
+                  <span className="font-chakra text-lg font-bold text-white">
+                    {selectedEgg.crestName}
+                  </span>
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-slate-800 text-cyan-300 font-pixel">
+                    {selectedEgg.tamerName}
+                  </span>
+                </div>
+                <p className="text-slate-300 text-xs sm:text-sm mt-1 max-w-xl">
+                  {selectedEgg.description}
+                </p>
+                {selectedEgg.armorOption && (
+                  <div className="mt-1.5 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/15 border border-amber-500/40 text-amber-300 text-[10px] font-pixel">
+                    <Shield className="w-3 h-3" />
+                    <span>
+                      ARMOR OPTION: {DIGIMON_DATABASE[selectedEgg.armorOption.speciesId]?.name || selectedEgg.armorOption.speciesId} ({selectedEgg.armorOption.itemLabel})
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Your Name, Nickname input & Hatch Button */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-end gap-2.5 w-full md:w-auto shrink-0">
+              <div className="w-full sm:w-40">
+                <label className="block text-[10px] font-pixel text-cyan-300 mb-1">
+                  YOUR NAME:
+                </label>
+                <input
+                  type="text"
+                  value={playerName}
+                  onChange={(e) => setPlayerName(e.target.value)}
+                  maxLength={20}
+                  className="w-full bg-slate-900 border border-cyan-500/40 rounded-xl px-3 py-2 text-sm text-white font-chakra focus:outline-none focus:border-cyan-400 placeholder:text-slate-500"
+                  placeholder="Your name..."
+                />
+              </div>
+
+              <div className="w-full sm:w-40">
+                <label className="block text-[10px] font-pixel text-slate-400 mb-1">
+                  DIGIMON NICKNAME:
+                </label>
+                <input
+                  type="text"
+                  value={nickname}
+                  onChange={(e) => setNickname(e.target.value)}
+                  maxLength={14}
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white font-chakra focus:outline-none focus:border-amber-400"
+                  placeholder="Name..."
+                />
+              </div>
+
+              <motion.button
+                whileHover={{ scale: 1.04 }}
+                whileTap={{ scale: 0.96 }}
+                disabled={isHatching}
+                onClick={handleConfirmHatch}
+                className="w-full sm:w-auto bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-pixel text-xs px-5 py-2.5 sm:py-3 rounded-xl font-bold tracking-wider shadow-lg shadow-orange-500/30 flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
+              >
+                <Sparkles className="w-4 h-4" />
+                <span>{isHatching ? 'HATCHING...' : 'HATCH DIGI-EGG!'}</span>
+              </motion.button>
             </div>
           </div>
 
-          {/* Nickname input & Hatch Button */}
-          <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
-            <div className="w-full sm:w-48">
-              <label className="block text-[10px] font-pixel text-slate-400 mb-1">
-                DIGIMON NICKNAME:
-              </label>
-              <input
-                type="text"
-                value={nickname}
-                onChange={(e) => setNickname(e.target.value)}
-                maxLength={12}
-                className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white font-chakra focus:outline-none focus:border-amber-400"
-                placeholder="Name..."
-              />
-            </div>
-
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              disabled={isHatching}
-              onClick={handleConfirmHatch}
-              className="w-full sm:w-auto bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-pixel text-xs px-6 py-3.5 rounded-xl font-bold tracking-wider shadow-lg shadow-orange-500/30 flex items-center justify-center gap-2 disabled:opacity-50"
-            >
-              <Sparkles className="w-4 h-4" />
-              <span>{isHatching ? 'HATCHING...' : 'HATCH DIGI-EGG!'}</span>
-            </motion.button>
+          {/* 4-Way Child (Rookie) Branching Preview Strip */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-3 border-t border-slate-800/80">
+            {previewBranches.map((b) => {
+              const sp = DIGIMON_DATABASE[b.id];
+              return (
+                <div
+                  key={`${b.label}-${b.id}`}
+                  className="flex items-center gap-2 bg-slate-900/90 border border-slate-800 rounded-xl px-2.5 py-1.5"
+                >
+                  <div className="w-10 h-10 flex items-center justify-center shrink-0 overflow-hidden">
+                    {sp && <DigimonSprite species={sp} scale={0.5} />}
+                  </div>
+                  <div className="min-w-0">
+                    <span className={`inline-block px-1.5 py-0.5 rounded border font-pixel text-[8px] ${b.badge}`}>
+                      {b.label}
+                    </span>
+                    <div className="font-chakra font-bold text-xs text-white truncate mt-0.5">
+                      {sp?.name || b.id}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
-
       </motion.div>
     </div>
   );

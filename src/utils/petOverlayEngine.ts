@@ -171,7 +171,9 @@ export function isFlyingSpecies(species?: Pick<DigimonSpecies, 'id' | 'stage' | 
     t.includes('bird') ||
     t.includes('angel') ||
     t.includes('fairy') ||
-    t.includes('insect')
+    t.includes('insect') ||
+    t.includes('sky dragon') ||
+    t.includes('holy dragon')
   );
 }
 

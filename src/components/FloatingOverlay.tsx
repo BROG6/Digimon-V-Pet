@@ -54,6 +54,7 @@ interface FloatingOverlayProps {
   onOpenTraining: () => void;
   onOpenStats?: () => void;
   onOpenNativePip?: () => void;
+  onUpdatePlayerName?: (name: string) => void;
   isOverlayActive: boolean;
   onToggleOverlay: () => void;
 }
@@ -77,6 +78,7 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
   onOpenColosseum,
   onOpenTraining: _onOpenTraining,
   onOpenNativePip,
+  onUpdatePlayerName,
   isOverlayActive,
   onToggleOverlay,
 }) => {
@@ -108,6 +110,8 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
   const [isMenuOpen, setIsMenuOpen] = useState<boolean>(false);
   const [isChatInputOpen, setIsChatInputOpen] = useState<boolean>(false);
   const [chatInputText, setChatInputText] = useState<string>('');
+  const [isEditingOverlayName, setIsEditingOverlayName] = useState<boolean>(false);
+  const [draftOverlayName, setDraftOverlayName] = useState<string>(pet.playerName || '');
   const [chatHistory, setChatHistory] = useState<DigimonChatTurn[]>([]);
   const [isAiThinking, setIsAiThinking] = useState<boolean>(false);
   const [battery, setBattery] = useState<DeviceBatteryInfo>({ level: 85, charging: false, supported: false });
@@ -665,6 +669,7 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
           signatureMove: species?.signatureMove?.name,
           crestName: egg?.crestName,
           tamerName: egg?.tamerName,
+          playerName: pet.playerName,
           hunger: pet.hunger,
           happiness: pet.happiness,
           energy: pet.energy,
@@ -695,6 +700,7 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
       } catch (err) {
         console.warn('Speech trigger error:', err);
         const fallback = getContextualQuote(pet.currentSpeciesId, {
+          playerName: pet.playerName,
           isSick: pet.isSick,
           hunger: pet.hunger,
           poopCount: pet.poopCount,
@@ -709,6 +715,7 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
     }
 
     const msg = getContextualQuote(pet.currentSpeciesId, {
+      playerName: pet.playerName,
       isSick: pet.isSick,
       hunger: pet.hunger,
       poopCount: pet.poopCount,
@@ -1230,18 +1237,60 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
             exit={{ opacity: 0, scale: 0.94, y: 16 }}
             className="fixed bottom-[max(calc(env(safe-area-inset-bottom,0px)+1rem),1rem)] left-1/2 -translate-x-1/2 w-[min(92vw,360px)] bg-slate-950/95 backdrop-blur-md border-2 border-cyan-500/60 rounded-2xl p-3 shadow-2xl z-50 text-slate-100 flex flex-col gap-2 pointer-events-auto"
           >
-            <div className="flex items-center justify-between border-b border-slate-800 pb-1.5">
-              <div className="flex items-center gap-1.5 text-xs font-chakra font-bold text-cyan-300">
-                <Sparkles className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
-                <span>TALK TO {species?.name?.toUpperCase() || 'DIGIMON'}</span>
+            <div className="flex items-center justify-between border-b border-slate-800 pb-1.5 gap-2">
+              <div className="flex items-center gap-1.5 text-xs font-chakra font-bold text-cyan-300 truncate">
+                <Sparkles className="w-3.5 h-3.5 text-amber-400 animate-pulse shrink-0" />
+                <span className="truncate">TALK TO {species?.name?.toUpperCase() || 'DIGIMON'}</span>
               </div>
-              <button
-                onClick={() => setIsChatInputOpen(false)}
-                className="text-slate-400 hover:text-white p-0.5 rounded cursor-pointer"
-              >
-                <X className="w-3.5 h-3.5" />
-              </button>
+              <div className="flex items-center gap-1.5 shrink-0">
+                {onUpdatePlayerName && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      sound.playButton();
+                      setDraftOverlayName(pet.playerName || '');
+                      setIsEditingOverlayName((prev) => !prev);
+                    }}
+                    className="px-2 py-0.5 rounded-full bg-slate-900 border border-amber-500/40 text-amber-300 text-[10px] font-chakra hover:bg-slate-800 cursor-pointer"
+                  >
+                    {pet.playerName?.trim() ? `You: ${pet.playerName}` : 'Set Name'}
+                  </button>
+                )}
+                <button
+                  onClick={() => setIsChatInputOpen(false)}
+                  className="text-slate-400 hover:text-white p-0.5 rounded cursor-pointer"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
+
+            {isEditingOverlayName && onUpdatePlayerName && (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  sound.playButton();
+                  onUpdatePlayerName(draftOverlayName.trim());
+                  setIsEditingOverlayName(false);
+                }}
+                className="flex items-center gap-1.5 bg-slate-900/90 border border-amber-500/40 rounded-xl px-2 py-1"
+              >
+                <input
+                  type="text"
+                  value={draftOverlayName}
+                  onChange={(e) => setDraftOverlayName(e.target.value)}
+                  maxLength={20}
+                  placeholder="Your name..."
+                  className="flex-1 bg-transparent text-xs text-white focus:outline-none placeholder:text-slate-500"
+                />
+                <button
+                  type="submit"
+                  className="px-2 py-0.5 rounded-lg bg-amber-500 text-slate-950 font-pixel text-[9px] font-bold cursor-pointer"
+                >
+                  SAVE
+                </button>
+              </form>
+            )}
 
             {chatHistory.length > 0 && (
               <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1 bg-slate-900/70 border border-slate-800 rounded-xl p-2">

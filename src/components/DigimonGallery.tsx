@@ -118,7 +118,9 @@ export const DigimonGallery: React.FC<DigimonGalleryProps> = ({
 
   // Load config whenever selectedSpeciesId changes
   useEffect(() => {
-    const config = getEffectiveSpriteConfig(selectedSpeciesId);
+    const sp = DIGIMON_DATABASE[selectedSpeciesId];
+    const spriteKey = sp?.spriteId || selectedSpeciesId;
+    const config = getEffectiveSpriteConfig(spriteKey);
     if (config) {
       setWorkingConfig(JSON.parse(JSON.stringify(config)));
     } else {
@@ -714,7 +716,9 @@ export const DigimonGallery: React.FC<DigimonGalleryProps> = ({
         success: true,
       });
       showToast('✓ Successfully imported & applied sprite backup!');
-      const updated = getEffectiveSpriteConfig(selectedSpeciesId);
+      const sp = DIGIMON_DATABASE[selectedSpeciesId];
+      const spriteKey = sp?.spriteId || selectedSpeciesId;
+      const updated = getEffectiveSpriteConfig(spriteKey);
       if (updated) setWorkingConfig(JSON.parse(JSON.stringify(updated)));
     } else {
       sound.playAlert();
@@ -725,8 +729,10 @@ export const DigimonGallery: React.FC<DigimonGalleryProps> = ({
   // Reset to default coordinates
   const handleResetToDefault = () => {
     sound.playAlert();
-    resetCustomSpriteConfig(selectedSpeciesId);
-    const defaults = NEW_DIGIMON_SPRITES[selectedSpeciesId];
+    const sp = DIGIMON_DATABASE[selectedSpeciesId];
+    const spriteKey = sp?.spriteId || selectedSpeciesId;
+    resetCustomSpriteConfig(spriteKey);
+    const defaults = NEW_DIGIMON_SPRITES[spriteKey];
     if (defaults) {
       setWorkingConfig(JSON.parse(JSON.stringify(defaults)));
     }

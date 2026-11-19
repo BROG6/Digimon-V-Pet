@@ -64,7 +64,7 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
 
   // Load effective sprite config & image for the active species
   useEffect(() => {
-    const speciesId = pet?.currentSpeciesId;
+    const speciesId = species?.spriteId || pet?.currentSpeciesId;
     if (!speciesId) return;
     try {
       const config = getEffectiveSpriteConfig(speciesId);

@@ -4,28 +4,29 @@ import { DIGI_EGGS, DIGIMON_DATABASE } from '../data/digidex';
 import { DigiEggInfo } from '../types/digimon';
 import { DigimonSprite } from './DigimonSprite';
 import { sound } from '../utils/audio';
-import confetti from 'canvas-confetti';
-import { Sparkles, Check, Shield } from 'lucide-react';
+import { Sparkles, Check, Shield, X } from 'lucide-react';
 
 interface EggSelectionModalProps {
   isOpen: boolean;
   currentPlayerName?: string;
+  onClose?: () => void;
   onSelectEgg: (egg: DigiEggInfo, nickname: string, playerName: string) => void;
 }
 
 export const EggSelectionModal: React.FC<EggSelectionModalProps> = ({
   isOpen,
   currentPlayerName = '',
+  onClose,
   onSelectEgg,
 }) => {
   const [selectedEgg, setSelectedEgg] = useState<DigiEggInfo>(DIGI_EGGS[0]);
-  const [nickname, setNickname] = useState<string>(DIGI_EGGS[0].partnerRookie);
+  const [nickname, setNickname] = useState<string>('');
   const [playerName, setPlayerName] = useState<string>(currentPlayerName);
-  const [isHatching, setIsHatching] = useState<boolean>(false);
 
   useEffect(() => {
     if (isOpen) {
       setPlayerName(currentPlayerName);
+      setNickname('');
     }
   }, [isOpen, currentPlayerName]);
 
@@ -34,28 +35,11 @@ export const EggSelectionModal: React.FC<EggSelectionModalProps> = ({
   const handleEggClick = (egg: DigiEggInfo) => {
     sound.playButton();
     setSelectedEgg(egg);
-    setNickname(egg.partnerRookie);
   };
 
   const handleConfirmHatch = () => {
-    sound.playDigivolve();
-    setIsHatching(true);
-
-    try {
-      confetti({
-        particleCount: 80,
-        spread: 70,
-        origin: { y: 0.6 },
-        colors: [selectedEgg.crestColor, '#ffffff', '#fbbf24'],
-      });
-    } catch (e) {
-      // safe fallback
-    }
-
-    setTimeout(() => {
-      onSelectEgg(selectedEgg, nickname.trim() || selectedEgg.partnerRookie, playerName.trim());
-      setIsHatching(false);
-    }, 1500);
+    sound.playButton();
+    onSelectEgg(selectedEgg, nickname.trim(), playerName.trim());
   };
 
   const previewBranches = [
@@ -66,15 +50,38 @@ export const EggSelectionModal: React.FC<EggSelectionModalProps> = ({
   ];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/90 backdrop-blur-md android-safe-modal">
+    <div
+      onClick={() => {
+        if (onClose) {
+          sound.playButton();
+          onClose();
+        }
+      }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/90 backdrop-blur-md android-safe-modal"
+    >
       <motion.div
         initial={{ scale: 0.92, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.92, opacity: 0 }}
+        onClick={(e) => e.stopPropagation()}
         className="relative w-full max-w-5xl bg-slate-900 border-2 border-cyan-500/40 rounded-3xl p-4 sm:p-6 shadow-2xl shadow-cyan-950/80 flex flex-col max-h-[92vh] overflow-y-auto"
       >
+        {onClose && (
+          <button
+            type="button"
+            onClick={() => {
+              sound.playButton();
+              onClose();
+            }}
+            aria-label="Close egg selection menu"
+            className="absolute top-3 right-3 sm:top-4 sm:right-4 z-10 min-h-[44px] min-w-[44px] flex items-center justify-center rounded-full bg-slate-800/90 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-white transition-colors cursor-pointer"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        )}
+
         {/* Header */}
-        <div className="text-center mb-4">
+        <div className="text-center mb-4 px-8">
           <div className="inline-flex items-center gap-2 px-3 py-1 bg-cyan-500/20 border border-cyan-500/40 rounded-full text-cyan-300 text-xs font-pixel mb-2">
             <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
             <span>DIGIMON UP • 15-EGG MATRIX NURSERY</span>
@@ -83,7 +90,7 @@ export const EggSelectionModal: React.FC<EggSelectionModalProps> = ({
             CHOOSE ONE OF 15 DESTINED DIGI-EGGS
           </h2>
           <p className="text-slate-400 text-xs sm:text-sm mt-1 max-w-2xl mx-auto">
-            Every Egg branches into 4 Raise Archetypes (Vaccine, Data, Virus, Corrupted) plus Armor Evolutions across 263 sprites!
+            Your Digi-Egg incubates on the Digivice screen for 1 minute before hatching, then follows Pendulum Ver. 20th timings across 4 Raise Archetypes!
           </p>
         </div>
 
@@ -195,29 +202,28 @@ export const EggSelectionModal: React.FC<EggSelectionModalProps> = ({
                 />
               </div>
 
-              <div className="w-full sm:w-40">
+              <div className="w-full sm:w-44">
                 <label className="block text-[10px] font-pixel text-slate-400 mb-1">
-                  DIGIMON NICKNAME:
+                  NICKNAME (OPTIONAL):
                 </label>
                 <input
                   type="text"
                   value={nickname}
                   onChange={(e) => setNickname(e.target.value)}
                   maxLength={14}
-                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white font-chakra focus:outline-none focus:border-amber-400"
-                  placeholder="Name..."
+                  className="w-full bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-sm text-white font-chakra focus:outline-none focus:border-amber-400 placeholder:text-slate-500"
+                  placeholder={`Default (${DIGIMON_DATABASE[selectedEgg.baby1Id]?.name || selectedEgg.partnerRookie})`}
                 />
               </div>
 
               <motion.button
                 whileHover={{ scale: 1.04 }}
                 whileTap={{ scale: 0.96 }}
-                disabled={isHatching}
                 onClick={handleConfirmHatch}
-                className="w-full sm:w-auto bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-pixel text-xs px-5 py-2.5 sm:py-3 rounded-xl font-bold tracking-wider shadow-lg shadow-orange-500/30 flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
+                className="w-full sm:w-auto bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-pixel text-xs px-5 py-2.5 sm:py-3 rounded-xl font-bold tracking-wider shadow-lg shadow-orange-500/30 flex items-center justify-center gap-2 cursor-pointer"
               >
                 <Sparkles className="w-4 h-4" />
-                <span>{isHatching ? 'HATCHING...' : 'HATCH DIGI-EGG!'}</span>
+                <span>SELECT DIGI-EGG!</span>
               </motion.button>
             </div>
           </div>

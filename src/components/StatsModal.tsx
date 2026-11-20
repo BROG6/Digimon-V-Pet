@@ -1,8 +1,12 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { PetState, DigimonSpecies, DigiEggInfo, SpecialItemId, EvolutionArchetype } from '../types/digimon';
-import { DIGIMON_DATABASE, SPECIAL_ITEMS } from '../data/digidex';
-import { checkEvolutionEligibility } from '../utils/evolutionEngine';
+import { PetState, DigimonSpecies, DigiEggInfo, SpecialItemId } from '../types/digimon';
+import { SPECIAL_ITEMS } from '../data/digidex';
+import {
+  checkEvolutionEligibility,
+  computeNaturalEvoTiming,
+  formatDurationMs,
+} from '../utils/evolutionEngine';
 import { DigimonSprite } from './DigimonSprite';
 import { 
   X, 
@@ -31,15 +35,10 @@ interface StatsModalProps {
   onOpenShop?: () => void;
   onEquipSpecialItem?: (itemId: SpecialItemId | null) => void;
   onUpdatePlayerName?: (name: string) => void;
+  onUpdateNickname?: (nickname: string) => void;
 }
 
-const ARCHETYPE_BADGE_MAP: Record<EvolutionArchetype, { label: string; cls: string }> = {
-  vaccine: { label: 'VACCINE / HOLY', cls: 'bg-sky-500/20 text-sky-300 border-sky-500/40' },
-  data: { label: 'DATA / TECH', cls: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' },
-  virus: { label: 'VIRUS / BRAWLER', cls: 'bg-rose-500/20 text-rose-300 border-rose-500/40' },
-  corrupted: { label: 'CORRUPTED / MUTANT', cls: 'bg-purple-500/20 text-purple-300 border-purple-500/40' },
-  armor: { label: 'ARMOR EVOLUTION', cls: 'bg-amber-500/20 text-amber-300 border-amber-500/40' },
-};
+
 
 export const StatsModal: React.FC<StatsModalProps> = ({
   isOpen,
@@ -53,31 +52,40 @@ export const StatsModal: React.FC<StatsModalProps> = ({
   onOpenShop,
   onEquipSpecialItem,
   onUpdatePlayerName,
+  onUpdateNickname,
 }) => {
   const [activeTab, setActiveTab] = useState<'combat' | 'care' | 'evolution'>('combat');
   const [isEditingTamer, setIsEditingTamer] = useState<boolean>(false);
   const [draftTamer, setDraftTamer] = useState<string>(pet.playerName || '');
+  const [isEditingNickname, setIsEditingNickname] = useState<boolean>(false);
+  const [draftNickname, setDraftNickname] = useState<string>(pet.nickname || '');
+  const [nowMs, setNowMs] = useState<number>(() => Date.now());
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setNowMs(Date.now());
+    const id = setInterval(() => setNowMs(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
   // Calculate age in days / hours
-  const ageMs = Date.now() - (pet.birthTimestamp || Date.now());
-  const ageHours = Math.floor(ageMs / (1000 * 60 * 60));
+  const ageMs = (pet.isDead && pet.diedAt ? pet.diedAt : nowMs) - (pet.birthTimestamp || nowMs);
+  const ageHours = Math.floor(Math.max(0, ageMs) / (1000 * 60 * 60));
   const ageDays = Math.floor(ageHours / 24);
-  const ageString = ageDays > 0 ? `${ageDays}d ${ageHours % 24}h` : `${Math.max(1, ageHours)}h`;
+  const ageString = ageDays > 0 ? `${ageDays}d ${ageHours % 24}h` : `${Math.max(0, ageHours)}h`;
 
   // Win rate (overall)
   const winRate = pet.battlesTotal > 0 
     ? Math.round((pet.battlesWon / pet.battlesTotal) * 100) 
     : 0;
 
-  // V-Pet Raise Archetype Engine
+  // V-Pet Raise Archetype Engine (Pendulum Ver. 20th)
   const evoElig = checkEvolutionEligibility(pet, species);
-  const predictedSpecies = evoElig.nextId ? DIGIMON_DATABASE[evoElig.nextId] : undefined;
-  const archetypeBadge = ARCHETYPE_BADGE_MAP[evoElig.archetype];
+  const evoTiming = computeNaturalEvoTiming(pet, species, nowMs);
   const ownedItems = pet.ownedSpecialItems || [];
   const equippedItem = pet.equippedSpecialItem ? SPECIAL_ITEMS[pet.equippedSpecialItem] : null;
-  const stageTrainingCount = typeof pet.stageTrainingCount === 'number' ? pet.stageTrainingCount : pet.trainingCount;
 
   // Attack boost from training
   const trainingAtkBonus = Math.floor(pet.trainingCount * 2);
@@ -128,8 +136,9 @@ export const StatsModal: React.FC<StatsModalProps> = ({
           <div className="relative w-28 h-28 sm:w-32 sm:h-32 flex items-center justify-center bg-radial from-slate-800/80 to-slate-950 rounded-2xl border border-slate-800 p-2 overflow-hidden shadow-inner shrink-0">
             <div className="absolute inset-0 bg-[radial-gradient(#38bdf8_1px,transparent_1px)] [background-size:12px_12px] opacity-20 pointer-events-none" />
             <DigimonSprite
-              species={species}
+              species={pet.isDead || pet.stage === 'egg' ? undefined : species}
               egg={pet.stage === 'egg' ? egg : undefined}
+              pose={pet.isDead ? 'dead' : undefined}
               action="idle"
               scale={0.9}
             />
@@ -138,14 +147,70 @@ export const StatsModal: React.FC<StatsModalProps> = ({
           <div className="flex-1 text-center sm:text-left space-y-2">
             <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2">
               <h2 className="font-chakra font-bold text-white text-xl">
-                {pet.nickname}
+                {pet.stage === 'egg'
+                  ? pet.nickname?.trim() || 'Digitama'
+                  : pet.nickname?.trim() || species?.name || 'Digimon'}
               </h2>
-              {species && (
+              {species && pet.stage !== 'egg' && (
                 <span className="text-xs text-slate-400 font-chakra">
                   ({species.name} / {species.japaneseName})
                 </span>
               )}
+              {onUpdateNickname && !isEditingNickname && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    sound.playButton();
+                    setDraftNickname(pet.nickname || '');
+                    setIsEditingNickname(true);
+                  }}
+                  className="px-2 py-0.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-cyan-300 text-[10px] font-pixel cursor-pointer"
+                >
+                  {pet.nickname?.trim() ? 'RENAME ✎' : 'NICKNAME ✎'}
+                </button>
+              )}
             </div>
+
+            {isEditingNickname && onUpdateNickname && (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  sound.playButton();
+                  onUpdateNickname(draftNickname.trim());
+                  setIsEditingNickname(false);
+                }}
+                className="flex flex-wrap items-center justify-center sm:justify-start gap-1.5"
+              >
+                <input
+                  type="text"
+                  value={draftNickname}
+                  onChange={(e) => setDraftNickname(e.target.value)}
+                  maxLength={14}
+                  placeholder={`Default (${species?.name || 'Digimon'})`}
+                  className="bg-slate-900 border border-cyan-500/50 rounded-lg px-2.5 py-1 text-xs text-white focus:outline-none focus:border-cyan-400 placeholder:text-slate-500"
+                />
+                <button
+                  type="submit"
+                  className="px-2.5 py-1 rounded-lg bg-cyan-500 text-slate-950 font-pixel text-[9px] font-bold cursor-pointer"
+                >
+                  SAVE
+                </button>
+                {draftNickname && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      sound.playButton();
+                      onUpdateNickname('');
+                      setDraftNickname('');
+                      setIsEditingNickname(false);
+                    }}
+                    className="px-2 py-1 rounded-lg bg-slate-800 text-slate-300 font-pixel text-[9px] cursor-pointer"
+                  >
+                    USE DEFAULT
+                  </button>
+                )}
+              </form>
+            )}
 
             <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 text-[10px] font-pixel">
               <span className="px-2.5 py-1 rounded-lg bg-cyan-950 border border-cyan-800 text-cyan-300">
@@ -200,7 +265,11 @@ export const StatsModal: React.FC<StatsModalProps> = ({
             )}
 
             <p className="text-xs text-slate-400 leading-relaxed max-w-md">
-              {species?.description || 'A mysterious Digi-Egg waiting to hatch and begin its journey.'}
+              {pet.isDead
+                ? `Memorial Record: ${pet.deathReason || 'Passed away due to severe neglect.'}`
+                : pet.stage === 'egg'
+                ? 'A mysterious Digitama warming up on your Digivice! It will hatch in 1 minute.'
+                : species?.description || 'A mysterious Digi-Egg waiting to hatch and begin its journey.'}
             </p>
           </div>
         </div>
@@ -438,12 +507,14 @@ export const StatsModal: React.FC<StatsModalProps> = ({
               </div>
               <div>
                 <div className="text-[10px] font-pixel text-slate-400">CARE MISTAKES</div>
-                <div className="font-chakra font-bold text-rose-400 text-base mt-0.5">{pet.careMistakes}</div>
+                <div className={`font-chakra font-bold text-base mt-0.5 ${pet.careMistakes >= 6 ? 'text-rose-400 animate-pulse' : 'text-amber-300'}`}>
+                  {pet.careMistakes} / 8
+                </div>
               </div>
               <div>
                 <div className="text-[10px] font-pixel text-slate-400">HEALTH STATUS</div>
-                <div className="font-chakra font-bold text-emerald-400 text-base mt-0.5">
-                  {pet.isSick ? '☠️ SICK' : pet.isSleeping ? '💤 SLEEP' : '✓ HEALTHY'}
+                <div className={`font-chakra font-bold text-base mt-0.5 ${pet.isDead ? 'text-rose-400' : pet.isSick ? 'text-purple-400' : 'text-emerald-400'}`}>
+                  {pet.isDead ? '🪦 R.I.P.' : pet.isSick ? '☠️ SICK' : pet.isSleeping ? '💤 SLEEP' : '✓ HEALTHY'}
                 </div>
               </div>
             </div>
@@ -458,10 +529,10 @@ export const StatsModal: React.FC<StatsModalProps> = ({
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="text-xs font-pixel text-cyan-300 flex items-center gap-1.5">
                   <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
-                  RAISE ARCHETYPE TELEMETRY
+                  RAISE TELEMETRY
                 </span>
-                <span className={`px-2 py-0.5 rounded-full text-[9px] font-pixel border ${archetypeBadge.cls}`}>
-                  {archetypeBadge.label}
+                <span className="px-2 py-0.5 rounded-full text-[9px] font-pixel border bg-slate-800/80 text-slate-300 border-slate-700">
+                  EVOLUTION: ???
                 </span>
               </div>
 
@@ -597,64 +668,91 @@ export const StatsModal: React.FC<StatsModalProps> = ({
               )}
             </div>
 
-            {/* Next Evolution Pathway & Forecast */}
+            {/* Pendulum Ver. 20th Evolution Timer & Forecast */}
             <div className="p-4 rounded-2xl bg-slate-950/80 border border-slate-800 space-y-3">
-              <div className="flex items-center justify-between text-xs font-pixel">
-                <span className="text-cyan-400">PREDICTED DIGIVOLUTION</span>
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-pixel">
+                <span className="text-cyan-400">PENDULUM VER. 20TH EVOLUTION</span>
                 <span className="text-slate-400 uppercase">CURRENT: {pet.stage}</span>
               </div>
 
-              {predictedSpecies ? (
-                <div className="space-y-3">
-                  <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800 flex items-center gap-3">
-                    <div className="w-16 h-16 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-center shrink-0 overflow-hidden">
-                      <DigimonSprite species={predictedSpecies} action="idle" scale={0.55} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <span className="font-chakra font-bold text-white text-base">
-                          {predictedSpecies.name}
-                        </span>
-                        <span className="px-1.5 py-0.5 rounded text-[8px] font-pixel bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 uppercase">
-                          {predictedSpecies.stage}
-                        </span>
-                        <span className={`px-1.5 py-0.5 rounded text-[8px] font-pixel border ${archetypeBadge.cls}`}>
-                          {archetypeBadge.label}
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-amber-300 font-chakra mt-0.5">
-                        {evoElig.reason}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px] font-pixel text-slate-400">
-                    <div className="flex items-center justify-between gap-1.5 p-2 rounded-lg bg-slate-900 border border-slate-800">
-                      <span>🥊 Stage Dojo / Effort:</span>
-                      <span className={stageTrainingCount >= evoElig.minTraining || evoElig.effort >= evoElig.minEffort ? 'text-emerald-400 font-bold' : 'text-amber-400'}>
-                        {stageTrainingCount}/{evoElig.minTraining} (EF {evoElig.effort}/{evoElig.minEffort || 10})
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between gap-1.5 p-2 rounded-lg bg-slate-900 border border-slate-800">
-                      <span>⚔️ Stage Wins Target:</span>
-                      <span className={evoElig.stageWins >= evoElig.minBattles ? 'text-emerald-400 font-bold' : 'text-amber-400'}>
-                        {evoElig.stageWins} / {evoElig.minBattles}
-                      </span>
-                    </div>
-                  </div>
+              {pet.isDead ? (
+                <div className="p-3 rounded-xl bg-rose-950/40 border border-rose-500/40 text-center text-xs text-rose-200 font-chakra">
+                  🪦 {pet.deathReason || 'Digimon passed away from excessive neglect.'} Hatch a new Digi-Egg to start over.
                 </div>
-              ) : (
+              ) : pet.evolutionLocked ? (
+                <div className="p-3 rounded-xl bg-rose-950/40 border border-rose-500/40 text-center text-xs text-rose-200 font-chakra space-y-1">
+                  <div className="font-pixel text-[10px] text-rose-300">🔒 EVOLUTION LOCKED</div>
+                  <p>
+                    The Pendulum Ver. 20th timer expired before evolution tree requirements were met. This Digimon can no longer evolve in this lifetime.
+                  </p>
+                </div>
+              ) : pet.stage === 'mega' ? (
                 <div className="p-3 rounded-xl bg-slate-900 border border-slate-800 text-center text-xs text-amber-300 font-chakra">
                   👑 Maximum Ultimate (Mega) Stage Reached! Your Digimon stands at the pinnacle of its Matrix!
                 </div>
+              ) : (
+                <div className="space-y-3">
+                  {/* Timer Window Status Banner (Unknown Outcome) */}
+                  <div className="p-3 rounded-xl border border-cyan-500/35 bg-slate-900/90 text-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <div className="text-xs font-chakra">
+                      <div className="font-pixel text-[10px] text-cyan-300">
+                        PENDULUM VER. 20TH WINDOW
+                      </div>
+                      <div className="text-[11px] text-slate-400 mt-0.5">
+                        {pet.stage === 'egg' || pet.stage === 'fresh'
+                          ? 'Advances automatically when timer reaches 0 (keeps ticking during sleep).'
+                          : 'Keeps ticking during sleep. Your resulting evolution remains a mystery until Digivolution!'}
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className="text-[9px] font-pixel text-slate-400">WINDOW REMAINING</div>
+                      <div className="font-pixel text-sm text-white tabular-nums">
+                        {formatDurationMs(evoTiming.remainingMs)}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Mystery Evolution Slot */}
+                  <div className="p-3 rounded-xl bg-slate-900/90 border border-slate-800 border-dashed flex items-center gap-3">
+                    <div className="w-16 h-16 rounded-xl bg-slate-950 border border-slate-800 border-dashed flex items-center justify-center shrink-0">
+                      <span className="font-pixel text-xl text-slate-600 select-none">?</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span className="font-chakra font-bold text-slate-200 text-base">
+                          NEXT EVOLUTION: ??? (UNKNOWN)
+                        </span>
+                      </div>
+                      <p className="text-[11px] font-chakra text-slate-400 mt-0.5">
+                        {pet.stage === 'egg'
+                          ? 'Wait for the Digitama incubation timer to hatch into Baby I.'
+                          : pet.stage === 'fresh'
+                          ? 'Wait 10 minutes for Baby I to grow into Baby II.'
+                          : 'Care mistakes, effort, weight, battles, and equipped relics decide the outcome at 0.'}
+                      </p>
+                    </div>
+                  </div>
+                </div>
               )}
 
-              {/* Archetype Matrix Quick Rules Reference */}
-              <div className="grid grid-cols-2 gap-1.5 pt-2 border-t border-slate-800/80 text-[10px] font-chakra text-slate-400">
-                <div><span className="text-sky-300 font-bold">Vaccine:</span> CM ≤ 1, EF ≥ 6, WR ≥ 60%</div>
-                <div><span className="text-emerald-300 font-bold">Data:</span> CM ≤ 1, EF ≥ 8, WT = Normal</div>
-                <div><span className="text-rose-300 font-bold">Virus:</span> CM 1–2, TB ≥ 12, WT = Heavy</div>
-                <div><span className="text-purple-300 font-bold">Corrupted:</span> CM ≥ 3 (or CM ≥ 2 &amp; WR &lt; 40%)</div>
+              {/* Strict Tree Requirements Reference */}
+              {pet.stage === 'in-training' ? (
+                <div className="grid grid-cols-2 gap-1.5 pt-2 border-t border-slate-800/80 text-[10px] font-chakra text-slate-400">
+                  <div><span className="text-sky-300 font-bold">Vaccine (12h):</span> CM ≤ 1</div>
+                  <div><span className="text-emerald-300 font-bold">Data (12h):</span> CM ≤ 1, EF ≥ 7</div>
+                  <div><span className="text-rose-300 font-bold">Virus (12h):</span> TB ≥ 8 (CM ≤ 2)</div>
+                  <div><span className="text-purple-300 font-bold">Corrupted (12h):</span> CM ≥ 3 (or CM ≥ 2 &amp; WR &lt; 40%)</div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-1.5 pt-2 border-t border-slate-800/80 text-[10px] font-chakra text-slate-400">
+                  <div><span className="text-sky-300 font-bold">Vaccine:</span> CM ≤ 1, EF ≥ 6, TB ≥ 1 &amp; WR ≥ 60%</div>
+                  <div><span className="text-emerald-300 font-bold">Data:</span> CM ≤ 1, EF ≥ 8, WT = Normal</div>
+                  <div><span className="text-rose-300 font-bold">Virus:</span> CM 1–2, TB ≥ 12, WT = Heavy</div>
+                  <div><span className="text-purple-300 font-bold">Corrupted:</span> CM ≥ 3 (or CM ≥ 2 &amp; WR &lt; 40%)</div>
+                </div>
+              )}
+              <div className="text-[10px] font-pixel text-slate-500 pt-1">
+                PENDULUM V20 TIMERS: Egg 1m · Baby I 10m · Baby II 12h · Rookie 24h · Champion 40h · Ultimate 48h
               </div>
             </div>
 

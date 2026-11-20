@@ -59,7 +59,12 @@ import {
   buildNativeOverlayPayload,
   checkEvolutionEligibility,
   computeNaturalEvoTiming,
+  formatDurationMs,
+  loadUnlockedSpeciesIds,
+  recordUnlockedSpeciesId,
+  saveUnlockedSpeciesIds,
 } from './utils/evolutionEngine';
+import confetti from 'canvas-confetti';
 import { sound, triggerHaptic } from './utils/audio';
 import { 
   Sparkles, 
@@ -86,8 +91,7 @@ import {
   ExternalLink,
   Download,
   SlidersHorizontal,
-  Compass,
-  ChevronRight
+  Compass
 } from 'lucide-react';
 
 const STORAGE_KEY = 'digipet_vpet_save_v1';
@@ -99,6 +103,12 @@ export default function App() {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
+        const validSpeciesId = DIGIMON_DATABASE[parsed.currentSpeciesId] ? parsed.currentSpeciesId : 'botamon';
+        const seedUnlocked = [
+          ...(Array.isArray(parsed.unlockedSpeciesIds) ? parsed.unlockedSpeciesIds : []),
+          ...(parsed.stage && parsed.stage !== 'egg' ? [validSpeciesId] : []),
+        ];
+        const unlockedSpeciesIds = saveUnlockedSpeciesIds(loadUnlockedSpeciesIds(seedUnlocked));
         return {
           playerName: '',
           effort: 0,
@@ -109,28 +119,33 @@ export default function App() {
           ownedSpecialItems: [],
           adventureClearedWave: {},
           battleExp: 0,
+          evolutionLocked: false,
+          isDead: false,
+          neglectTicks: 0,
           ...parsed,
-          currentSpeciesId: DIGIMON_DATABASE[parsed.currentSpeciesId] ? parsed.currentSpeciesId : 'botamon',
+          stageEnteredAt: parsed.stageEnteredAt || Date.now(),
+          currentSpeciesId: validSpeciesId,
+          unlockedSpeciesIds,
         };
       }
     } catch (e) {}
 
-    // Default starting state (Egg 01: Dragon / Fire)
+    // Default starting state (Egg 01: Dragon / Fire incubating on Digivice)
     return {
       eggId: 'egg-courage',
       currentSpeciesId: 'botamon',
-      stage: 'fresh',
-      nickname: 'Agumon',
+      stage: 'egg',
+      nickname: '',
       playerName: '',
       birthTimestamp: Date.now(),
       stageEnteredAt: Date.now(),
-      hunger: 75,
-      energy: 90,
-      happiness: 80,
+      hunger: 90,
+      energy: 100,
+      happiness: 100,
       discipline: 60,
-      weight: 15,
-      strength: 20,
-      dpPoints: 35,
+      weight: 12,
+      strength: 15,
+      dpPoints: 20,
       effort: 0,
       isSick: false,
       isSleeping: false,
@@ -146,16 +161,20 @@ export default function App() {
       equippedSpecialItem: null,
       ownedSpecialItems: [],
       digiBits: 150,
-      bigMeatStock: 6,
-      vitaminStock: 4,
+      bigMeatStock: 8,
+      vitaminStock: 5,
       activeRoomTheme: 'file-island',
       placedFurniture: [
         { instanceId: 'init-1', furnitureId: 'meat-grill', x: 28, y: 68 },
         { instanceId: 'init-2', furnitureId: 'cozy-cushion', x: 74, y: 72 },
       ],
       lastCareCheck: Date.now(),
+      evolutionLocked: false,
+      isDead: false,
+      neglectTicks: 0,
       adventureClearedWave: {},
       battleExp: 0,
+      unlockedSpeciesIds: loadUnlockedSpeciesIds(),
     };
   });
 
@@ -251,10 +270,12 @@ export default function App() {
     syncOverridesToRepository(true).catch(() => {});
   }, []);
 
-  // Evolution Transition Modal State
+  // Evolution & Egg Hatching Transition State
   const [isEvolutionModalOpen, setIsEvolutionModalOpen] = useState<boolean>(false);
   const [prevEvoSpecies, setPrevEvoSpecies] = useState<DigimonSpecies | undefined>(undefined);
   const [nextEvoSpecies, setNextEvoSpecies] = useState<DigimonSpecies>(DIGIMON_DATABASE['agumon']);
+  const [isHatchingEgg, setIsHatchingEgg] = useState<boolean>(false);
+  const eggHatchInProgressRef = useRef<boolean>(false);
 
   const [isMuted, setIsMuted] = useState<boolean>(sound.getMuted());
   const [statusNotification, setStatusNotification] = useState<string | null>(null);
@@ -351,6 +372,8 @@ export default function App() {
         return;
       }
 
+      if (!requireAliveAndHatched()) return;
+
       if (Capacitor.isNativePlatform()) {
         const hasPerm = await checkOverlayPermission();
         if (!hasPerm) {
@@ -377,26 +400,104 @@ export default function App() {
     } catch (e) {}
   }, [pet]);
 
-  // Periodic Virtual Pet Care Loop (Hunger drops, Pooping, Sleep recovery)
+  // Periodic Virtual Pet Care Loop (Hunger, Poop, Neglect Care Mistakes & Death)
   useEffect(() => {
     const careInterval = setInterval(() => {
+      const now = Date.now();
+      let criticalWarning: string | null = null;
+      let deathNotice: string | null = null;
+
       setPet((prev) => {
-        let hunger = Math.max(0, prev.hunger - 3);
-        let energy = prev.lightsOff ? Math.min(100, prev.energy + 10) : Math.max(0, prev.energy - 2);
+        if (prev.stage === 'egg' || prev.isDead) {
+          return prev;
+        }
+
+        const hunger = prev.lightsOff ? prev.hunger : Math.max(0, prev.hunger - 3);
+        const energy = prev.lightsOff ? Math.min(100, prev.energy + 10) : Math.max(0, prev.energy - 2);
         let poopCount = prev.poopCount;
         let isSick = prev.isSick;
+        let sickSince = prev.sickSince;
         let careMistakes = prev.careMistakes;
+        let neglectTicks = prev.neglectTicks ?? 0;
 
-        // Chance to poop if fed
-        if (prev.hunger > 50 && Math.random() < 0.25 && poopCount < 4) {
+        // Chance to poop while awake and fed
+        if (!prev.lightsOff && prev.hunger > 50 && Math.random() < 0.25 && poopCount < 4) {
           poopCount += 1;
         }
 
-        // Neglect causes sickness
-        if ((poopCount >= 3 || hunger === 0) && !isSick && Math.random() < 0.4) {
-          isSick = true;
-          careMistakes += 1;
+        const isNeglectedNow = !prev.lightsOff && (hunger === 0 || poopCount >= 3 || energy === 0);
+
+        if (isNeglectedNow) {
+          neglectTicks += 1;
+          if (neglectTicks >= 3) {
+            neglectTicks = 0;
+            careMistakes += 1;
+            sound.playAlert();
+          }
+          if ((poopCount >= 3 || hunger === 0) && !isSick && Math.random() < 0.45) {
+            isSick = true;
+            sickSince = sickSince ?? now;
+            if (neglectTicks > 0) {
+              careMistakes += 1;
+              neglectTicks = 0;
+            }
+            sound.playAlert();
+          }
+        } else if (!isSick) {
+          neglectTicks = 0;
+        }
+
+        if (isSick && !sickSince) {
+          sickSince = now;
+        }
+
+        const sickElapsedMs = isSick && sickSince ? now - sickSince : 0;
+
+        // Death check from severe / prolonged neglect
+        if (careMistakes >= 8) {
+          deathNotice = 'Your Digimon passed away from severe neglect (8+ Care Mistakes).';
           sound.playAlert();
+          return {
+            ...prev,
+            hunger,
+            energy,
+            poopCount,
+            isSick,
+            sickSince,
+            careMistakes,
+            neglectTicks,
+            isDead: true,
+            diedAt: now,
+            deathReason: 'Severe neglect (8+ Care Mistakes).',
+            isSleeping: false,
+            lightsOff: false,
+            lastCareCheck: now,
+          };
+        }
+
+        if (isSick && sickElapsedMs >= 20 * 60_000 && (!prev.lightsOff || (hunger === 0 && poopCount >= 3))) {
+          deathNotice = 'Your Digimon passed away from untreated sickness and neglect.';
+          sound.playAlert();
+          return {
+            ...prev,
+            hunger,
+            energy,
+            poopCount,
+            isSick,
+            sickSince,
+            careMistakes,
+            neglectTicks,
+            isDead: true,
+            diedAt: now,
+            deathReason: 'Untreated sickness persisted too long.',
+            isSleeping: false,
+            lightsOff: false,
+            lastCareCheck: now,
+          };
+        }
+
+        if (careMistakes >= 6 || (isSick && sickElapsedMs >= 10 * 60_000)) {
+          criticalWarning = '🚨 CRITICAL NEGLECT! Feed, flush & cure sickness right away!';
         }
 
         return {
@@ -405,10 +506,18 @@ export default function App() {
           energy,
           poopCount,
           isSick,
+          sickSince,
           careMistakes,
-          lastCareCheck: Date.now(),
+          neglectTicks,
+          lastCareCheck: now,
         };
       });
+
+      if (deathNotice) {
+        showNotification(`🪦 ${deathNotice}`);
+      } else if (criticalWarning) {
+        showNotification(criticalWarning);
+      }
     }, 25000);
 
     return () => clearInterval(careInterval);
@@ -417,38 +526,36 @@ export default function App() {
   const [evoNowMs, setEvoNowMs] = useState<number>(() => Date.now());
   const evoElig = checkEvolutionEligibility(pet, currentSpecies);
   const evoTiming = computeNaturalEvoTiming(pet, currentSpecies, evoNowMs);
-  const evolutionCheck = { can: evoElig.goalsMet, nextId: evoElig.nextId };
+  const evolutionCheck = { can: evoTiming.readyToEvolve, nextId: evoElig.nextId };
 
-  // Stamp goal-met anchor cleanly when requirements are satisfied
+  // Continuous 1s clock tick while Pendulum Ver. 20th timer is active (ticks even during sleep)
   useEffect(() => {
-    if (evoElig.goalsMet && !pet.evoGoalMetAt) {
-      const now = Date.now();
-      setEvoNowMs(now);
-      setPet((prev) => ({
-        ...prev,
-        stageEnteredAt: prev.stageEnteredAt ?? prev.birthTimestamp ?? now,
-        evoGoalMetAt: now,
-      }));
-    } else if (!evoElig.goalsMet && pet.evoGoalMetAt) {
-      setPet((prev) => ({
-        ...prev,
-        evoGoalMetAt: undefined,
-      }));
-    }
-  }, [evoElig.goalsMet, pet.evoGoalMetAt, pet.currentSpeciesId]);
-
-  // 1s clock tick while counting down toward natural digivolution
-  useEffect(() => {
-    if (!evoElig.goalsMet) return;
+    if (pet.isDead || pet.evolutionLocked || pet.stage === 'mega') return;
     setEvoNowMs(Date.now());
     const id = setInterval(() => {
       setEvoNowMs(Date.now());
     }, 1000);
     return () => clearInterval(id);
-  }, [evoElig.goalsMet, pet.currentSpeciesId]);
+  }, [pet.isDead, pet.evolutionLocked, pet.stage, pet.currentSpeciesId, pet.stageEnteredAt]);
+
+  // Lock evolution permanently for this lifetime if Pendulum Ver. 20th deadline expired without meeting requirements
+  useEffect(() => {
+    if (!evoTiming.missedDeadline || pet.evolutionLocked || pet.isDead) return;
+    sound.playAlert();
+    const monName = pet.nickname?.trim() || currentSpecies?.name || 'Digimon';
+    setPet((prev) => {
+      if (prev.evolutionLocked || prev.isDead) return prev;
+      return {
+        ...prev,
+        evolutionLocked: true,
+      };
+    });
+    showNotification(`🔒 Evolution window expired! ${monName} missed the requirements and can no longer evolve.`);
+  }, [evoTiming.missedDeadline, pet.evolutionLocked, pet.isDead, pet.nickname, currentSpecies?.name]);
 
   // Evolution Trigger (supports silent in-place updates while overlay is active)
   const triggerEvolution = (targetSpeciesId?: string, opts?: { silentForOverlay?: boolean }) => {
+    if (pet.isDead || pet.evolutionLocked) return;
     const targetId = targetSpeciesId || evolutionCheck.nextId;
     if (!targetId || !DIGIMON_DATABASE[targetId]) return;
 
@@ -467,37 +574,90 @@ export default function App() {
     setPet((prev) => applyEvolutionToPetState(prev, target));
   };
 
-  // Automatic natural evolution over time once goals are met
+  // Automatic Egg Hatching Animation -> Baby I + Pendulum Ver. 20th Automatic Evolution
   useEffect(() => {
+    if (pet.isDead || pet.evolutionLocked) return;
+
+    // 1. Egg -> Fresh hatching sequence on the Digivice
+    if (pet.stage === 'egg' && evoTiming.readyToEvolve && !eggHatchInProgressRef.current) {
+      eggHatchInProgressRef.current = true;
+      setIsHatchingEgg(true);
+      sound.playDigivolve();
+      showNotification(`🥚✨ Egg #${String(currentEgg.eggNumber).padStart(2, '0')} (${currentEgg.crestName}) is hatching!`);
+
+      const hatchTimer = window.setTimeout(() => {
+        const baby1Id = currentEgg.baby1Id || 'botamon';
+        const baby1 = DIGIMON_DATABASE[baby1Id];
+        const now = Date.now();
+        sound.playVictory();
+        try {
+          confetti({
+            particleCount: 90,
+            spread: 75,
+            origin: { y: 0.55 },
+            colors: [currentEgg.crestColor, '#ffffff', '#fbbf24'],
+          });
+        } catch {}
+
+        setPet((prev) => ({
+          ...prev,
+          currentSpeciesId: baby1Id,
+          stage: 'fresh',
+          birthTimestamp: now,
+          stageEnteredAt: now,
+          evoGoalMetAt: undefined,
+          evolutionLocked: false,
+          hunger: 90,
+          energy: 100,
+          happiness: 100,
+          isSick: false,
+          sickSince: undefined,
+          neglectTicks: 0,
+          unlockedSpeciesIds: recordUnlockedSpeciesId(baby1Id, prev.unlockedSpeciesIds || []),
+        }));
+        setIsHatchingEgg(false);
+        eggHatchInProgressRef.current = false;
+        showNotification(`🐣 Hatched into ${baby1?.name || 'Baby Digimon'}!`);
+      }, 2200);
+
+      return () => {
+        window.clearTimeout(hatchTimer);
+      };
+    }
+
+    if (pet.stage === 'egg') return;
+
+    // 2. Fresh -> In-Training -> Rookie -> Champion -> Ultimate -> Mega
     if (!evoTiming.readyToEvolve || !evoTiming.nextId) return;
     if (
-      pet.isSleeping ||
       isTrainingOpen ||
       isFoodGameOpen ||
       isColosseumOpen ||
+      isAdventureOpen ||
       isEvolutionModalOpen ||
-      isEggModalOpen ||
-      isDigidexOpen ||
-      isShopOpen ||
-      isRoomOpen
+      isEggModalOpen
     ) {
       return;
     }
 
     triggerEvolution(evoTiming.nextId, { silentForOverlay: isOverlayMode });
   }, [
+    pet.isDead,
+    pet.evolutionLocked,
+    pet.stage,
     evoTiming.readyToEvolve,
     evoTiming.nextId,
-    pet.isSleeping,
+    currentEgg.eggNumber,
+    currentEgg.crestName,
+    currentEgg.crestColor,
+    currentEgg.baby1Id,
     isOverlayMode,
     isTrainingOpen,
     isFoodGameOpen,
     isColosseumOpen,
+    isAdventureOpen,
     isEvolutionModalOpen,
     isEggModalOpen,
-    isDigidexOpen,
-    isShopOpen,
-    isRoomOpen,
   ]);
 
   // Native Android Overlay: sync evolutions done in background & push live updates in-place
@@ -526,9 +686,11 @@ export default function App() {
         const care = await consumeNativeOverlayCareActions();
         if (care.meatUsed > 0 || care.vitUsed > 0 || care.praiseCount > 0) {
           setPet((prev) => {
+            if (prev.stage === 'egg' || prev.isDead) return prev;
             const usedMeat = Math.min(prev.bigMeatStock, Math.max(0, care.meatUsed));
             const usedVit = Math.min(prev.vitaminStock, Math.max(0, care.vitUsed));
             const praises = Math.max(0, care.praiseCount);
+            const curedSick = usedVit > 0;
             return {
               ...prev,
               bigMeatStock: prev.bigMeatStock - usedMeat,
@@ -536,7 +698,9 @@ export default function App() {
               hunger: Math.min(100, prev.hunger + usedMeat * 35),
               weight: prev.weight + usedMeat,
               energy: Math.min(100, prev.energy + usedVit * 10),
-              isSick: usedVit > 0 ? false : prev.isSick,
+              isSick: curedSick ? false : prev.isSick,
+              sickSince: curedSick ? undefined : prev.sickSince,
+              neglectTicks: curedSick ? 0 : prev.neglectTicks,
               happiness: Math.min(100, prev.happiness + usedMeat * 8 + usedVit * 20 + praises * 15),
             };
           });
@@ -600,10 +764,25 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [pet.currentSpeciesId, pet.playerName, pet.hunger, pet.happiness, pet.bigMeatStock, pet.vitaminStock, pet.isSleeping, pet.lightsOff, pet.evoGoalMetAt, pet.stageEnteredAt]);
+  }, [pet.currentSpeciesId, pet.playerName, pet.hunger, pet.happiness, pet.bigMeatStock, pet.vitaminStock, pet.isSleeping, pet.lightsOff, pet.evoGoalMetAt, pet.stageEnteredAt, pet.evolutionLocked, pet.isDead]);
+
+  const requireAliveAndHatched = (): boolean => {
+    if (pet.isDead) {
+      sound.playAlert();
+      showNotification('🪦 Your Digimon passed away! Hatch a new Digi-Egg to continue.');
+      return false;
+    }
+    if (pet.stage === 'egg') {
+      sound.playButton();
+      showNotification(`🥚 Digitama is still incubating! Hatches in ${formatDurationMs(evoTiming.remainingMs)}.`);
+      return false;
+    }
+    return true;
+  };
 
   // CARE ACTIONS
   const handleFeedMeat = () => {
+    if (!requireAliveAndHatched()) return;
     if (pet.bigMeatStock <= 0) {
       sound.playAlert();
       showNotification('Out of Big Meat! Play "I\'m Hungry!" mini-game to earn more 🍖');
@@ -617,11 +796,13 @@ export default function App() {
       hunger: Math.min(100, prev.hunger + 25),
       weight: prev.weight + 2,
       happiness: Math.min(100, prev.happiness + 10),
+      neglectTicks: 0,
     }));
     showNotification('Fed delicious Big Meat! (+25 Hunger, +2g Weight)');
   };
 
   const handleGiveVitamin = () => {
+    if (!requireAliveAndHatched()) return;
     if (pet.vitaminStock <= 0) {
       sound.playAlert();
       showNotification('Out of Vitamins! Buy some from the Digi-Shop or catch in mini-game');
@@ -633,6 +814,8 @@ export default function App() {
       ...prev,
       vitaminStock: prev.vitaminStock - 1,
       isSick: false,
+      sickSince: undefined,
+      neglectTicks: 0,
       energy: Math.min(100, prev.energy + 20),
       strength: prev.strength + 2,
       dpPoints: prev.dpPoints + 5,
@@ -641,17 +824,20 @@ export default function App() {
   };
 
   const handleCleanPoop = () => {
+    if (!requireAliveAndHatched()) return;
     sound.playFlush();
     setHudAction({ pose: 'flushing', nonce: Date.now() + Math.random() });
     setPet((prev) => ({
       ...prev,
       poopCount: 0,
+      neglectTicks: 0,
       happiness: Math.min(100, prev.happiness + 5),
     }));
     showNotification('Flushed and cleaned room spotless! 🧹');
   };
 
   const handleToggleLights = () => {
+    if (!requireAliveAndHatched()) return;
     sound.playButton();
     setPet((prev) => ({
       ...prev,
@@ -661,6 +847,7 @@ export default function App() {
   };
 
   const handleCureSick = () => {
+    if (!requireAliveAndHatched()) return;
     if (pet.isSick) {
       handleGiveVitamin();
     } else {
@@ -670,13 +857,14 @@ export default function App() {
   };
 
   const handlePetDigimon = () => {
+    if (!requireAliveAndHatched()) return;
     sound.playButton();
     setHudAction({ pose: 'happy', nonce: Date.now() + Math.random() });
     setPet((prev) => ({
       ...prev,
       happiness: Math.min(100, prev.happiness + 15),
     }));
-    showNotification(`Pet ${pet.nickname || 'Digimon'}! ❤️ Filled with affection!`);
+    showNotification(`Pet ${pet.nickname?.trim() || currentSpecies?.name || 'Digimon'}! ❤️ Filled with affection!`);
   };
 
   const showNotification = (msg: string) => {
@@ -872,6 +1060,8 @@ export default function App() {
         hunger,
         happiness,
         isSick,
+        sickSince: itemId === 'medicine' ? undefined : prev.sickSince,
+        neglectTicks: itemId === 'medicine' ? 0 : prev.neglectTicks,
       };
     });
 
@@ -933,19 +1123,42 @@ export default function App() {
     );
   };
 
-  // NEW EGG / RESET
+  const handleUpdateNickname = (name: string) => {
+    const clean = name.trim();
+    setPet((prev) => ({
+      ...prev,
+      nickname: clean,
+    }));
+    showNotification(
+      clean
+        ? `Renamed your Digimon to ${clean}!`
+        : `Cleared nickname — using ${currentSpecies?.name || 'Digimon'}!`
+    );
+  };
+
+  // NEW EGG / RESET (Places Egg onto Digivice to incubate for 1m before hatching)
   const handleSelectNewEgg = (egg: DigiEggInfo, nickname: string, playerName?: string) => {
     const starterSpecies = egg.baby1Id || 'botamon';
+    const cleanNickname = nickname.trim();
+    const now = Date.now();
+    eggHatchInProgressRef.current = false;
+    setIsHatchingEgg(false);
 
     setPet((prev) => ({
       eggId: egg.id,
       currentSpeciesId: starterSpecies,
-      stage: 'fresh',
-      nickname,
+      stage: 'egg',
+      nickname: cleanNickname,
       playerName: playerName !== undefined ? playerName.trim() : (prev.playerName || ''),
-      birthTimestamp: Date.now(),
-      stageEnteredAt: Date.now(),
+      birthTimestamp: now,
+      stageEnteredAt: now,
       evoGoalMetAt: undefined,
+      evolutionLocked: false,
+      isDead: false,
+      diedAt: undefined,
+      deathReason: undefined,
+      sickSince: undefined,
+      neglectTicks: 0,
       hunger: 90,
       energy: 100,
       happiness: 100,
@@ -974,12 +1187,13 @@ export default function App() {
       placedFurniture: prev.placedFurniture?.length
         ? prev.placedFurniture
         : [{ instanceId: 'init-1', furnitureId: 'meat-grill', x: 28, y: 68 }],
-      lastCareCheck: Date.now(),
+      lastCareCheck: now,
       adventureClearedWave: prev.adventureClearedWave || {},
       battleExp: prev.battleExp ?? 0,
+      unlockedSpeciesIds: loadUnlockedSpeciesIds(prev.unlockedSpeciesIds || []),
     }));
     setIsEggModalOpen(false);
-    showNotification(`Hatched Egg #${String(egg.eggNumber).padStart(2, '0')} (${egg.crestName})! Welcome, ${nickname}! ✨`);
+    showNotification(`🥚 Selected Egg #${String(egg.eggNumber).padStart(2, '0')} (${egg.crestName})! Hatches in 1 minute.`);
   };
 
   const toggleSound = () => {
@@ -1011,13 +1225,13 @@ export default function App() {
               bigMeatStock: prev.bigMeatStock + 1,
               happiness: Math.min(100, prev.happiness + 4),
             }));
-            showNotification(`${pet.nickname || 'Digimon'} returned from foraging with +1 Big Meat!`);
+            showNotification(`${pet.nickname?.trim() || currentSpecies?.name || 'Digimon'} returned from foraging with +1 Big Meat!`);
           } else {
             setPet((prev) => ({
               ...prev,
               happiness: Math.min(100, prev.happiness + 10),
             }));
-            showNotification(`${pet.nickname || 'Digimon'} visited friends! (+10 Happiness)`);
+            showNotification(`${pet.nickname?.trim() || currentSpecies?.name || 'Digimon'} visited friends! (+10 Happiness)`);
           }
         }}
         onOpenRoom={() => setIsRoomOpen(true)}
@@ -1048,10 +1262,18 @@ export default function App() {
           <div className="min-w-0">
             <div className="flex items-center gap-1.5">
               <h1 className="font-chakra font-bold text-sm tracking-wide text-white truncate">
-                {pet.nickname}
+                {pet.stage === 'egg'
+                  ? pet.nickname?.trim() || 'Digitama'
+                  : pet.nickname?.trim() || currentSpecies?.name || 'Digimon'}
               </h1>
-              <span className="text-[8px] font-pixel text-amber-400 px-1.5 py-0.5 rounded-full bg-amber-950/60 border border-amber-900 shrink-0">
-                {currentSpecies?.stage.toUpperCase()}
+              <span className={`text-[8px] font-pixel px-1.5 py-0.5 rounded-full border shrink-0 ${
+                pet.isDead
+                  ? 'text-rose-300 bg-rose-950/70 border-rose-700'
+                  : pet.evolutionLocked
+                  ? 'text-slate-300 bg-slate-800 border-slate-600'
+                  : 'text-amber-400 bg-amber-950/60 border-amber-900'
+              }`}>
+                {pet.isDead ? 'R.I.P.' : pet.stage === 'egg' ? 'DIGITAMA' : currentSpecies?.stage.toUpperCase()}
               </span>
             </div>
             <div className="text-[10px] text-slate-400 flex items-center gap-1.5 truncate">
@@ -1193,8 +1415,52 @@ export default function App() {
           </div>
         )}
         
-        {/* Prominent Evolution Ready Callout Banner */}
-        {evolutionCheck.can && (
+        {/* Lifecycle & Pendulum Ver. 20th Status Callout Banner */}
+        {pet.isDead ? (
+          <div className="w-full px-2.5 sm:px-4">
+            <div className="w-full mb-2.5 bg-gradient-to-r from-rose-950 via-slate-900 to-rose-950 text-rose-100 py-2.5 px-3.5 rounded-2xl font-chakra text-xs shadow-lg border-2 border-rose-500/60 flex items-center justify-between gap-2">
+              <div className="min-w-0">
+                <div className="font-pixel text-[10px] text-rose-300">
+                  🪦 {pet.nickname?.trim() || currentSpecies?.name || 'Digimon'} PASSED AWAY
+                </div>
+                <div className="text-[11px] text-rose-200/85 truncate mt-0.5">
+                  {pet.deathReason || 'Neglected for too long.'}
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  sound.playButton();
+                  setIsEggModalOpen(true);
+                }}
+                className="bg-amber-400 hover:bg-amber-300 text-slate-950 font-pixel text-[9px] font-bold px-3 py-2 rounded-xl shrink-0 cursor-pointer"
+              >
+                NEW DIGI-EGG
+              </button>
+            </div>
+          </div>
+        ) : pet.stage === 'egg' ? (
+          <div className="w-full px-2.5 sm:px-4">
+            <div className="w-full mb-2.5 bg-slate-900/95 border border-cyan-500/40 text-cyan-200 py-2 px-3.5 rounded-2xl font-pixel text-[10px] flex items-center justify-between gap-2 shadow-md">
+              <span>🥚 {currentEgg.crestName.toUpperCase()} INCUBATING</span>
+              <span className="text-amber-300 tabular-nums">
+                {isHatchingEgg ? 'HATCHING NOW!' : `HATCH IN ${formatDurationMs(evoTiming.remainingMs)}`}
+              </span>
+            </div>
+          </div>
+        ) : pet.evolutionLocked ? (
+          <div className="w-full px-2.5 sm:px-4">
+            <button
+              onClick={() => {
+                sound.playButton();
+                setIsStatsOpen(true);
+              }}
+              className="w-full mb-2.5 bg-slate-900/95 border border-rose-500/50 text-rose-200 py-2 px-3.5 rounded-2xl font-pixel text-[10px] flex items-center justify-between gap-2 cursor-pointer"
+            >
+              <span>🔒 EVOLUTION LOCKED (MISSED WINDOW)</span>
+              <span className="text-slate-400 text-[9px]">VIEW STATS »</span>
+            </button>
+          </div>
+        ) : evolutionCheck.can ? (
           <div className="w-full px-2.5 sm:px-4">
             <motion.button
               animate={{ scale: [1, 1.03, 1] }}
@@ -1206,12 +1472,25 @@ export default function App() {
               className="w-full mb-2.5 bg-gradient-to-r from-amber-400 via-orange-400 to-amber-300 text-slate-950 py-2.5 px-4 rounded-2xl font-pixel text-xs font-bold shadow-xl shadow-amber-500/30 border-2 border-amber-300 cursor-pointer flex items-center justify-center gap-2 active:scale-95 transition-transform"
             >
               <Sparkles className="w-4 h-4 text-slate-950 animate-spin" />
-              <span>
-                {evoTiming.remainingMs > 0
-                  ? `⚡ DIGIVOLVING IN ${Math.ceil(evoTiming.remainingMs / 1000)}S (OR TAP NOW!) ⚡`
-                  : '⚡ DIGIVOLUTION READY! (TAP TO EVOLVE) ⚡'}
-              </span>
+              <span>⚡ DIGIVOLUTION READY! (TAP TO EVOLVE) ⚡</span>
             </motion.button>
+          </div>
+        ) : pet.stage !== 'mega' && (
+          <div className="w-full px-2.5 sm:px-4">
+            <button
+              onClick={() => {
+                sound.playButton();
+                setIsStatsOpen(true);
+              }}
+              className="w-full mb-2.5 py-2 px-3.5 rounded-2xl font-pixel text-[9px] flex items-center justify-between gap-2 border cursor-pointer transition-colors bg-slate-900/90 border-slate-700/80 text-slate-200 hover:bg-slate-800/90"
+            >
+              <span className="truncate">
+                NEXT EVOLUTION: ??? (UNKNOWN)
+              </span>
+              <span className="shrink-0 tabular-nums text-cyan-300 font-bold">
+                {formatDurationMs(evoTiming.remainingMs)}
+              </span>
+            </button>
           </div>
         )}
 
@@ -1267,20 +1546,28 @@ export default function App() {
           pet={pet}
           species={currentSpecies}
           egg={pet.stage === 'egg' ? currentEgg : undefined}
+          isHatchingEgg={isHatchingEgg}
+          evoRemainingMs={evoTiming.remainingMs}
           onFeedMeat={handleFeedMeat}
           onGiveVitamin={handleGiveVitamin}
           onCleanPoop={handleCleanPoop}
           onToggleLights={handleToggleLights}
           onCureSick={handleCureSick}
-          onOpenTraining={() => setIsTrainingOpen(true)}
-          onOpenColosseum={() => setIsColosseumOpen(true)}
+          onOpenTraining={() => {
+            if (!requireAliveAndHatched()) return;
+            setIsTrainingOpen(true);
+          }}
+          onOpenColosseum={() => {
+            if (!requireAliveAndHatched()) return;
+            setIsColosseumOpen(true);
+          }}
           onOpenRoom={() => setIsRoomOpen(true)}
           onOpenDigidex={() => setIsDigidexOpen(true)}
           onOpenStatsModal={() => setIsStatsOpen(true)}
           onOpenShop={() => setIsShopOpen(true)}
           onEvolveTrigger={() => triggerEvolution()}
           onResetEgg={() => setIsEggModalOpen(true)}
-          canEvolve={evolutionCheck.can}
+          canEvolve={evolutionCheck.can && pet.stage !== 'egg'}
           externalAction={hudAction}
         />
 
@@ -1310,6 +1597,7 @@ export default function App() {
 
           <button
             onClick={() => {
+              if (!requireAliveAndHatched()) return;
               sound.playButton();
               triggerHaptic('light');
               setIsTalkModalOpen(true);
@@ -1318,33 +1606,6 @@ export default function App() {
           >
             <MessageSquare className="w-4 h-4 text-cyan-400 shrink-0" />
             <span className="truncate">TALK</span>
-          </button>
-        </div>
-
-        {/* Adventure Mode Expedition Launcher */}
-        <div className="w-full px-2.5 sm:px-4 mt-2">
-          <button
-            onClick={() => {
-              sound.playButton();
-              triggerHaptic('medium');
-              setIsAdventureOpen(true);
-            }}
-            className="w-full min-h-[48px] px-3.5 py-2.5 bg-gradient-to-r from-emerald-950/90 via-slate-900 to-teal-950/80 hover:brightness-110 border border-emerald-500/40 rounded-2xl flex items-center justify-between gap-2 text-left shadow-md active:scale-[0.99] transition-all cursor-pointer"
-          >
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-8 h-8 rounded-xl bg-emerald-500/20 border border-emerald-400/35 flex items-center justify-center shrink-0">
-                <Compass className="w-4 h-4 text-emerald-300" />
-              </div>
-              <div className="min-w-0">
-                <div className="font-chakra font-bold text-sm text-white truncate">
-                  World Adventure Mode
-                </div>
-                <div className="text-[11px] text-emerald-200/80 truncate tabular-nums">
-                  7 Biomes · Rookie to Mega Waves · Earn Strength & Items
-                </div>
-              </div>
-            </div>
-            <ChevronRight className="w-4 h-4 text-emerald-300 shrink-0" />
           </button>
         </div>
 
@@ -1525,6 +1786,7 @@ export default function App() {
               <div className="grid grid-cols-2 gap-2 text-xs font-chakra font-bold">
                 <button
                   onClick={() => {
+                    if (!requireAliveAndHatched()) return;
                     sound.playButton();
                     setIsMoreSheetOpen(false);
                     setIsAdventureOpen(true);
@@ -1717,6 +1979,7 @@ export default function App() {
           {/* 3. BATTLE */}
           <button
             onClick={() => {
+              if (!requireAliveAndHatched()) return;
               sound.playButton();
               triggerHaptic('light');
               setIsColosseumOpen(true);
@@ -1730,6 +1993,7 @@ export default function App() {
           {/* 4. DOJO */}
           <button
             onClick={() => {
+              if (!requireAliveAndHatched()) return;
               sound.playButton();
               triggerHaptic('light');
               setIsTrainingOpen(true);
@@ -1789,6 +2053,7 @@ export default function App() {
       <EggSelectionModal
         isOpen={isEggModalOpen}
         currentPlayerName={pet.playerName}
+        onClose={() => setIsEggModalOpen(false)}
         onSelectEgg={handleSelectNewEgg}
       />
 
@@ -1847,7 +2112,6 @@ export default function App() {
         pet={pet}
         isOpen={isDigidexOpen}
         onClose={() => setIsDigidexOpen(false)}
-        onSelectSpecies={(speciesId) => triggerEvolution(speciesId)}
       />
 
       <StatsModal
@@ -1856,12 +2120,19 @@ export default function App() {
         pet={pet}
         species={currentSpecies}
         egg={pet.stage === 'egg' ? currentEgg : undefined}
-        onOpenTraining={() => setIsTrainingOpen(true)}
-        onOpenColosseum={() => setIsColosseumOpen(true)}
+        onOpenTraining={() => {
+          if (!requireAliveAndHatched()) return;
+          setIsTrainingOpen(true);
+        }}
+        onOpenColosseum={() => {
+          if (!requireAliveAndHatched()) return;
+          setIsColosseumOpen(true);
+        }}
         onOpenDigidex={() => setIsDigidexOpen(true)}
         onOpenShop={() => setIsShopOpen(true)}
         onEquipSpecialItem={handleEquipSpecialItem}
         onUpdatePlayerName={handleUpdatePlayerName}
+        onUpdateNickname={handleUpdateNickname}
       />
 
       <ShopModal
@@ -1904,6 +2175,7 @@ export default function App() {
 
       <DigiChat
         pet={pet}
+        playerName={pet.playerName}
         species={currentSpecies}
         isOpen={isChatOpen}
         onClose={() => setIsChatOpen(false)}
@@ -1950,6 +2222,13 @@ export default function App() {
             const saved = localStorage.getItem(STORAGE_KEY);
             if (saved) {
               const parsed = JSON.parse(saved);
+              const validSpeciesId = DIGIMON_DATABASE[parsed.currentSpeciesId] ? parsed.currentSpeciesId : 'botamon';
+              const restoredUnlocked = saveUnlockedSpeciesIds(
+                loadUnlockedSpeciesIds([
+                  ...(Array.isArray(parsed.unlockedSpeciesIds) ? parsed.unlockedSpeciesIds : []),
+                  ...(parsed.stage && parsed.stage !== 'egg' ? [validSpeciesId] : []),
+                ])
+              );
               setPet({
                 playerName: '',
                 effort: 0,
@@ -1960,10 +2239,15 @@ export default function App() {
                 ownedSpecialItems: [],
                 adventureClearedWave: {},
                 battleExp: 0,
+                evolutionLocked: false,
+                isDead: false,
+                neglectTicks: 0,
                 ...parsed,
-                currentSpeciesId: DIGIMON_DATABASE[parsed.currentSpeciesId] ? parsed.currentSpeciesId : 'botamon',
+                stageEnteredAt: parsed.stageEnteredAt || Date.now(),
+                currentSpeciesId: validSpeciesId,
+                unlockedSpeciesIds: restoredUnlocked,
               });
-              showNotification(`Restored ${parsed.nickname || 'Digimon'} save successfully!`);
+              showNotification(`Restored ${parsed.nickname?.trim() || DIGIMON_DATABASE[parsed.currentSpeciesId]?.name || 'Digimon'} save successfully!`);
             }
           } catch {}
         }}

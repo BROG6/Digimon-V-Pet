@@ -18,14 +18,17 @@ export type DigimonPose =
   | 'eating' 
   | 'sleeping' 
   | 'sick' 
-  | 'happy';
+  | 'happy'
+  | 'hatching'
+  | 'dead';
 
 interface DigimonSpriteProps {
   species?: DigimonSpecies;
   egg?: DigiEggInfo;
-  action?: 'idle' | 'walk' | 'eat' | 'sleep' | 'sick' | 'attack' | 'happy' | 'cheer' | 'sit' | 'poop' | 'train';
+  action?: 'idle' | 'walk' | 'eat' | 'sleep' | 'sick' | 'attack' | 'happy' | 'cheer' | 'sit' | 'poop' | 'train' | 'hatch' | 'dead';
   pose?: DigimonPose;
   eatItem?: 'meat' | 'vitamin';
+  isCracking?: boolean;
   scale?: number;
   facing?: 'left' | 'right';
   lcdMode?: boolean;
@@ -39,6 +42,7 @@ export const DigimonSprite: React.FC<DigimonSpriteProps> = ({
   action = 'idle',
   pose,
   eatItem = 'meat',
+  isCracking = false,
   scale = 1,
   facing = 'right',
   lcdMode = false,
@@ -55,6 +59,8 @@ export const DigimonSprite: React.FC<DigimonSpriteProps> = ({
     action === 'happy' || action === 'cheer' ? 'happy' :
     action === 'sit' ? 'sitting' :
     action === 'poop' ? 'pooping' :
+    action === 'hatch' ? 'hatching' :
+    action === 'dead' ? 'dead' :
     'standing'
   );
 
@@ -93,7 +99,12 @@ export const DigimonSprite: React.FC<DigimonSpriteProps> = ({
     const spriteLookupId = species?.spriteId || species?.id;
     const config = spriteLookupId ? getEffectiveSpriteConfig(spriteLookupId) : undefined;
     if (config) {
-      const poseKey = activePose === 'pooping' ? 'sitting' : activePose;
+      const poseKey =
+        activePose === 'pooping'
+          ? 'sitting'
+          : activePose === 'hatching' || activePose === 'dead'
+          ? 'standing'
+          : activePose;
       const frames = config.frames[poseKey] || config.frames.standing || [];
       count = Math.max(1, frames.length);
       hasSharedStage = Boolean(config.stageWidth && config.stageHeight);
@@ -125,6 +136,55 @@ export const DigimonSprite: React.FC<DigimonSpriteProps> = ({
     return () => clearInterval(timer);
   }, [activePose, species?.id, facing, spriteRevision]);
 
+  // MEMORIAL / GRAVE RENDERER (When neglected to death)
+  if (activePose === 'dead') {
+    return (
+      <div
+        onClick={onClick}
+        className={`relative inline-block cursor-pointer select-none ${className}`}
+        style={{ transform: `scale(${scale * 0.72})` }}
+      >
+        <div className="relative w-24 h-28 flex flex-col items-center justify-end">
+          {/* Floating Winged Spirit & Halo */}
+          <motion.div
+            animate={{ y: [-2, -9, -2], opacity: [0.85, 1, 0.85] }}
+            transition={{ repeat: Infinity, duration: 2.2, ease: 'easeInOut' }}
+            className="mb-1 flex flex-col items-center"
+          >
+            <div className="w-7 h-2 rounded-full border-2 border-amber-300 shadow-[0_0_8px_rgba(252,211,77,0.7)]" />
+            <span className="font-pixel text-[8px] text-slate-900 bg-white/85 px-1.5 py-0.5 rounded mt-0.5 border border-slate-700">
+              R.I.P.
+            </span>
+          </motion.div>
+
+          {/* Classic V-Pet Pixel Gravestone */}
+          <svg viewBox="0 0 80 80" className="w-20 h-20 overflow-visible pixel-art">
+            <ellipse cx="40" cy="74" rx="26" ry="5" fill="rgba(0,0,0,0.35)" />
+            <path
+              d="M 20,72 L 20,30 Q 20,12 40,12 Q 60,12 60,30 L 60,72 Z"
+              fill={lcdMode ? '#1e2b20' : '#94a3b8'}
+              stroke={lcdMode ? '#152017' : '#1e293b'}
+              strokeWidth="4"
+            />
+            <rect
+              x="14"
+              y="66"
+              width="52"
+              height="9"
+              rx="2"
+              fill={lcdMode ? '#152017' : '#64748b'}
+              stroke="#0f172a"
+              strokeWidth="3"
+            />
+            {/* Engraved Cross / Computer Skull Emblem */}
+            <rect x="37" y="25" width="6" height="24" fill={lcdMode ? '#dcefd7' : '#334155'} />
+            <rect x="30" y="32" width="20" height="6" fill={lcdMode ? '#dcefd7' : '#334155'} />
+          </svg>
+        </div>
+      </div>
+    );
+  }
+
   // EGG RENDERER
   if (egg || !species) {
     const eggInfo = egg || {
@@ -140,20 +200,43 @@ export const DigimonSprite: React.FC<DigimonSpriteProps> = ({
       eggPattern: 'flames' as const,
     };
 
+    const isHatchAnim = activePose === 'hatching';
+    const showCracks = isHatchAnim || isCracking;
+
     return (
       <div 
         onClick={onClick}
         className={`relative inline-block cursor-pointer select-none ${className}`}
         style={{ transform: `scale(${scale * 0.656})` }}
       >
+        {isHatchAnim && (
+          <motion.div
+            initial={{ opacity: 0.3, scale: 0.7 }}
+            animate={{ opacity: [0.4, 1, 0.2], scale: [0.9, 1.55, 1.85] }}
+            transition={{ repeat: Infinity, duration: 0.7 }}
+            className="absolute inset-0 -m-4 rounded-full bg-amber-300/45 blur-md pointer-events-none"
+          />
+        )}
 
         <motion.div
           animate={
-            activePose === 'happy'
+            isHatchAnim
+              ? {
+                  rotate: [-16, 16, -18, 18, -12, 12, 0],
+                  y: [0, -10, 0, -14, -4, 0],
+                  scale: [1, 1.08, 0.96, 1.12, 1],
+                }
+              : isCracking
+              ? { rotate: [-7, 7, -6, 6, 0], y: [-3, 1, -3] }
+              : activePose === 'happy'
               ? { rotate: [-10, 10, -10], y: [-6, 0, -6] }
               : { rotate: [-3, 3, -3], y: [-2, 2, -2] }
           }
-          transition={{ repeat: Infinity, duration: activePose === 'happy' ? 0.6 : 1.8, ease: 'easeInOut' as const }}
+          transition={{
+            repeat: Infinity,
+            duration: isHatchAnim ? 0.36 : isCracking ? 0.55 : activePose === 'happy' ? 0.6 : 1.8,
+            ease: 'easeInOut' as const,
+          }}
           className="relative w-20 h-28 flex items-center justify-center filter drop-shadow-xl"
         >
           <div className="absolute -bottom-2 w-20 h-5 bg-black/30 rounded-full blur-[2px]" />
@@ -232,7 +315,40 @@ export const DigimonSprite: React.FC<DigimonSpriteProps> = ({
               </g>
             )}
             <ellipse cx="36" cy="38" rx="8" ry="16" transform="rotate(-25, 36, 38)" fill="#ffffff" opacity={lcdMode ? '0' : '0.6'} />
+
+            {/* Hatching Cracks & Radiant Light */}
+            {showCracks && (
+              <g fill="none" strokeLinecap="round" strokeLinejoin="round">
+                <path
+                  d="M 22,64 L 38,54 L 48,68 L 62,50 L 78,66"
+                  stroke={isHatchAnim ? '#fef08a' : '#0f172a'}
+                  strokeWidth={isHatchAnim ? '6' : '3.5'}
+                />
+                {isHatchAnim && (
+                  <>
+                    <path d="M 22,64 L 38,54 L 48,68 L 62,50 L 78,66" stroke="#ffffff" strokeWidth="2.5" />
+                    <path d="M 48,68 L 42,88 L 55,102" stroke="#fef08a" strokeWidth="4" />
+                  </>
+                )}
+              </g>
+            )}
           </svg>
+
+          {/* Flying Shell Sparks during Hatching */}
+          {isHatchAnim && (
+            <>
+              <motion.div
+                animate={{ x: [-4, -28], y: [-8, -30], opacity: [1, 0], rotate: [-20, -90] }}
+                transition={{ repeat: Infinity, duration: 0.55 }}
+                className="absolute top-3 left-2 w-2.5 h-2.5 bg-amber-200 border border-slate-900 rounded-xs"
+              />
+              <motion.div
+                animate={{ x: [4, 28], y: [-10, -28], opacity: [1, 0], rotate: [20, 110] }}
+                transition={{ repeat: Infinity, duration: 0.55, delay: 0.15 }}
+                className="absolute top-4 right-2 w-2.5 h-2.5 bg-cyan-200 border border-slate-900 rounded-xs"
+              />
+            </>
+          )}
         </motion.div>
       </div>
     );
@@ -244,7 +360,12 @@ export const DigimonSprite: React.FC<DigimonSpriteProps> = ({
   const spriteLookupId = species.spriteId || species.id;
   const newConfig = getEffectiveSpriteConfig(spriteLookupId);
   if (newConfig) {
-    const poseKey = activePose === 'pooping' ? 'sitting' : activePose;
+    const poseKey =
+      activePose === 'pooping'
+        ? 'sitting'
+        : activePose === 'hatching'
+        ? 'standing'
+        : activePose;
     const poseFrames = newConfig.frames[poseKey] || newConfig.frames.standing || [];
     const currentFrame: SpriteFrame = poseFrames[frameIndex % poseFrames.length] || poseFrames[0] || { x: 0, y: 0, w: 32, h: 32 };
 

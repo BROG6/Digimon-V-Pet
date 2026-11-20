@@ -75,6 +75,21 @@ export const DigimonTalkModal: React.FC<DigimonTalkModalProps> = ({
     setInputText('');
     setIsThinking(true);
 
+    const trimmedHistory = messages.slice(-8);
+    const contextualHistory: DigimonChatTurn[] = activePlayerName
+      ? [
+          {
+            role: 'user',
+            text: `My name is ${activePlayerName}. Remember to address me directly by ${activePlayerName}.`,
+          },
+          {
+            role: 'model',
+            text: `Got it, ${activePlayerName}! I will always call you ${activePlayerName}.`,
+          },
+          ...trimmedHistory,
+        ]
+      : trimmedHistory;
+
     try {
       const result = await fetchDigimonAiDialogue({
         speciesName,
@@ -98,7 +113,7 @@ export const DigimonTalkModal: React.FC<DigimonTalkModalProps> = ({
         battlesTotal: pet.battlesTotal,
         careMistakes: pet.careMistakes,
         userMessage: clean,
-        history: messages.slice(-8),
+        history: contextualHistory,
       });
 
       setMessages((prev) => [...prev, { role: 'model', text: result.text }]);

@@ -299,15 +299,42 @@ VOICE & ROLEPLAY GUIDELINES:
         ? String(userMessage).trim()
         : `Say a spontaneous, personality-filled remark to ${cleanPlayerName || 'your Tamer'} reacting to your current mood, vitals, or surroundings.`;
 
+      const playerContextPrefix = cleanPlayerName
+        ? `[Partner Name Context: The user's name is ${cleanPlayerName}. Consistently refer to and address the user by their name "${cleanPlayerName}".]\n`
+        : '';
+
+      const firstUserIndex = cleanHistory.findIndex((m) => m.role === 'user');
+      const alreadyHasNameContext =
+        Boolean(cleanPlayerName) &&
+        ((firstUserIndex >= 0 && cleanHistory[firstUserIndex].text.includes(cleanPlayerName)) ||
+          userPrompt.includes(`[From ${cleanPlayerName}]`));
+
       const contents = cleanHistory.length > 0
         ? [
-            ...cleanHistory.map((m: { role: 'user' | 'model'; text: string }) => ({
+            ...cleanHistory.map((m: { role: 'user' | 'model'; text: string }, idx: number) => ({
               role: m.role,
-              parts: [{ text: m.text.trim() }],
+              parts: [
+                {
+                  text:
+                    playerContextPrefix && !alreadyHasNameContext && idx === firstUserIndex
+                      ? `${playerContextPrefix}${m.text.trim()}`
+                      : m.text.trim(),
+                },
+              ],
             })),
-            { role: 'user' as const, parts: [{ text: userPrompt }] },
+            {
+              role: 'user' as const,
+              parts: [
+                {
+                  text:
+                    playerContextPrefix && !alreadyHasNameContext && firstUserIndex === -1
+                      ? `${playerContextPrefix}${userPrompt}`
+                      : userPrompt,
+                },
+              ],
+            },
           ]
-        : userPrompt;
+        : `${playerContextPrefix}${userPrompt}`;
 
       let lastErr: any = null;
       const modelsToTry = ['gemini-4-hydrogen', 'gemini-4-hydrogen', 'gemini-3.1-flash-lite'];

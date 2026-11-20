@@ -186,8 +186,15 @@ export interface PetState {
   lastCareCheck: number;
   stageEnteredAt?: number;
   evoGoalMetAt?: number;
+  evolutionLocked?: boolean;
+  isDead?: boolean;
+  diedAt?: number;
+  deathReason?: string;
+  sickSince?: number;
+  neglectTicks?: number;
   adventureClearedWave?: Record<string, number>;
   battleExp?: number;
+  unlockedSpeciesIds?: string[];
 }
 
 export interface AdventureWave {

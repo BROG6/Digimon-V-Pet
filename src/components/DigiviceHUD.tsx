@@ -4,8 +4,7 @@ import { PetState, DigimonSpecies, DigiEggInfo } from '../types/digimon';
 import { DigimonSprite, DigimonPose } from './DigimonSprite';
 import { PixelMeatIcon, PixelVitaminIcon, PixelPoopIcon } from './PixelItemIcons';
 import { sound } from '../utils/audio';
-import { checkEvolutionEligibility } from '../utils/evolutionEngine';
-import { DIGIMON_DATABASE } from '../data/digidex';
+import { checkEvolutionEligibility, formatDurationMs } from '../utils/evolutionEngine';
 import { 
   Heart, 
   Scale, 
@@ -26,6 +25,8 @@ interface DigiviceHUDProps {
   pet: PetState;
   species?: DigimonSpecies;
   egg?: DigiEggInfo;
+  isHatchingEgg?: boolean;
+  evoRemainingMs?: number;
   onFeedMeat: () => void;
   onGiveVitamin: () => void;
   onCleanPoop: () => void;
@@ -148,6 +149,8 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
   pet,
   species,
   egg,
+  isHatchingEgg = false,
+  evoRemainingMs,
   onFeedMeat,
   onGiveVitamin,
   onCleanPoop,
@@ -177,7 +180,6 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
   const trainingAtkBonus = Math.floor(pet.trainingCount * 2);
   const totalAtk = (species?.baseAtk || 20) + trainingAtkBonus;
   const evoElig = checkEvolutionEligibility(pet, species);
-  const predictedNextSpecies = evoElig.nextId ? DIGIMON_DATABASE[evoElig.nextId] : undefined;
 
   // AUTONOMOUS MOVEMENT ENGINE INSIDE LCD SCREEN
   const [monX, setMonX] = useState<number>(50); // percentage 15% to 85%
@@ -272,6 +274,18 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
 
   // Autonomous Digimon movement loop inside LCD
   useEffect(() => {
+    if (pet.isDead) {
+      setMonX(50);
+      setFacing('right');
+      setInternalPose('dead');
+      return;
+    }
+    if (pet.stage === 'egg') {
+      setMonX(50);
+      setFacing('right');
+      setInternalPose(isHatchingEgg ? 'hatching' : 'standing');
+      return;
+    }
     if (pet.isSleeping || pet.lightsOff) {
       setInternalPose('sleeping');
       return;
@@ -322,7 +336,7 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
     }, 4200);
 
     return () => clearInterval(moveInterval);
-  }, [pet.isSleeping, pet.lightsOff, pet.isSick, activeSubMenu, monX]);
+  }, [pet.isDead, pet.stage, isHatchingEgg, pet.isSleeping, pet.lightsOff, pet.isSick, activeSubMenu, monX]);
 
   // Button A: Cycle selection forward
   const handleNextMenu = () => {
@@ -429,7 +443,9 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
   };
 
   const triggerPoopClean = () => {
-    sound.playClean();
+    if (!pet.isDead && pet.stage !== 'egg') {
+      sound.playClean();
+    }
     onCleanPoop();
   };
 
@@ -664,16 +680,30 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
                   
                   {/* Top LCD Telemetry Row (matching Bandai 25th photo) */}
                   <div className="relative z-20 flex justify-between items-center px-1 text-[8px] font-pixel text-[#0f172a] font-bold select-none drop-shadow-[0_1px_0_rgba(255,255,255,0.4)]">
-                    <span className="uppercase tracking-tight">{species?.name || pet.nickname || 'DIGIMON'}</span>
+                    <span className="uppercase tracking-tight">
+                      {pet.isDead
+                        ? 'MEMORIAL'
+                        : pet.stage === 'egg'
+                        ? 'DIGITAMA'
+                        : pet.nickname?.trim() || species?.name || 'DIGIMON'}
+                    </span>
                     <span className="tracking-tight">
-                      H: {'♥'.repeat(Math.min(4, Math.max(1, Math.ceil((pet.hunger / 100) * 4))))} S: {'★'.repeat(Math.min(4, Math.max(1, Math.ceil((pet.strength / 100) * 4))))}
+                      {pet.isDead ? (
+                        'R.I.P. ☠'
+                      ) : pet.stage === 'egg' ? (
+                        isHatchingEgg ? 'HATCHING!' : `HATCH: ${formatDurationMs(evoRemainingMs ?? 60_000)}`
+                      ) : (
+                        <>
+                          H: {'♥'.repeat(Math.min(4, Math.max(1, Math.ceil((pet.hunger / 100) * 4))))} S: {'★'.repeat(Math.min(4, Math.max(1, Math.ceil((pet.strength / 100) * 4))))}
+                        </>
+                      )}
                     </span>
                   </div>
 
                   {/* Attention / Sickness alert blinking icon */}
-                  {(pet.isSick || pet.hunger < 25) && (
+                  {!pet.isDead && pet.stage !== 'egg' && (pet.isSick || pet.hunger < 25 || pet.careMistakes >= 6) && (
                     <div className="absolute top-4 right-1 text-[8px] font-pixel px-1.5 py-0.5 rounded animate-pulse font-bold bg-[#dc2626] text-white border border-rose-300 shadow z-30">
-                      [CALL!]
+                      {pet.careMistakes >= 6 ? '[DANGER!]' : '[CALL!]'}
                     </div>
                   )}
 
@@ -749,16 +779,30 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
                     <div
                       className="absolute bottom-0.5 transition-[left] duration-[1600ms] ease-linear flex flex-col items-center z-10"
                       style={{
-                        left: `${monX}%`,
+                        left: `${pet.stage === 'egg' || pet.isDead ? 50 : monX}%`,
                         transform: 'translateX(-50%)',
                       }}
                     >
                       <DigimonSprite
-                        species={species}
+                        species={pet.stage === 'egg' || pet.isDead ? undefined : species}
                         egg={pet.stage === 'egg' ? egg : undefined}
-                        pose={internalPose}
+                        pose={
+                          pet.isDead
+                            ? 'dead'
+                            : pet.stage === 'egg'
+                            ? isHatchingEgg
+                              ? 'hatching'
+                              : 'standing'
+                            : internalPose
+                        }
+                        isCracking={
+                          pet.stage === 'egg' &&
+                          !isHatchingEgg &&
+                          typeof evoRemainingMs === 'number' &&
+                          evoRemainingMs <= 10_000
+                        }
                         eatItem={activeEatItem}
-                        facing={facing}
+                        facing={pet.stage === 'egg' || pet.isDead ? 'right' : facing}
                         lcdMode={false}
                         scale={0.92}
                       />
@@ -767,8 +811,28 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
 
                   {/* Bottom LCD Telemetry Row (matching Bandai 25th photo) */}
                   <div className="relative z-20 flex justify-between items-center px-1 text-[7px] font-pixel text-[#0f172a] font-bold select-none drop-shadow-[0_1px_0_rgba(255,255,255,0.4)]">
-                    <span>MISTAKES: {pet.careMistakes || 0}</span>
-                    <span className="uppercase">STATUS: {pet.isSick ? 'SICK' : pet.energy < 20 ? 'TIRED' : 'OK'}</span>
+                    <span>
+                      {pet.stage === 'egg'
+                        ? (egg?.crestName || 'DIGITAMA').toUpperCase()
+                        : `MISTAKES: ${pet.careMistakes || 0}`}
+                    </span>
+                    <span className="uppercase">
+                      {pet.isDead
+                        ? 'STATUS: DECEASED'
+                        : pet.stage === 'egg'
+                        ? isHatchingEgg
+                          ? 'HATCHING...'
+                          : 'INCUBATING'
+                        : `STATUS: ${
+                            pet.evolutionLocked
+                              ? 'EVO LOCKED'
+                              : pet.isSick
+                              ? 'SICK'
+                              : pet.energy < 20
+                              ? 'TIRED'
+                              : 'OK'
+                          }`}
+                    </span>
                   </div>
                 </div>
               )}
@@ -788,7 +852,7 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
                   {statsPage === 0 && (
                     <div className="space-y-0.5 text-[8px]">
                       <div className="flex justify-between text-white font-bold">
-                        <span className="uppercase">{pet.nickname}</span>
+                        <span className="uppercase">{pet.nickname?.trim() || species?.name || 'DIGIMON'}</span>
                         <span className="text-[7px] text-amber-300 uppercase">{pet.stage}</span>
                       </div>
                       <div className="flex justify-between">
@@ -842,9 +906,15 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
                         <span className="font-bold text-cyan-300">EF {evoElig.effort}/10 • {evoElig.weightClass}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span>NEXT ({evoElig.archetype.toUpperCase()}):</span>
+                        <span>NEXT EVO:</span>
                         <span className="font-bold text-amber-400 uppercase truncate max-w-[92px]">
-                          {predictedNextSpecies ? predictedNextSpecies.name : 'MAX'}
+                          {pet.isDead
+                            ? 'DECEASED'
+                            : pet.evolutionLocked
+                            ? 'LOCKED'
+                            : pet.stage === 'mega'
+                            ? 'MAX'
+                            : '???'}
                         </span>
                       </div>
                     </div>

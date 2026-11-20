@@ -7,6 +7,7 @@ import {
   computeNaturalEvoTiming,
   formatDurationMs,
 } from '../utils/evolutionEngine';
+import { getStageHungerHeartMs, getStagePoopIntervalMs } from '../utils/carePacing';
 import { DigimonSprite } from './DigimonSprite';
 import { 
   X, 
@@ -518,6 +519,20 @@ export const StatsModal: React.FC<StatsModalProps> = ({
                 </div>
               </div>
             </div>
+
+            {pet.stage !== 'egg' && (
+              <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 flex flex-wrap items-center justify-between gap-2 text-[10px] font-chakra text-slate-300">
+                <span>
+                  <strong className="text-amber-300 font-pixel text-[9px]">HUNGER:</strong>{' '}
+                  -1 heart / {Math.round(getStageHungerHeartMs(pet.stage) / 60_000)}m
+                </span>
+                <span>
+                  <strong className="text-cyan-300 font-pixel text-[9px]">TOILET:</strong>{' '}
+                  every {Math.round(getStagePoopIntervalMs(pet.stage) / 60_000)}m (max 4)
+                </span>
+                <span className="text-slate-400">10m grace before care mistake</span>
+              </div>
+            )}
           </div>
         )}
 

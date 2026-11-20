@@ -64,6 +64,13 @@ import {
   recordUnlockedSpeciesId,
   saveUnlockedSpeciesIds,
 } from './utils/evolutionEngine';
+import { advanceCareState, evaluateCareNeeds } from './utils/carePacing';
+import {
+  getCareAlertsEnabled,
+  requestCareNotificationPermission,
+  sendCareSystemNotification,
+  setCareAlertsEnabled,
+} from './utils/careNotifications';
 import confetti from 'canvas-confetti';
 import { sound, triggerHaptic } from './utils/audio';
 import { 
@@ -91,7 +98,9 @@ import {
   ExternalLink,
   Download,
   SlidersHorizontal,
-  Compass
+  Compass,
+  Bell,
+  BellOff
 } from 'lucide-react';
 
 const STORAGE_KEY = 'digipet_vpet_save_v1';
@@ -124,6 +133,8 @@ export default function App() {
           neglectTicks: 0,
           ...parsed,
           stageEnteredAt: parsed.stageEnteredAt || Date.now(),
+          lastHungerDropAt: parsed.lastHungerDropAt || parsed.lastCareCheck || Date.now(),
+          lastPoopAt: parsed.lastPoopAt || parsed.lastCareCheck || Date.now(),
           currentSpeciesId: validSpeciesId,
           unlockedSpeciesIds,
         };
@@ -169,6 +180,8 @@ export default function App() {
         { instanceId: 'init-2', furnitureId: 'cozy-cushion', x: 74, y: 72 },
       ],
       lastCareCheck: Date.now(),
+      lastHungerDropAt: Date.now(),
+      lastPoopAt: Date.now(),
       evolutionLocked: false,
       isDead: false,
       neglectTicks: 0,
@@ -278,6 +291,7 @@ export default function App() {
   const eggHatchInProgressRef = useRef<boolean>(false);
 
   const [isMuted, setIsMuted] = useState<boolean>(sound.getMuted());
+  const [alertsEnabled, setAlertsEnabled] = useState<boolean>(() => getCareAlertsEnabled());
   const [statusNotification, setStatusNotification] = useState<string | null>(null);
   const [hudAction, setHudAction] = useState<{ pose: 'eating' | 'happy' | 'flushing'; nonce: number; eatItem?: 'meat' | 'vitamin' } | null>(null);
 
@@ -400,128 +414,146 @@ export default function App() {
     } catch (e) {}
   }, [pet]);
 
-  // Periodic Virtual Pet Care Loop (Hunger, Poop, Neglect Care Mistakes & Death)
+  // Stage-accurate Virtual Pet Care Loop (Hunger, Toilet, 10m Care Grace & Death)
+  const lastStepEventsRef = useRef<ReturnType<typeof advanceCareState>['events'] | null>(null);
   useEffect(() => {
-    const careInterval = setInterval(() => {
+    const runCareTick = () => {
       const now = Date.now();
-      let criticalWarning: string | null = null;
-      let deathNotice: string | null = null;
-
       setPet((prev) => {
-        if (prev.stage === 'egg' || prev.isDead) {
-          return prev;
-        }
-
-        const hunger = prev.lightsOff ? prev.hunger : Math.max(0, prev.hunger - 3);
-        const energy = prev.lightsOff ? Math.min(100, prev.energy + 10) : Math.max(0, prev.energy - 2);
-        let poopCount = prev.poopCount;
-        let isSick = prev.isSick;
-        let sickSince = prev.sickSince;
-        let careMistakes = prev.careMistakes;
-        let neglectTicks = prev.neglectTicks ?? 0;
-
-        // Chance to poop while awake and fed
-        if (!prev.lightsOff && prev.hunger > 50 && Math.random() < 0.25 && poopCount < 4) {
-          poopCount += 1;
-        }
-
-        const isNeglectedNow = !prev.lightsOff && (hunger === 0 || poopCount >= 3 || energy === 0);
-
-        if (isNeglectedNow) {
-          neglectTicks += 1;
-          if (neglectTicks >= 3) {
-            neglectTicks = 0;
-            careMistakes += 1;
-            sound.playAlert();
-          }
-          if ((poopCount >= 3 || hunger === 0) && !isSick && Math.random() < 0.45) {
-            isSick = true;
-            sickSince = sickSince ?? now;
-            if (neglectTicks > 0) {
-              careMistakes += 1;
-              neglectTicks = 0;
-            }
-            sound.playAlert();
-          }
-        } else if (!isSick) {
-          neglectTicks = 0;
-        }
-
-        if (isSick && !sickSince) {
-          sickSince = now;
-        }
-
-        const sickElapsedMs = isSick && sickSince ? now - sickSince : 0;
-
-        // Death check from severe / prolonged neglect
-        if (careMistakes >= 8) {
-          deathNotice = 'Your Digimon passed away from severe neglect (8+ Care Mistakes).';
-          sound.playAlert();
-          return {
-            ...prev,
-            hunger,
-            energy,
-            poopCount,
-            isSick,
-            sickSince,
-            careMistakes,
-            neglectTicks,
-            isDead: true,
-            diedAt: now,
-            deathReason: 'Severe neglect (8+ Care Mistakes).',
-            isSleeping: false,
-            lightsOff: false,
-            lastCareCheck: now,
-          };
-        }
-
-        if (isSick && sickElapsedMs >= 20 * 60_000 && (!prev.lightsOff || (hunger === 0 && poopCount >= 3))) {
-          deathNotice = 'Your Digimon passed away from untreated sickness and neglect.';
-          sound.playAlert();
-          return {
-            ...prev,
-            hunger,
-            energy,
-            poopCount,
-            isSick,
-            sickSince,
-            careMistakes,
-            neglectTicks,
-            isDead: true,
-            diedAt: now,
-            deathReason: 'Untreated sickness persisted too long.',
-            isSleeping: false,
-            lightsOff: false,
-            lastCareCheck: now,
-          };
-        }
-
-        if (careMistakes >= 6 || (isSick && sickElapsedMs >= 10 * 60_000)) {
-          criticalWarning = '🚨 CRITICAL NEGLECT! Feed, flush & cure sickness right away!';
-        }
-
-        return {
-          ...prev,
-          hunger,
-          energy,
-          poopCount,
-          isSick,
-          sickSince,
-          careMistakes,
-          neglectTicks,
-          lastCareCheck: now,
-        };
+        const res = advanceCareState(prev, now);
+        lastStepEventsRef.current = res.events;
+        return res.nextPet;
       });
+    };
 
-      if (deathNotice) {
-        showNotification(`🪦 ${deathNotice}`);
-      } else if (criticalWarning) {
-        showNotification(criticalWarning);
-      }
-    }, 25000);
-
+    runCareTick();
+    const careInterval = setInterval(runCareTick, 15000);
     return () => clearInterval(careInterval);
   }, []);
+
+  // Notification Alerts for Hunger & Toilet Needs (In-App Toast + Audio/Haptic + System Notification)
+  const alertTrackerRef = useRef<{
+    hungerLevel: 'ok' | 'low' | 'empty';
+    poopCount: number;
+    isSick: boolean;
+    isDead: boolean;
+    stage: DigimonStage;
+  }>({
+    hungerLevel: pet.hunger === 0 ? 'empty' : pet.hunger <= 25 ? 'low' : 'ok',
+    poopCount: pet.poopCount,
+    isSick: pet.isSick,
+    isDead: Boolean(pet.isDead),
+    stage: pet.stage,
+  });
+
+  useEffect(() => {
+    const tracker = alertTrackerRef.current;
+    const hungerLevel: 'ok' | 'low' | 'empty' =
+      pet.hunger <= 0 ? 'empty' : pet.hunger <= 25 ? 'low' : 'ok';
+
+    if (pet.stage === 'egg' || pet.stage !== tracker.stage) {
+      tracker.hungerLevel = hungerLevel;
+      tracker.poopCount = pet.poopCount;
+      tracker.isSick = pet.isSick;
+      tracker.isDead = Boolean(pet.isDead);
+      tracker.stage = pet.stage;
+      return;
+    }
+
+    const monName = pet.nickname?.trim() || currentSpecies?.name || 'Your Digimon';
+
+    if (pet.isDead && !tracker.isDead) {
+      sound.playAlert();
+      triggerHaptic('alert');
+      const body = `${monName} passed away: ${pet.deathReason || 'Neglected for too long.'}`;
+      showNotification(`🪦 ${body}`);
+      if (alertsEnabled) {
+        sendCareSystemNotification({
+          id: 2004,
+          title: `Digivice Memorial Alert`,
+          body,
+          tag: 'digipet-death',
+        });
+      }
+      tracker.isDead = true;
+      return;
+    }
+
+    if (!pet.isDead) {
+      // 1. Hunger Alert (crossed <= 25% or hit 0% empty)
+      if (hungerLevel === 'empty' && tracker.hungerLevel !== 'empty') {
+        sound.playAlert();
+        triggerHaptic('alert');
+        const msg = `${monName} is starving (0%)! Feed within 10 minutes before a Care Mistake.`;
+        showNotification(`🚨 ${msg}`);
+        if (alertsEnabled) {
+          sendCareSystemNotification({
+            id: 2001,
+            title: `🚨 ${monName} is Starving!`,
+            body: msg,
+            tag: 'digipet-hunger',
+          });
+        }
+      } else if (hungerLevel === 'low' && tracker.hungerLevel === 'ok') {
+        sound.playAlert();
+        triggerHaptic('alert');
+        const msg = `${monName} is getting hungry (${pet.hunger}%). Time to feed Big Meat!`;
+        showNotification(`🍖 ${msg}`);
+        if (alertsEnabled) {
+          sendCareSystemNotification({
+            id: 2001,
+            title: `🍖 Hunger Alert: ${monName}`,
+            body: msg,
+            tag: 'digipet-hunger',
+          });
+        }
+      }
+
+      // 2. Toilet Alert (new poop pile added)
+      if (pet.poopCount > tracker.poopCount) {
+        sound.playAlert();
+        triggerHaptic('alert');
+        const msg =
+          pet.poopCount >= 4
+            ? `${monName} has 4 toilet piles and got sick! Flush & cure now.`
+            : `${monName} needs the toilet! (${pet.poopCount}/4 pile${pet.poopCount === 1 ? '' : 's'})`;
+        showNotification(`💩 ${msg}`);
+        if (alertsEnabled) {
+          sendCareSystemNotification({
+            id: 2002,
+            title: `💩 Toilet Alert: ${monName}`,
+            body: msg,
+            tag: 'digipet-toilet',
+          });
+        }
+      }
+
+      // 3. Sickness / Critical Neglect Alert
+      if (pet.isSick && !tracker.isSick && pet.poopCount < 4) {
+        sound.playAlert();
+        triggerHaptic('alert');
+        const msg = `${monName} fell sick! Give Vitamin or Medicine right away.`;
+        showNotification(`💉 ${msg}`);
+        if (alertsEnabled) {
+          sendCareSystemNotification({
+            id: 2003,
+            title: `💉 Sickness Alert: ${monName}`,
+            body: msg,
+            tag: 'digipet-sick',
+          });
+        }
+      } else if (lastStepEventsRef.current?.criticalWarning) {
+        showNotification(lastStepEventsRef.current.criticalWarning);
+        lastStepEventsRef.current.criticalWarning = null;
+      }
+    }
+
+    tracker.hungerLevel = hungerLevel;
+    tracker.poopCount = pet.poopCount;
+    tracker.isSick = pet.isSick;
+    tracker.isDead = Boolean(pet.isDead);
+    tracker.stage = pet.stage;
+  }, [pet.hunger, pet.poopCount, pet.isSick, pet.isDead, pet.stage, pet.nickname, pet.deathReason, currentSpecies?.name, alertsEnabled]);
 
   const [evoNowMs, setEvoNowMs] = useState<number>(() => Date.now());
   const evoElig = checkEvolutionEligibility(pet, currentSpecies);
@@ -613,6 +645,10 @@ export default function App() {
           isSick: false,
           sickSince: undefined,
           neglectTicks: 0,
+          careCallStartedAt: undefined,
+          lastCareCheck: now,
+          lastHungerDropAt: now,
+          lastPoopAt: now,
           unlockedSpeciesIds: recordUnlockedSpeciesId(baby1Id, prev.unlockedSpeciesIds || []),
         }));
         setIsHatchingEgg(false);
@@ -790,14 +826,23 @@ export default function App() {
     }
     sound.playEat();
     setHudAction({ pose: 'eating', nonce: Date.now() + Math.random(), eatItem: 'meat' });
-    setPet((prev) => ({
-      ...prev,
-      bigMeatStock: prev.bigMeatStock - 1,
-      hunger: Math.min(100, prev.hunger + 25),
-      weight: prev.weight + 2,
-      happiness: Math.min(100, prev.happiness + 10),
-      neglectTicks: 0,
-    }));
+    setPet((prev) => {
+      const now = Date.now();
+      const nextHunger = Math.min(100, prev.hunger + 25);
+      return {
+        ...prev,
+        bigMeatStock: prev.bigMeatStock - 1,
+        hunger: nextHunger,
+        weight: prev.weight + 2,
+        happiness: Math.min(100, prev.happiness + 10),
+        neglectTicks: 0,
+        lastHungerDropAt: now,
+        careCallStartedAt:
+          nextHunger > 0 && prev.poopCount < 4 && prev.energy > 0
+            ? undefined
+            : prev.careCallStartedAt,
+      };
+    });
     showNotification('Fed delicious Big Meat! (+25 Hunger, +2g Weight)');
   };
 
@@ -810,16 +855,23 @@ export default function App() {
     }
     sound.playMedicine();
     setHudAction({ pose: 'eating', nonce: Date.now() + Math.random(), eatItem: 'vitamin' });
-    setPet((prev) => ({
-      ...prev,
-      vitaminStock: prev.vitaminStock - 1,
-      isSick: false,
-      sickSince: undefined,
-      neglectTicks: 0,
-      energy: Math.min(100, prev.energy + 20),
-      strength: prev.strength + 2,
-      dpPoints: prev.dpPoints + 5,
-    }));
+    setPet((prev) => {
+      const nextEnergy = Math.min(100, prev.energy + 20);
+      return {
+        ...prev,
+        vitaminStock: prev.vitaminStock - 1,
+        isSick: false,
+        sickSince: undefined,
+        neglectTicks: 0,
+        energy: nextEnergy,
+        strength: prev.strength + 2,
+        dpPoints: prev.dpPoints + 5,
+        careCallStartedAt:
+          prev.hunger > 0 && prev.poopCount < 4 && nextEnergy > 0
+            ? undefined
+            : prev.careCallStartedAt,
+      };
+    });
     showNotification('Gave Vitamin Protein! 💊 (Cured sickness & restored energy!)');
   };
 
@@ -827,22 +879,32 @@ export default function App() {
     if (!requireAliveAndHatched()) return;
     sound.playFlush();
     setHudAction({ pose: 'flushing', nonce: Date.now() + Math.random() });
-    setPet((prev) => ({
-      ...prev,
-      poopCount: 0,
-      neglectTicks: 0,
-      happiness: Math.min(100, prev.happiness + 5),
-    }));
+    setPet((prev) => {
+      const now = Date.now();
+      return {
+        ...prev,
+        poopCount: 0,
+        neglectTicks: 0,
+        lastPoopAt: now,
+        happiness: Math.min(100, prev.happiness + 5),
+        careCallStartedAt:
+          prev.hunger > 0 && prev.energy > 0 ? undefined : prev.careCallStartedAt,
+      };
+    });
     showNotification('Flushed and cleaned room spotless! 🧹');
   };
 
   const handleToggleLights = () => {
     if (!requireAliveAndHatched()) return;
     sound.playButton();
+    const now = Date.now();
     setPet((prev) => ({
       ...prev,
       lightsOff: !prev.lightsOff,
       isSleeping: !prev.lightsOff,
+      lastCareCheck: now,
+      lastHungerDropAt: now,
+      lastPoopAt: now,
     }));
   };
 
@@ -1188,6 +1250,9 @@ export default function App() {
         ? prev.placedFurniture
         : [{ instanceId: 'init-1', furnitureId: 'meat-grill', x: 28, y: 68 }],
       lastCareCheck: now,
+      lastHungerDropAt: now,
+      lastPoopAt: now,
+      careCallStartedAt: undefined,
       adventureClearedWave: prev.adventureClearedWave || {},
       battleExp: prev.battleExp ?? 0,
       unlockedSpeciesIds: loadUnlockedSpeciesIds(prev.unlockedSpeciesIds || []),
@@ -1200,6 +1265,25 @@ export default function App() {
     const next = sound.toggleMute();
     setIsMuted(next);
   };
+
+  const toggleCareAlerts = async () => {
+    sound.playButton();
+    const next = !alertsEnabled;
+    setAlertsEnabled(next);
+    setCareAlertsEnabled(next);
+    if (next) {
+      const perm = await requestCareNotificationPermission();
+      if (perm === 'granted') {
+        showNotification('🔔 Hunger & Toilet alerts enabled!');
+      } else {
+        showNotification('🔔 In-app Hunger & Toilet alerts enabled!');
+      }
+    } else {
+      showNotification('🔕 System push alerts muted (LCD care calls stay visible).');
+    }
+  };
+
+  const careNeeds = evaluateCareNeeds(pet, evoNowMs);
 
   return (
     <div className="relative min-h-screen w-full bg-slate-950 text-slate-100 flex flex-col justify-between font-display overflow-x-hidden selection:bg-amber-400 selection:text-slate-950">
@@ -1341,6 +1425,23 @@ export default function App() {
             )}
             {Capacitor.isNativePlatform() && hasUpdateAvailable && (
               <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-amber-400 rounded-full border border-slate-950" />
+            )}
+          </button>
+
+          {/* Care Alert Bell Toggle */}
+          <button
+            onClick={toggleCareAlerts}
+            className={`relative p-1.5 rounded-xl transition-colors cursor-pointer ${
+              alertsEnabled
+                ? 'bg-slate-800 hover:bg-slate-700 text-amber-300'
+                : 'bg-slate-800 hover:bg-slate-700 text-slate-500'
+            }`}
+            title={alertsEnabled ? 'Care Alerts ON (Hunger & Toilet)' : 'Care Alerts Muted'}
+            aria-label={alertsEnabled ? 'Mute care alerts' : 'Enable care alerts'}
+          >
+            {alertsEnabled ? <Bell className="w-3.5 h-3.5" /> : <BellOff className="w-3.5 h-3.5" />}
+            {alertsEnabled && careNeeds.hasAnyNeed && (
+              <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-rose-500 animate-ping" />
             )}
           </button>
 
@@ -1494,6 +1595,81 @@ export default function App() {
           </div>
         )}
 
+        {/* Active Hunger & Toilet Notification Alerts */}
+        {!pet.isDead && pet.stage !== 'egg' && (careNeeds.isHungry || careNeeds.needsToilet) && (
+          <div className="w-full px-2.5 sm:px-4 flex flex-col gap-1.5 mb-2.5">
+            {careNeeds.isHungry && (
+              <div
+                className={`w-full py-2 px-3 rounded-2xl border flex items-center justify-between gap-2 shadow-md ${
+                  careNeeds.isStarving
+                    ? 'bg-rose-950/85 border-rose-500/80 text-rose-100'
+                    : 'bg-amber-950/75 border-amber-500/60 text-amber-100'
+                }`}
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <PixelMeatIcon className="w-5 h-5 shrink-0" />
+                  <div className="min-w-0">
+                    <div className="font-pixel text-[9px] truncate">
+                      {careNeeds.isStarving
+                        ? `🚨 STARVING ALERT! (${pet.hunger}%)`
+                        : `🍖 HUNGER ALERT! (${pet.hunger}%)`}
+                    </div>
+                    <div className="text-[10px] font-chakra opacity-90 truncate tabular-nums">
+                      {careNeeds.isStarving && careNeeds.graceRemainingMs > 0
+                        ? `Feed within ${formatDurationMs(careNeeds.graceRemainingMs)} to avoid Care Mistake!`
+                        : `${pet.nickname?.trim() || currentSpecies?.name || 'Digimon'} wants Big Meat.`}
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    handleFeedMeat();
+                    triggerHaptic('heavy');
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-pixel text-[9px] font-bold shrink-0 cursor-pointer active:scale-95"
+                >
+                  FEED
+                </button>
+              </div>
+            )}
+
+            {careNeeds.needsToilet && (
+              <div
+                className={`w-full py-2 px-3 rounded-2xl border flex items-center justify-between gap-2 shadow-md ${
+                  careNeeds.toiletUrgent
+                    ? 'bg-rose-950/85 border-rose-500/80 text-rose-100'
+                    : 'bg-amber-950/75 border-amber-500/60 text-amber-100'
+                }`}
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <PixelPoopIcon className="w-5 h-5 shrink-0" />
+                  <div className="min-w-0">
+                    <div className="font-pixel text-[9px] truncate tabular-nums">
+                      💩 TOILET ALERT! ({pet.poopCount}/4 PILE{pet.poopCount === 1 ? '' : 'S'})
+                    </div>
+                    <div className="text-[10px] font-chakra opacity-90 truncate">
+                      {pet.poopCount >= 4
+                        ? '4 piles reached — flush & cure sickness now!'
+                        : pet.poopCount >= 3
+                        ? 'Urgent! Sickness triggers at 4 piles!'
+                        : `${pet.nickname?.trim() || currentSpecies?.name || 'Digimon'} needs a toilet flush.`}
+                    </div>
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    handleCleanPoop();
+                    triggerHaptic('medium');
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-pixel text-[9px] font-bold shrink-0 cursor-pointer active:scale-95"
+                >
+                  FLUSH
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Mobile Vitals Dashboard Bar */}
         <div className="w-full px-2.5 sm:px-4 grid grid-cols-4 gap-1.5 mb-2.5 text-[9px] font-pixel">
           {/* Hunger */}
@@ -1609,33 +1785,19 @@ export default function App() {
           </button>
         </div>
 
-        {/* Poop cleaning / Sickness urgent alerts */}
-        {(pet.poopCount > 0 || pet.isSick) && (
+        {/* Sickness urgent alert */}
+        {pet.isSick && (
           <div className="w-full px-2.5 sm:px-4 flex gap-2 mt-2">
-            {pet.poopCount > 0 && (
-              <button
-                onClick={() => {
-                  handleCleanPoop();
-                  triggerHaptic('medium');
-                }}
-                className="flex-1 py-2 px-3 bg-amber-950/70 border border-amber-500 rounded-xl flex items-center justify-center gap-1.5 font-pixel text-[10px] text-amber-200 animate-pulse active:scale-95 cursor-pointer"
-              >
-                <PixelPoopIcon className="w-4 h-4" />
-                <span>FLUSH {pet.poopCount} POOP(S)</span>
-              </button>
-            )}
-            {pet.isSick && (
-              <button
-                onClick={() => {
-                  handleCureSick();
-                  triggerHaptic('heavy');
-                }}
-                className="flex-1 py-2 px-3 bg-rose-950/70 border border-rose-500 rounded-xl flex items-center justify-center gap-1.5 font-pixel text-[10px] text-rose-200 animate-bounce active:scale-95 cursor-pointer"
-              >
-                <span>💉</span>
-                <span>INJECT MEDICINE</span>
-              </button>
-            )}
+            <button
+              onClick={() => {
+                handleCureSick();
+                triggerHaptic('heavy');
+              }}
+              className="flex-1 py-2 px-3 bg-rose-950/70 border border-rose-500 rounded-xl flex items-center justify-center gap-1.5 font-pixel text-[10px] text-rose-200 animate-bounce active:scale-95 cursor-pointer"
+            >
+              <span>💉</span>
+              <span>INJECT MEDICINE</span>
+            </button>
           </div>
         )}
       </main>
@@ -1971,7 +2133,7 @@ export default function App() {
           >
             <PixelMeatIcon className="w-5 h-5" />
             <span className="font-pixel text-[8px] mt-0.5">CARE</span>
-            {(pet.poopCount > 0 || pet.isSick) && (
+            {(pet.poopCount > 0 || pet.isSick || pet.hunger <= 25) && (
               <span className="absolute top-0 right-1 w-2 h-2 rounded-full bg-rose-500 animate-ping" />
             )}
           </button>
@@ -2244,6 +2406,8 @@ export default function App() {
                 neglectTicks: 0,
                 ...parsed,
                 stageEnteredAt: parsed.stageEnteredAt || Date.now(),
+                lastHungerDropAt: parsed.lastHungerDropAt || parsed.lastCareCheck || Date.now(),
+                lastPoopAt: parsed.lastPoopAt || parsed.lastCareCheck || Date.now(),
                 currentSpeciesId: validSpeciesId,
                 unlockedSpeciesIds: restoredUnlocked,
               });

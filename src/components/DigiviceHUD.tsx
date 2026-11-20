@@ -700,12 +700,24 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
                     </span>
                   </div>
 
-                  {/* Attention / Sickness alert blinking icon */}
-                  {!pet.isDead && pet.stage !== 'egg' && (pet.isSick || pet.hunger < 25 || pet.careMistakes >= 6) && (
-                    <div className="absolute top-4 right-1 text-[8px] font-pixel px-1.5 py-0.5 rounded animate-pulse font-bold bg-[#dc2626] text-white border border-rose-300 shadow z-30">
-                      {pet.careMistakes >= 6 ? '[DANGER!]' : '[CALL!]'}
-                    </div>
-                  )}
+                  {/* Attention / Hunger / Toilet / Sickness alert blinking icon */}
+                  {!pet.isDead &&
+                    pet.stage !== 'egg' &&
+                    (pet.isSick || pet.hunger <= 25 || pet.poopCount > 0 || pet.careMistakes >= 6) && (
+                      <div className="absolute top-4 right-1 text-[8px] font-pixel px-1.5 py-0.5 rounded animate-pulse font-bold bg-[#dc2626] text-white border border-rose-300 shadow z-30">
+                        {pet.careMistakes >= 6
+                          ? '[DANGER!]'
+                          : pet.hunger <= 25 && pet.poopCount > 0
+                          ? '[FEED+WC!]'
+                          : pet.hunger === 0
+                          ? '[STARVING!]'
+                          : pet.hunger <= 25
+                          ? '[HUNGRY!]'
+                          : pet.poopCount > 0
+                          ? `[POOP ${pet.poopCount}/4]`
+                          : '[SICK!]'}
+                      </div>
+                    )}
 
                   {/* Poop on LCD screen if present */}
                   {!isFlushing && pet.poopCount > 0 && (

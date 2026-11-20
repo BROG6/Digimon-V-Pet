@@ -192,6 +192,9 @@ export interface PetState {
   deathReason?: string;
   sickSince?: number;
   neglectTicks?: number;
+  lastHungerDropAt?: number;
+  lastPoopAt?: number;
+  careCallStartedAt?: number;
   adventureClearedWave?: Record<string, number>;
   battleExp?: number;
   unlockedSpeciesIds?: string[];

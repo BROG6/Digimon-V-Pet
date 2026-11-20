@@ -601,6 +601,10 @@ export function applyEvolutionToPetState(
     stageEnteredAt: nowMs,
     evoGoalMetAt: undefined,
     evolutionLocked: false,
+    lastHungerDropAt: nowMs,
+    lastPoopAt: nowMs,
+    lastCareCheck: nowMs,
+    careCallStartedAt: undefined,
     unlockedSpeciesIds: recordUnlockedSpeciesId(target.id, prev.unlockedSpeciesIds || []),
   };
 }

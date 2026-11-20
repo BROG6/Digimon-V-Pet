@@ -1,12 +1,20 @@
 package com.digipet.companion;
 
+import android.Manifest;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.app.PictureInPictureParams;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.net.Uri;
 import android.os.Build;
 import android.provider.Settings;
 import android.util.Rational;
+import androidx.core.app.ActivityCompat;
+import androidx.core.app.NotificationCompat;
+import androidx.core.content.ContextCompat;
 import com.getcapacitor.Plugin;
 import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
@@ -256,5 +264,88 @@ public class OverlayPlugin extends Plugin {
             }
         }
         call.reject("Picture-in-Picture not supported on this Android API level");
+    }
+
+    @PluginMethod
+    public void requestNotificationPermission(PluginCall call) {
+        Context ctx = getActivity() != null ? getActivity() : getContext();
+        if (Build.VERSION.SDK_INT >= 33) {
+            boolean granted = ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS)
+                == PackageManager.PERMISSION_GRANTED;
+            if (!granted && getActivity() != null) {
+                ActivityCompat.requestPermissions(
+                    getActivity(),
+                    new String[] { Manifest.permission.POST_NOTIFICATIONS },
+                    4101
+                );
+            }
+            JSObject ret = new JSObject();
+            ret.put("granted", granted);
+            call.resolve(ret);
+            return;
+        }
+        JSObject ret = new JSObject();
+        ret.put("granted", true);
+        call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void showCareNotification(PluginCall call) {
+        Context ctx = getActivity() != null ? getActivity() : getContext();
+        if (Build.VERSION.SDK_INT >= 33) {
+            if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS)
+                != PackageManager.PERMISSION_GRANTED) {
+                JSObject ret = new JSObject();
+                ret.put("success", false);
+                call.resolve(ret);
+                return;
+            }
+        }
+
+        int id = readIntOption(call, "id", 2001);
+        String title = call.getString("title", "Digivice Care Alert");
+        String body = call.getString("body", "Your Digimon needs attention!");
+        String channelId = "digipet_care_alerts";
+
+        NotificationManager nm = (NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE);
+        if (nm == null) {
+            JSObject ret = new JSObject();
+            ret.put("success", false);
+            call.resolve(ret);
+            return;
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationChannel channel = new NotificationChannel(
+                channelId,
+                "Digimon Hunger & Toilet Alerts",
+                NotificationManager.IMPORTANCE_HIGH
+            );
+            channel.setDescription("Alerts when your Digimon is hungry or needs the toilet.");
+            channel.enableVibration(true);
+            nm.createNotificationChannel(channel);
+        }
+
+        Intent launchIntent = new Intent(ctx, MainActivity.class);
+        launchIntent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        int piFlags = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
+            ? PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+            : PendingIntent.FLAG_UPDATE_CURRENT;
+        PendingIntent pendingIntent = PendingIntent.getActivity(ctx, id, launchIntent, piFlags);
+
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(ctx, channelId)
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setContentTitle(title)
+            .setContentText(body)
+            .setStyle(new NotificationCompat.BigTextStyle().bigText(body))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setContentIntent(pendingIntent);
+
+        nm.notify(id, builder.build());
+
+        JSObject ret = new JSObject();
+        ret.put("success", true);
+        call.resolve(ret);
     }
 }

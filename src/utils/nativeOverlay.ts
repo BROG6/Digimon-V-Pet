@@ -39,6 +39,8 @@ export interface OverlayPluginInterface {
   consumePendingEvolution(): Promise<{ speciesId: string | null; evolvedAt: number }>;
   consumePendingCareActions(): Promise<{ meatUsed: number; vitUsed: number; praiseCount: number }>;
   enterPip(): Promise<{ success: boolean }>;
+  requestNotificationPermission(): Promise<{ granted: boolean }>;
+  showCareNotification(options: { id: number; title: string; body: string; tag?: string }): Promise<{ success: boolean }>;
 }
 
 export const OverlayPlugin = registerPlugin<OverlayPluginInterface>('OverlayPlugin');

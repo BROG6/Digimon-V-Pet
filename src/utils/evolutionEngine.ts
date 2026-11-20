@@ -12,6 +12,7 @@ import { NEW_DIGIMON_SPRITES } from './newDigimonSprites';
 import { getPersonalityProfile, personalizeQuoteForPlayer } from './digimonPersonality';
 import { getGridRowRatios, GridLayoutPresetId, isFlyingSpecies } from './petOverlayEngine';
 import { OverlayLaunchParams } from './nativeOverlay';
+import { getStageHungerHeartMs } from './carePacing';
 import type { EggStageBranches } from '../data/eggsAndMatrix';
 
 export interface EvolutionEligibility {
@@ -685,9 +686,14 @@ export function buildNativeOverlayPayload(params: {
     nextEvoTriggerMsStr = String(safeTriggerAt);
     nextEvoPayloadJson = JSON.stringify({
       ...nextVisuals,
+      stage: nextSpecies.stage,
+      hungerHeartMs: getStageHungerHeartMs(nextSpecies.stage),
       evolvedMessage: `Digivolved into ${nextSpecies.name}!`,
     });
   }
+
+  const stageHungerHeartMs = getStageHungerHeartMs(pet.stage);
+  const lastHungerDropAtMs = Math.round(pet.lastHungerDropAt ?? pet.lastCareCheck ?? nowMs);
 
   return {
     speciesName: base.speciesName,
@@ -714,6 +720,10 @@ export function buildNativeOverlayPayload(params: {
     happiness: Math.max(0, Math.min(100, Math.round(Number(pet.happiness) || 0))),
     bigMeatStock: Math.max(0, Math.round(Number(pet.bigMeatStock) || 0)),
     vitaminStock: Math.max(0, Math.round(Number(pet.vitaminStock) || 0)),
+    stage: pet.stage,
+    isFrozen: Boolean(pet.isFrozen),
+    hungerHeartMsStr: String(stageHungerHeartMs),
+    lastHungerDropAtMsStr: String(lastHungerDropAtMs),
     evolvedMessage: evolvedMessage || '',
     nextEvoTriggerMsStr,
     nextEvoPayloadJson,

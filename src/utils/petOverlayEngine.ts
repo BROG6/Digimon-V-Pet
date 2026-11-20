@@ -136,41 +136,31 @@ export function getGridRowRatios(presetId?: GridLayoutPresetId): number[] {
   return getDefaultGridRowRatios(id);
 }
 
-const FLAPPING_WINGS_SPECIES_IDS = new Set<string>([
-  // Flying / flapping birds (excludes ground-running Biyomon, Hawkmon, Falcomon, Muchomon, Kokatorimon, Akatorimon, Kiwimon, Penmon)
-  'soundbirdmon',
-  'birdramon',
-  'saberdramon',
+const FLAPPING_WINGS_SPRITE_IDS = new Set<string>([
+  // Winged babies & birds (excludes ground-running Biyomon, Hawkmon, Pinamon/Falcomon/Penmon, Muchomon, Kokatorimon, Akatorimon, Kiwimon)
+  'putimon',
+  'poromon',
+  'chiropmon', // also renders Soundbirdmon
+  'birdramon', // also renders Saberdramon
   'aquilamon',
-  'garudamon',
-  'karatenmon',
-  'hippogryphonmon',
+  'garudamon', // also renders Karatenmon
   'parrotmon',
-  'phoenixmon',
-  'crossmon',
-  'valkyrimon',
-  'ravmon',
-  // Flapping angels, demons, bats & winged fairies
-  'patamon',
-  'tsukaimon',
-  'picodevimon',
+  'phoenixmon', // also renders Crossmon
+  'valkyrimon', // also renders Ravmon
+  // Flapping angels, bats, demons & fairies (excludes ground-walking Petermon, LadyDevimon/Lilithmon, Minervamon/Ophanimon, SistermonCiel/Darcmon, Monzaemon/Cherubimon)
+  'patamon', // also renders Tsukaimon
+  'demidevilmon',
+  'vilemon',
   'angemon',
-  'devimon',
-  'darcmon',
-  'neondevimon',
+  'devimon', // also renders NeonDevimon
   'magnaangemon',
   'angewomon',
-  'ladydevimon',
   'seraphimon',
-  'ophanimon',
-  'lilithmon',
+  'slashangemon',
   'lillymon',
   'lilamon',
   'piximon',
-  'hudiemon',
-  'petermon',
-  'cherubimonvice',
-  'cherubimonvirtue',
+  'hudiemon', // also renders JewelBeemon
   // Flapping insects
   'tentomon',
   'kabuterimon',
@@ -179,33 +169,32 @@ const FLAPPING_WINGS_SPECIES_IDS = new Set<string>([
   'megakabuterimon',
   'okuwamon',
   'herculeskabuterimon',
+  'stingmon', // also renders BanchoStingmon
   'dinobeemon',
-  'stingmon',
-  'jewelbeemon',
-  'banchostingmon',
-  // Flapping winged dragons & chimeras (excludes ground-running WarGreymon, MetalGreymon, ExVeemon, etc.)
+  // Flapping winged dragons, chimeras & gliders (includes MetalGreymon; excludes ground-running WarGreymon, ExVeemon, etc.)
+  'metalgreymon',
   'devidramon',
-  'wingdramon',
-  'aeroveedramon',
+  'wingdramon', // also renders AeroVeedramon
   'megadramon',
-  'gigadramon',
+  'gigadramon', // also renders Cannondramon
   'kimeramon',
-  'imperialdramondragonmode',
+  'imperialdramondragonmode', // also renders UlforceVeedramon
+  'imperialdramonfightermode',
   'magnadramon',
+  'tobiumon',
 ]);
 
 /**
- * Only Digimon whose sprites visibly flap wings hover/fly across the screen.
- * Bipeds/quadrupeds that run on feet (e.g. WarGreymon, MetalGreymon, Biyomon)
+ * Only Digimon whose rendered sprites visibly flap wings hover/fly across the screen.
+ * Bipeds/quadrupeds that run on feet (e.g. WarGreymon, ExVeemon, Biyomon)
  * walk and jump along the app icon grid.
  */
 export function isFlyingSpecies(
   species?: Pick<DigimonSpecies, 'id' | 'spriteId' | 'stage' | 'type'> | null
 ): boolean {
   if (!species) return false;
-  if (FLAPPING_WINGS_SPECIES_IDS.has(species.id)) return true;
-  if (species.spriteId && FLAPPING_WINGS_SPECIES_IDS.has(species.spriteId)) return true;
-  return false;
+  const spriteKey = species.spriteId || species.id;
+  return FLAPPING_WINGS_SPRITE_IDS.has(spriteKey);
 }
 
 /**

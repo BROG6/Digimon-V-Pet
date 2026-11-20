@@ -167,6 +167,11 @@ public class FloatingPetService extends Service {
     private int petHappiness = 80;
     private int petBigMeatStock = 0;
     private int petVitaminStock = 0;
+    private String petStage = "rookie";
+    private boolean isPetFrozen = false;
+    private long hungerHeartMs = 3600000L;
+    private long lastHungerDropAtMs = 0L;
+    private long lastHungerClockStepMs = 0L;
     private boolean isPetSleeping = false;
     private String currentSpeciesName = "Digimon";
     private String currentQuotesJson = "[]";
@@ -270,6 +275,7 @@ public class FloatingPetService extends Service {
 
     private void parseConfigFromIntent(Intent intent) {
         SharedPreferences syncPrefs = getSharedPreferences("digipet_overlay_sync", MODE_PRIVATE);
+        long nowMs = System.currentTimeMillis();
         if (intent == null) {
             int pendingMeat = Math.max(0, syncPrefs.getInt("pendingMeatUsed", 0));
             int pendingVit = Math.max(0, syncPrefs.getInt("pendingVitUsed", 0));
@@ -277,33 +283,64 @@ public class FloatingPetService extends Service {
             petHappiness = syncPrefs.getInt("lastKnownHappiness", petHappiness);
             petBigMeatStock = Math.max(0, syncPrefs.getInt("lastKnownMeatStock", petBigMeatStock) - pendingMeat);
             petVitaminStock = Math.max(0, syncPrefs.getInt("lastKnownVitStock", petVitaminStock) - pendingVit);
+            petStage = syncPrefs.getString("petStage", petStage);
+            isPetFrozen = syncPrefs.getBoolean("isPetFrozen", isPetFrozen);
+            hungerHeartMs = syncPrefs.getLong("hungerHeartMs", hungerHeartMs);
+            lastHungerDropAtMs = syncPrefs.getLong("lastHungerDropAtMs", nowMs);
+            advanceOverlayHungerClock(nowMs);
             updateHudStatsText();
             return;
         }
         isFlyingPet = intent.getBooleanExtra("isFlying", false);
         isPetSleeping = intent.getBooleanExtra("isSleeping", false);
+        isPetFrozen = intent.getBooleanExtra("isFrozen", syncPrefs.getBoolean("isPetFrozen", false));
+        String incStage = intent.getStringExtra("stage");
+        if (incStage != null && !incStage.isEmpty()) {
+            petStage = incStage;
+        } else {
+            petStage = syncPrefs.getString("petStage", petStage);
+        }
+        hungerHeartMs = intent.getLongExtra("hungerHeartMs", syncPrefs.getLong("hungerHeartMs", hungerHeartMs));
+        long incAnchor = intent.getLongExtra("lastHungerDropAtMs", syncPrefs.getLong("lastHungerDropAtMs", nowMs));
+        if (incAnchor <= 0L) incAnchor = nowMs;
+
+        int pendingMeat = Math.max(0, syncPrefs.getInt("pendingMeatUsed", 0));
+        int pendingVit = Math.max(0, syncPrefs.getInt("pendingVitUsed", 0));
+        int pendingPraise = Math.max(0, syncPrefs.getInt("pendingPraiseCount", 0));
+        long lastOverlayMeatAtMs = syncPrefs.getLong("lastOverlayMeatAtMs", 0L);
+
         pendingPreviewRowIndex = intent.getIntExtra("previewRowIndex", -1);
         petHunger = intent.getIntExtra("hunger", syncPrefs.getInt("lastKnownHunger", 80));
         petHappiness = intent.getIntExtra("happiness", syncPrefs.getInt("lastKnownHappiness", 80));
         if (intent.hasExtra("bigMeatStock")) {
-            petBigMeatStock = Math.max(0, intent.getIntExtra("bigMeatStock", petBigMeatStock));
+            petBigMeatStock = Math.max(0, intent.getIntExtra("bigMeatStock", petBigMeatStock) - pendingMeat);
         } else {
-            int pendingMeat = Math.max(0, syncPrefs.getInt("pendingMeatUsed", 0));
             petBigMeatStock = Math.max(0, syncPrefs.getInt("lastKnownMeatStock", petBigMeatStock) - pendingMeat);
         }
         if (intent.hasExtra("vitaminStock")) {
-            petVitaminStock = Math.max(0, intent.getIntExtra("vitaminStock", petVitaminStock));
+            petVitaminStock = Math.max(0, intent.getIntExtra("vitaminStock", petVitaminStock) - pendingVit);
         } else {
-            int pendingVit = Math.max(0, syncPrefs.getInt("pendingVitUsed", 0));
             petVitaminStock = Math.max(0, syncPrefs.getInt("lastKnownVitStock", petVitaminStock) - pendingVit);
         }
+        if (pendingMeat > 0) {
+            petHunger = Math.min(100, petHunger + pendingMeat * 25);
+            if (lastOverlayMeatAtMs > incAnchor) {
+                incAnchor = lastOverlayMeatAtMs;
+            }
+        }
+        if (pendingMeat > 0 || pendingVit > 0 || pendingPraise > 0) {
+            petHappiness = Math.min(100, petHappiness + pendingMeat * 10 + pendingVit * 20 + pendingPraise * 15);
+        }
+        lastHungerDropAtMs = incAnchor;
+
         String sName = intent.getStringExtra("speciesName");
         if (sName != null && !sName.isEmpty()) currentSpeciesName = sName;
         String qJson = intent.getStringExtra("quotesJson");
         if (qJson != null && !qJson.isEmpty()) currentQuotesJson = qJson;
         if (lastOffScreenAtMs == 0L) {
-            lastOffScreenAtMs = System.currentTimeMillis();
+            lastOffScreenAtMs = nowMs;
         }
+        advanceOverlayHungerClock(nowMs);
         updateHudStatsText();
         if (hudVisible) {
             updateCareHudPositions();
@@ -1143,6 +1180,7 @@ public class FloatingPetService extends Service {
         physicsHandler.removeCallbacks(hudAutoHideRunnable);
         if (visible) {
             setChatBarVisible(false);
+            advanceOverlayHungerClock(System.currentTimeMillis());
             updateHudStatsText();
             hudStatsContainer.setVisibility(View.VISIBLE);
             hudButtonsContainer.setVisibility(View.VISIBLE);
@@ -1230,11 +1268,14 @@ public class FloatingPetService extends Service {
         }
     }
 
-    private void recordCareSyncDelta(int meatDelta, int vitDelta, int praiseDelta) {
+    private void recordCareSyncDelta(int meatDelta, int vitDelta, int praiseDelta, long meatAtMs) {
         SharedPreferences prefs = getSharedPreferences("digipet_overlay_sync", MODE_PRIVATE);
         SharedPreferences.Editor editor = prefs.edit();
         if (meatDelta != 0) {
             editor.putInt("pendingMeatUsed", prefs.getInt("pendingMeatUsed", 0) + meatDelta);
+            if (meatAtMs > 0L) {
+                editor.putLong("lastOverlayMeatAtMs", meatAtMs);
+            }
         }
         if (vitDelta != 0) {
             editor.putInt("pendingVitUsed", prefs.getInt("pendingVitUsed", 0) + vitDelta);
@@ -1242,6 +1283,11 @@ public class FloatingPetService extends Service {
         if (praiseDelta != 0) {
             editor.putInt("pendingPraiseCount", prefs.getInt("pendingPraiseCount", 0) + praiseDelta);
         }
+        editor.putInt("lastKnownHunger", petHunger);
+        editor.putInt("lastKnownHappiness", petHappiness);
+        editor.putInt("lastKnownMeatStock", petBigMeatStock);
+        editor.putInt("lastKnownVitStock", petVitaminStock);
+        editor.putLong("lastHungerDropAtMs", lastHungerDropAtMs);
         editor.apply();
     }
 
@@ -1257,24 +1303,36 @@ public class FloatingPetService extends Service {
 
     private void onHudMeatClicked() {
         resetHudAutoHide();
+        if (isPetFrozen) {
+            triggerHudHopFeedback("❄️ Cold Mode (Paused) — unfreeze in app first!");
+            return;
+        }
         if (isPetSleeping) {
             triggerHudHopFeedback("Zzz... Wake me up in the app before feeding!");
             return;
         }
+        long nowMs = System.currentTimeMillis();
+        advanceOverlayHungerClock(nowMs);
         if (petBigMeatStock <= 0) {
             triggerHudHopFeedback("Out of Big Meat! Buy more in Shop.");
             return;
         }
         petBigMeatStock--;
-        petHunger = Math.min(100, petHunger + 35);
-        petHappiness = Math.min(100, petHappiness + 8);
-        recordCareSyncDelta(1, 0, 0);
+        petHunger = Math.min(100, petHunger + 25);
+        petHappiness = Math.min(100, petHappiness + 10);
+        lastHungerDropAtMs = nowMs;
+        recordCareSyncDelta(1, 0, 0, nowMs);
+        OverlayPlugin.rescheduleHungerAlarmsFromOverlay(this, petHunger, hungerHeartMs, lastHungerDropAtMs);
         updateHudStatsText();
-        triggerHudHopFeedback("Yum!! Big Meat hits the spot! (+Hunger)");
+        triggerHudHopFeedback("Yum!! Big Meat hits the spot! (+25 Hunger)");
     }
 
     private void onHudVitClicked() {
         resetHudAutoHide();
+        if (isPetFrozen) {
+            triggerHudHopFeedback("❄️ Cold Mode (Paused) — unfreeze in app first!");
+            return;
+        }
         if (isPetSleeping) {
             triggerHudHopFeedback("Zzz... Let me sleep first!");
             return;
@@ -1285,19 +1343,23 @@ public class FloatingPetService extends Service {
         }
         petVitaminStock--;
         petHappiness = Math.min(100, petHappiness + 20);
-        recordCareSyncDelta(0, 1, 0);
+        recordCareSyncDelta(0, 1, 0, 0L);
         updateHudStatsText();
         triggerHudHopFeedback("Vitamin boost! Feeling energized! (+Happy)");
     }
 
     private void onHudPraiseClicked() {
         resetHudAutoHide();
+        if (isPetFrozen) {
+            triggerHudHopFeedback("❄️ Cold Mode (Paused) — staying fresh!");
+            return;
+        }
         if (isPetSleeping) {
             triggerHudHopFeedback("Zzz... *happy sleep noises* ♥");
             return;
         }
         petHappiness = Math.min(100, petHappiness + 15);
-        recordCareSyncDelta(0, 0, 1);
+        recordCareSyncDelta(0, 0, 1, 0L);
         updateHudStatsText();
         triggerHudHopFeedback("Yay! Thanks for praising me, Tamer! ♥");
     }
@@ -1613,6 +1675,42 @@ public class FloatingPetService extends Service {
         }
     }
 
+    private void advanceOverlayHungerClock(long nowMs) {
+        if (isPetFrozen || isPetSleeping || "egg".equals(petStage) || hungerHeartMs <= 0L) {
+            if (lastHungerDropAtMs != nowMs) {
+                lastHungerDropAtMs = nowMs;
+                getSharedPreferences("digipet_overlay_sync", MODE_PRIVATE)
+                    .edit()
+                    .putLong("lastHungerDropAtMs", lastHungerDropAtMs)
+                    .apply();
+            }
+            return;
+        }
+        if (lastHungerDropAtMs <= 0L) {
+            lastHungerDropAtMs = nowMs;
+            return;
+        }
+        long msPerPoint = Math.max(1000L, hungerHeartMs / 25L);
+        long elapsed = Math.min(4L * 3_600_000L, Math.max(0L, nowMs - lastHungerDropAtMs));
+        int pointsToDrop = (int) (elapsed / msPerPoint);
+        if (pointsToDrop > 0) {
+            int nextHunger = Math.max(0, petHunger - pointsToDrop);
+            lastHungerDropAtMs = (elapsed >= 4L * 3_600_000L)
+                ? nowMs
+                : (lastHungerDropAtMs + pointsToDrop * msPerPoint);
+            boolean changed = nextHunger != petHunger;
+            petHunger = nextHunger;
+            getSharedPreferences("digipet_overlay_sync", MODE_PRIVATE)
+                .edit()
+                .putInt("lastKnownHunger", petHunger)
+                .putLong("lastHungerDropAtMs", lastHungerDropAtMs)
+                .apply();
+            if (changed) {
+                updateHudStatsText();
+            }
+        }
+    }
+
     private void performNativeBackgroundEvolution(long nowMs) {
         String rawPayload = nextEvoPayloadJson;
         nextEvoTriggerMs = 0L;
@@ -1626,6 +1724,8 @@ public class FloatingPetService extends Service {
             String spriteUrl = obj.optString("spriteUrl", "assets/digidestined/agumon.png");
             String evolvedMsg = obj.optString("evolvedMessage", "Digivolved into " + targetName + "!");
             boolean nextFlying = obj.optBoolean("isFlying", isFlyingPet);
+            String nextStage = obj.optString("stage", petStage);
+            long nextHeartMs = obj.optLong("hungerHeartMs", hungerHeartMs);
 
             if (!targetSpeciesId.isEmpty()) {
                 SharedPreferences prefs = getSharedPreferences("digipet_overlay_sync", MODE_PRIVATE);
@@ -1636,8 +1736,17 @@ public class FloatingPetService extends Service {
             }
 
             isFlyingPet = nextFlying;
+            if (nextStage != null && !nextStage.isEmpty()) {
+                petStage = nextStage;
+            }
+            if (nextHeartMs > 0L) {
+                hungerHeartMs = nextHeartMs;
+            }
+            petHappiness = 100;
+            lastHungerDropAtMs = nowMs;
             lastJsAnimMode = "";
             loadedSpeciesKey = targetName + "|" + spriteUrl;
+            updateHudStatsText();
 
             loadWebViewFromFields(
                 spriteUrl,
@@ -1692,7 +1801,26 @@ public class FloatingPetService extends Service {
     }
 
     private void stepPhysics(long nowMs) {
+        if (nowMs - lastHungerClockStepMs >= 5000L) {
+            lastHungerClockStepMs = nowMs;
+            advanceOverlayHungerClock(nowMs);
+        }
+
         if (isUserDragging) return;
+
+        // Cold Mode (Fridge): pause roaming/evolution timer just like the Digivice
+        if (isPetFrozen) {
+            if (offScreenPhase == OffScreenPhase.HIDDEN) {
+                setOverlayHidden(false);
+                posX = Math.max(dpToPx(20), (screenW - viewW) * 0.5f);
+                posY = isFlyingPet ? (screenH * 0.45f) : getTopYForFootY(rowYs[currentRowIndex]);
+                applyWindowPosition();
+            }
+            offScreenPhase = OffScreenPhase.NONE;
+            petState = PetState.IDLE;
+            syncVisualState("idle", facingRight, carriedItem, null);
+            return;
+        }
 
         // Check autonomous natural evolution timer even when main app is backgrounded
         if (nextEvoTriggerMs > 0L && nowMs >= nextEvoTriggerMs && nextEvoPayloadJson != null && !nextEvoPayloadJson.isEmpty()) {

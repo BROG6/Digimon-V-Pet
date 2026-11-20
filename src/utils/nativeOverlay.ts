@@ -25,6 +25,10 @@ export interface OverlayLaunchParams {
   happiness?: number;
   bigMeatStock?: number;
   vitaminStock?: number;
+  stage?: string;
+  isFrozen?: boolean;
+  hungerHeartMsStr?: string;
+  lastHungerDropAtMsStr?: string;
   evolvedMessage?: string;
   nextEvoTriggerMsStr?: string;
   nextEvoPayloadJson?: string;
@@ -37,7 +41,12 @@ export interface OverlayPluginInterface {
   stopOverlay(): Promise<{ success: boolean }>;
   isOverlayActive(): Promise<{ active: boolean }>;
   consumePendingEvolution(): Promise<{ speciesId: string | null; evolvedAt: number }>;
-  consumePendingCareActions(): Promise<{ meatUsed: number; vitUsed: number; praiseCount: number }>;
+  consumePendingCareActions(): Promise<{
+    meatUsed: number;
+    vitUsed: number;
+    praiseCount: number;
+    lastMeatAtMs?: number;
+  }>;
   enterPip(): Promise<{ success: boolean }>;
   requestNotificationPermission(): Promise<{ granted: boolean }>;
   showCareNotification(options: { id: number; title: string; body: string; tag?: string }): Promise<{ success: boolean }>;
@@ -131,16 +140,20 @@ export async function consumeNativeOverlayCareActions(): Promise<{
   meatUsed: number;
   vitUsed: number;
   praiseCount: number;
+  lastMeatAtMs: number;
 }> {
-  if (!Capacitor.isNativePlatform()) return { meatUsed: 0, vitUsed: 0, praiseCount: 0 };
+  if (!Capacitor.isNativePlatform()) {
+    return { meatUsed: 0, vitUsed: 0, praiseCount: 0, lastMeatAtMs: 0 };
+  }
   try {
     const res = await OverlayPlugin.consumePendingCareActions();
     return {
       meatUsed: typeof res?.meatUsed === 'number' ? res.meatUsed : 0,
       vitUsed: typeof res?.vitUsed === 'number' ? res.vitUsed : 0,
       praiseCount: typeof res?.praiseCount === 'number' ? res.praiseCount : 0,
+      lastMeatAtMs: typeof res?.lastMeatAtMs === 'number' ? res.lastMeatAtMs : 0,
     };
   } catch {
-    return { meatUsed: 0, vitUsed: 0, praiseCount: 0 };
+    return { meatUsed: 0, vitUsed: 0, praiseCount: 0, lastMeatAtMs: 0 };
   }
 }

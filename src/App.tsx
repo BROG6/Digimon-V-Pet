@@ -429,7 +429,14 @@ export default function App() {
 
     runCareTick();
     const careInterval = setInterval(runCareTick, 15000);
-    return () => clearInterval(careInterval);
+    const onVisibilityCareSync = () => {
+      runCareTick();
+    };
+    document.addEventListener('visibilitychange', onVisibilityCareSync);
+    return () => {
+      clearInterval(careInterval);
+      document.removeEventListener('visibilitychange', onVisibilityCareSync);
+    };
   }, []);
 
   // Notification Alerts for Hunger & Toilet Needs (In-App Toast + Audio/Haptic + System Notification)
@@ -759,23 +766,34 @@ export default function App() {
 
         const care = await consumeNativeOverlayCareActions();
         if (care.meatUsed > 0 || care.vitUsed > 0 || care.praiseCount > 0) {
+          const now = Date.now();
           setPet((prev) => {
             if (prev.stage === 'egg' || prev.isDead) return prev;
             const usedMeat = Math.min(prev.bigMeatStock, Math.max(0, care.meatUsed));
             const usedVit = Math.min(prev.vitaminStock, Math.max(0, care.vitUsed));
             const praises = Math.max(0, care.praiseCount);
             const curedSick = usedVit > 0;
+            const nextHunger = Math.min(100, prev.hunger + usedMeat * 25);
+            const nextEnergy = Math.min(100, prev.energy + usedVit * 20);
             return {
               ...prev,
               bigMeatStock: prev.bigMeatStock - usedMeat,
               vitaminStock: prev.vitaminStock - usedVit,
-              hunger: Math.min(100, prev.hunger + usedMeat * 35),
-              weight: prev.weight + usedMeat,
-              energy: Math.min(100, prev.energy + usedVit * 10),
+              hunger: nextHunger,
+              weight: prev.weight + usedMeat * 2,
+              energy: nextEnergy,
               isSick: curedSick ? false : prev.isSick,
               sickSince: curedSick ? undefined : prev.sickSince,
-              neglectTicks: curedSick ? 0 : prev.neglectTicks,
-              happiness: Math.min(100, prev.happiness + usedMeat * 8 + usedVit * 20 + praises * 15),
+              neglectTicks: curedSick || usedMeat > 0 ? 0 : prev.neglectTicks,
+              lastHungerDropAt:
+                usedMeat > 0
+                  ? Math.max(prev.lastHungerDropAt ?? 0, care.lastMeatAtMs || now)
+                  : prev.lastHungerDropAt,
+              careCallStartedAt:
+                nextHunger > 0 && prev.poopCount < 4 && nextEnergy > 0
+                  ? undefined
+                  : prev.careCallStartedAt,
+              happiness: Math.min(100, prev.happiness + usedMeat * 10 + usedVit * 20 + praises * 15),
             };
           });
         }
@@ -838,7 +856,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [pet.currentSpeciesId, pet.playerName, pet.hunger, pet.happiness, pet.bigMeatStock, pet.vitaminStock, pet.isSleeping, pet.lightsOff, pet.isFrozen, pet.evoGoalMetAt, pet.stageEnteredAt, pet.evolutionLocked, pet.isDead]);
+  }, [pet.currentSpeciesId, pet.playerName, pet.stage, pet.hunger, pet.happiness, pet.bigMeatStock, pet.vitaminStock, pet.lastHungerDropAt, pet.isSleeping, pet.lightsOff, pet.isFrozen, pet.evoGoalMetAt, pet.stageEnteredAt, pet.evolutionLocked, pet.isDead]);
 
   const requireAliveAndHatched = (): boolean => {
     if (pet.isDead) {

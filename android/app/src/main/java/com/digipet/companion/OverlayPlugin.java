@@ -167,24 +167,52 @@ public class OverlayPlugin extends Plugin {
         int happiness = readIntOption(call, "happiness", 80);
         int bigMeatStock = readIntOption(call, "bigMeatStock", -1);
         int vitaminStock = readIntOption(call, "vitaminStock", -1);
+        String stage = call.getString("stage", "rookie");
+        Boolean isFrozen = call.getBoolean("isFrozen", false);
+        long hungerHeartMs = readLongOption(call, "hungerHeartMsStr", 3600000L);
+        long lastHungerDropAtMs = readLongOption(call, "lastHungerDropAtMsStr", System.currentTimeMillis());
+        if (lastHungerDropAtMs <= 0L) {
+            lastHungerDropAtMs = System.currentTimeMillis();
+        }
         String evolvedMessage = call.getString("evolvedMessage", "");
         String nextEvoTriggerMsStr = call.getString("nextEvoTriggerMsStr", "0");
         String nextEvoPayloadJson = call.getString("nextEvoPayloadJson", "");
 
         android.content.SharedPreferences syncPrefs = ctx.getSharedPreferences("digipet_overlay_sync", Context.MODE_PRIVATE);
+        int pendingMeat = Math.max(0, syncPrefs.getInt("pendingMeatUsed", 0));
+        int pendingVit = Math.max(0, syncPrefs.getInt("pendingVitUsed", 0));
+        int pendingPraise = Math.max(0, syncPrefs.getInt("pendingPraiseCount", 0));
+        long lastOverlayMeatAtMs = syncPrefs.getLong("lastOverlayMeatAtMs", 0L);
+
         if (bigMeatStock < 0) {
-            bigMeatStock = syncPrefs.getInt("lastKnownMeatStock", 0);
+            bigMeatStock = Math.max(0, syncPrefs.getInt("lastKnownMeatStock", 0) - pendingMeat);
         } else {
-            syncPrefs.edit().putInt("lastKnownMeatStock", bigMeatStock).apply();
+            bigMeatStock = Math.max(0, bigMeatStock - pendingMeat);
         }
         if (vitaminStock < 0) {
-            vitaminStock = syncPrefs.getInt("lastKnownVitStock", 0);
+            vitaminStock = Math.max(0, syncPrefs.getInt("lastKnownVitStock", 0) - pendingVit);
         } else {
-            syncPrefs.edit().putInt("lastKnownVitStock", vitaminStock).apply();
+            vitaminStock = Math.max(0, vitaminStock - pendingVit);
         }
+        if (pendingMeat > 0) {
+            hunger = Math.min(100, hunger + pendingMeat * 25);
+            if (lastOverlayMeatAtMs > lastHungerDropAtMs) {
+                lastHungerDropAtMs = lastOverlayMeatAtMs;
+            }
+        }
+        if (pendingMeat > 0 || pendingVit > 0 || pendingPraise > 0) {
+            happiness = Math.min(100, happiness + pendingMeat * 10 + pendingVit * 20 + pendingPraise * 15);
+        }
+
         syncPrefs.edit()
             .putInt("lastKnownHunger", hunger)
             .putInt("lastKnownHappiness", happiness)
+            .putInt("lastKnownMeatStock", bigMeatStock)
+            .putInt("lastKnownVitStock", vitaminStock)
+            .putString("petStage", stage != null ? stage : "rookie")
+            .putBoolean("isPetFrozen", isFrozen != null ? isFrozen : false)
+            .putLong("hungerHeartMs", hungerHeartMs)
+            .putLong("lastHungerDropAtMs", lastHungerDropAtMs)
             .apply();
 
         Intent serviceIntent = new Intent(ctx, FloatingPetService.class);
@@ -212,6 +240,10 @@ public class OverlayPlugin extends Plugin {
         serviceIntent.putExtra("happiness", happiness);
         serviceIntent.putExtra("bigMeatStock", bigMeatStock);
         serviceIntent.putExtra("vitaminStock", vitaminStock);
+        serviceIntent.putExtra("stage", stage != null ? stage : "rookie");
+        serviceIntent.putExtra("isFrozen", isFrozen != null ? isFrozen : false);
+        serviceIntent.putExtra("hungerHeartMs", hungerHeartMs);
+        serviceIntent.putExtra("lastHungerDropAtMs", lastHungerDropAtMs);
         serviceIntent.putExtra("evolvedMessage", evolvedMessage != null ? evolvedMessage : "");
         serviceIntent.putExtra("nextEvoTriggerMsStr", nextEvoTriggerMsStr != null ? nextEvoTriggerMsStr : "0");
         serviceIntent.putExtra("nextEvoPayloadJson", nextEvoPayloadJson != null ? nextEvoPayloadJson : "");
@@ -276,17 +308,20 @@ public class OverlayPlugin extends Plugin {
         int meatUsed = prefs.getInt("pendingMeatUsed", 0);
         int vitUsed = prefs.getInt("pendingVitUsed", 0);
         int praiseCount = prefs.getInt("pendingPraiseCount", 0);
-        if (meatUsed != 0 || vitUsed != 0 || praiseCount != 0) {
+        long lastMeatAtMs = prefs.getLong("lastOverlayMeatAtMs", 0L);
+        if (meatUsed != 0 || vitUsed != 0 || praiseCount != 0 || lastMeatAtMs != 0L) {
             prefs.edit()
                 .remove("pendingMeatUsed")
                 .remove("pendingVitUsed")
                 .remove("pendingPraiseCount")
+                .remove("lastOverlayMeatAtMs")
                 .apply();
         }
         JSObject ret = new JSObject();
         ret.put("meatUsed", meatUsed);
         ret.put("vitUsed", vitUsed);
         ret.put("praiseCount", praiseCount);
+        ret.put("lastMeatAtMs", lastMeatAtMs);
         call.resolve(ret);
     }
 
@@ -401,7 +436,7 @@ public class OverlayPlugin extends Plugin {
         call.resolve(ret);
     }
 
-    private PendingIntent createCareAlarmPendingIntent(Context ctx, int reqCode, int notifId, String title, String body) {
+    private static PendingIntent createCareAlarmPendingIntent(Context ctx, int reqCode, int notifId, String title, String body) {
         Intent intent = new Intent(ctx, CareAlarmReceiver.class);
         intent.putExtra("notifId", notifId);
         intent.putExtra("title", title);
@@ -412,7 +447,7 @@ public class OverlayPlugin extends Plugin {
         return PendingIntent.getBroadcast(ctx, reqCode, intent, piFlags);
     }
 
-    private void scheduleOrCancelAlarm(Context ctx, AlarmManager am, int reqCode, int notifId, long triggerAtMs, String title, String body) {
+    private static void scheduleOrCancelAlarm(Context ctx, AlarmManager am, int reqCode, int notifId, long triggerAtMs, String title, String body) {
         if (am == null) return;
         PendingIntent pi = createCareAlarmPendingIntent(ctx, reqCode, notifId, title, body);
         if (triggerAtMs > System.currentTimeMillis() + 1000L) {
@@ -426,12 +461,55 @@ public class OverlayPlugin extends Plugin {
         }
     }
 
+    public static void rescheduleHungerAlarmsFromOverlay(
+        Context ctx,
+        int hunger,
+        long hungerHeartMs,
+        long lastHungerDropAtMs
+    ) {
+        if (ctx == null || hungerHeartMs <= 0L) return;
+        android.content.SharedPreferences syncPrefs = ctx.getSharedPreferences("digipet_overlay_sync", Context.MODE_PRIVATE);
+        if (!syncPrefs.getBoolean("careAlertsEnabled", true)) return;
+        String petName = syncPrefs.getString("careAlertPetName", "Your Digimon");
+        AlarmManager am = (AlarmManager) ctx.getSystemService(Context.ALARM_SERVICE);
+        if (am == null) return;
+        long nowMs = System.currentTimeMillis();
+        long msPerPoint = Math.max(1000L, hungerHeartMs / 25L);
+        long anchor = lastHungerDropAtMs > 0L ? lastHungerDropAtMs : nowMs;
+        long hungryAtMs = hunger > 25 ? Math.max(nowMs + 5000L, anchor + (long) (hunger - 25) * msPerPoint) : 0L;
+        long starvingAtMs = hunger > 0 ? Math.max(nowMs + 5000L, anchor + (long) hunger * msPerPoint) : 0L;
+        scheduleOrCancelAlarm(
+            ctx,
+            am,
+            3001,
+            2001,
+            hungryAtMs,
+            "🍖 Hunger Alert: " + petName,
+            petName + " is getting hungry (1 heart left)! Time to feed Big Meat."
+        );
+        scheduleOrCancelAlarm(
+            ctx,
+            am,
+            3002,
+            2001,
+            starvingAtMs,
+            "🚨 " + petName + " is Starving!",
+            petName + " hit 0% hunger! Feed within 10 minutes before a Care Mistake."
+        );
+    }
+
     @PluginMethod
     public void scheduleCareNotifications(PluginCall call) {
         Context ctx = getActivity() != null ? getActivity() : getContext();
         AlarmManager am = (AlarmManager) ctx.getSystemService(Context.ALARM_SERVICE);
 
         String petName = call.getString("petName", "Your Digimon");
+        ctx.getSharedPreferences("digipet_overlay_sync", Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean("careAlertsEnabled", true)
+            .putString("careAlertPetName", petName)
+            .apply();
+
         long hungryAtMs = readLongOption(call, "hungryAtMs", 0L);
         long starvingAtMs = readLongOption(call, "starvingAtMs", 0L);
         long nextPoopAtMs = readLongOption(call, "nextPoopAtMs", 0L);
@@ -485,6 +563,10 @@ public class OverlayPlugin extends Plugin {
     @PluginMethod
     public void cancelCareNotifications(PluginCall call) {
         Context ctx = getActivity() != null ? getActivity() : getContext();
+        ctx.getSharedPreferences("digipet_overlay_sync", Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean("careAlertsEnabled", false)
+            .apply();
         AlarmManager am = (AlarmManager) ctx.getSystemService(Context.ALARM_SERVICE);
         if (am != null) {
             am.cancel(createCareAlarmPendingIntent(ctx, 3001, 2001, "", ""));

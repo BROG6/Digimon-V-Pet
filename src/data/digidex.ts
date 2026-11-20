@@ -80,6 +80,13 @@ export const ROOM_THEMES = [
     description: 'Sunny beach with tropical palm trees and waves from the Digital Ocean.',
   },
   {
+    id: 'starlit-island',
+    name: 'Moonlit File Island',
+    skyColor: 'from-slate-950 via-indigo-950 to-blue-950',
+    floorColor: 'from-slate-900 to-indigo-950',
+    description: 'Calm nocturnal island shore bathed in soft moonlight and evening stars.',
+  },
+  {
     id: 'cyber-matrix',
     name: 'Digital Cyber Space',
     skyColor: 'from-slate-950 via-emerald-950 to-slate-900',

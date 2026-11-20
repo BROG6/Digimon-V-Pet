@@ -19,8 +19,7 @@ import {
   Heart, 
   Sparkles, 
   Dumbbell, 
-  Award,
-  ShoppingBag
+  Award
 } from 'lucide-react';
 import { sound } from '../utils/audio';
 
@@ -33,7 +32,6 @@ interface StatsModalProps {
   onOpenTraining?: () => void;
   onOpenColosseum?: () => void;
   onOpenDigidex?: () => void;
-  onOpenShop?: () => void;
   onEquipSpecialItem?: (itemId: SpecialItemId | null) => void;
   onUpdatePlayerName?: (name: string) => void;
   onUpdateNickname?: (nickname: string) => void;
@@ -50,7 +48,6 @@ export const StatsModal: React.FC<StatsModalProps> = ({
   onOpenTraining,
   onOpenColosseum,
   onOpenDigidex,
-  onOpenShop,
   onEquipSpecialItem,
   onUpdatePlayerName,
   onUpdateNickname,
@@ -603,19 +600,9 @@ export const StatsModal: React.FC<StatsModalProps> = ({
                 <div className="text-xs font-pixel text-amber-300">
                   SPECIAL ITEM SLOT (SP — ARMOR EVOLUTION)
                 </div>
-                {onOpenShop && (
-                  <button
-                    onClick={() => {
-                      sound.playButton();
-                      onClose();
-                      onOpenShop();
-                    }}
-                    className="text-[9px] font-pixel px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 flex items-center gap-1 cursor-pointer"
-                  >
-                    <ShoppingBag className="w-3 h-3" />
-                    <span>RELIC SHOP</span>
-                  </button>
-                )}
+                <span className="text-[9px] font-pixel text-cyan-300/80">
+                  ADVENTURE BOSS REWARDS
+                </span>
               </div>
 
               {equippedItem ? (

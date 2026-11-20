@@ -1,8 +1,6 @@
-import React, { useState } from 'react';
-import { X, Sparkles, Check, Shield } from 'lucide-react';
-import { PetState, SpecialItemId } from '../types/digimon';
-import { DIGI_EGGS, DIGIMON_DATABASE, SPECIAL_ITEMS } from '../data/digidex';
-import { DigimonSprite } from './DigimonSprite';
+import React from 'react';
+import { X } from 'lucide-react';
+import { PetState } from '../types/digimon';
 import { PixelMeatIcon, PixelVitaminIcon } from './PixelItemIcons';
 import { sound } from '../utils/audio';
 
@@ -11,8 +9,6 @@ interface ShopModalProps {
   onClose: () => void;
   pet: PetState;
   onBuyItem: (itemId: 'meat' | 'meat_bundle' | 'sirloin' | 'vitamin' | 'vitamin_bundle' | 'energy_drink' | 'medicine', cost: number) => void;
-  onBuySpecialItem?: (itemId: SpecialItemId, cost: number) => void;
-  onEquipSpecialItem?: (itemId: SpecialItemId | null) => void;
 }
 
 export const ShopModal: React.FC<ShopModalProps> = ({
@@ -20,15 +16,8 @@ export const ShopModal: React.FC<ShopModalProps> = ({
   onClose,
   pet,
   onBuyItem,
-  onBuySpecialItem,
-  onEquipSpecialItem,
 }) => {
-  const [activeTab, setActiveTab] = useState<'supplies' | 'relics'>('supplies');
-
   if (!isOpen) return null;
-
-  const ownedSpecialItems = pet.ownedSpecialItems || [];
-  const relics = Object.values(SPECIAL_ITEMS);
 
   const items = [
     {
@@ -128,15 +117,6 @@ export const ShopModal: React.FC<ShopModalProps> = ({
     onBuyItem(item.id, item.price);
   };
 
-  const handleBuyRelic = (itemId: SpecialItemId, price: number) => {
-    if (pet.digiBits < price) {
-      sound.playAlert();
-      return;
-    }
-    sound.playDigivolve();
-    onBuySpecialItem?.(itemId, price);
-  };
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-slate-950/90 backdrop-blur-md android-safe-modal">
       <div className="relative w-full max-w-2xl bg-slate-900 border-2 border-amber-500/50 rounded-3xl p-5 shadow-2xl flex flex-col max-h-[92vh]">
@@ -153,7 +133,7 @@ export const ShopModal: React.FC<ShopModalProps> = ({
                   OPEN 24/7
                 </span>
               </h3>
-              <p className="text-slate-400 text-xs">Supplies, Vitamins &amp; Armor Evolution Crests</p>
+              <p className="text-slate-400 text-xs">Big Meat, Vitamins, Energy &amp; Antivirus Supplies</p>
             </div>
           </div>
           <div className="flex items-center gap-3">
@@ -171,7 +151,7 @@ export const ShopModal: React.FC<ShopModalProps> = ({
         </div>
 
         {/* Current Supplies Banner */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 py-3 border-b border-slate-800/60 font-pixel text-[10px]">
+        <div className="grid grid-cols-2 gap-2 py-3 border-b border-slate-800/60 font-pixel text-[10px]">
           <div className="bg-slate-950/80 p-2 rounded-xl border border-slate-800 flex items-center justify-between">
             <span className="text-slate-400 inline-flex items-center gap-1.5">
               <PixelMeatIcon className="w-4 h-4" /> Big Meat:
@@ -184,46 +164,10 @@ export const ShopModal: React.FC<ShopModalProps> = ({
             </span>
             <span className="text-cyan-300 font-bold text-xs">{pet.vitaminStock} in bag</span>
           </div>
-          <div className="bg-slate-950/80 p-2 rounded-xl border border-slate-800 col-span-2 sm:col-span-1 flex items-center justify-between">
-            <span className="text-slate-400">🛡️ Relics Owned:</span>
-            <span className="text-emerald-300 font-bold text-xs">{ownedSpecialItems.length} / {relics.length}</span>
-          </div>
-        </div>
-
-        {/* Category Tabs */}
-        <div className="flex items-center gap-2 pt-3 pb-1">
-          <button
-            onClick={() => {
-              sound.playButton();
-              setActiveTab('supplies');
-            }}
-            className={`px-3 py-1.5 rounded-xl font-pixel text-[10px] transition-all cursor-pointer ${
-              activeTab === 'supplies'
-                ? 'bg-amber-400 text-slate-950 font-bold shadow-md'
-                : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
-            }`}
-          >
-            🍖 FOOD &amp; VITAMINS
-          </button>
-          <button
-            onClick={() => {
-              sound.playButton();
-              setActiveTab('relics');
-            }}
-            className={`px-3 py-1.5 rounded-xl font-pixel text-[10px] transition-all flex items-center gap-1.5 cursor-pointer ${
-              activeTab === 'relics'
-                ? 'bg-cyan-400 text-slate-950 font-bold shadow-md'
-                : 'bg-slate-950 text-slate-400 hover:text-white border border-slate-800'
-            }`}
-          >
-            <Shield className="w-3.5 h-3.5" />
-            <span>CRESTS &amp; DIGI-EGGS (ARMOR)</span>
-          </button>
         </div>
 
         {/* Catalog Items */}
-        {activeTab === 'supplies' ? (
-          <div className="overflow-y-auto space-y-2.5 py-3 pr-1 flex-1">
+        <div className="overflow-y-auto space-y-2.5 py-3 pr-1 flex-1">
             {items.map((item) => {
               const canAfford = pet.digiBits >= item.price;
               return (
@@ -271,106 +215,6 @@ export const ShopModal: React.FC<ShopModalProps> = ({
               );
             })}
           </div>
-        ) : (
-          <div className="overflow-y-auto space-y-2.5 py-3 pr-1 flex-1">
-            <div className="p-2.5 rounded-xl bg-cyan-950/30 border border-cyan-500/30 text-[11px] font-chakra text-cyan-200 flex items-center gap-2">
-              <Sparkles className="w-4 h-4 text-cyan-400 shrink-0" />
-              <span>
-                Equip a Crest or Digi-Egg matching your active Egg line during Rookie stage to trigger its Special Armor Evolution!
-              </span>
-            </div>
-
-            {relics.map((relic) => {
-              const isOwned = ownedSpecialItems.includes(relic.id);
-              const isEquipped = pet.equippedSpecialItem === relic.id;
-              const matchesEgg = pet.eggId === relic.eggId;
-              const canAfford = pet.digiBits >= relic.price;
-              const compatEgg = DIGI_EGGS.find((e) => e.id === relic.eggId);
-              const armorSpecies = DIGIMON_DATABASE[relic.armorSpeciesId];
-
-              return (
-                <div
-                  key={relic.id}
-                  className={`p-3.5 rounded-2xl border flex items-center justify-between gap-3 transition-colors ${
-                    isEquipped
-                      ? 'bg-amber-950/30 border-amber-400/60'
-                      : matchesEgg
-                      ? 'bg-slate-950/90 border-emerald-500/40'
-                      : 'bg-slate-950/80 border-slate-800'
-                  }`}
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-12 h-12 rounded-xl bg-slate-900 border border-slate-700 flex items-center justify-center shrink-0 overflow-hidden">
-                      {armorSpecies ? (
-                        <DigimonSprite species={armorSpecies} action="idle" scale={0.45} />
-                      ) : (
-                        <span className="text-2xl">{relic.icon}</span>
-                      )}
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <span className="text-base">{relic.icon}</span>
-                        <h4 className="font-chakra font-bold text-white text-sm sm:text-base">
-                          {relic.name}
-                        </h4>
-                        {matchesEgg && (
-                          <span className="font-pixel text-[8px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded border border-emerald-500/40">
-                            YOUR EGG
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-slate-400 text-xs mt-0.5 line-clamp-2">
-                        {relic.description}
-                      </p>
-                      <div className="flex flex-wrap items-center gap-2 mt-1 font-pixel text-[9px]">
-                        {compatEgg && (
-                          <span className="text-cyan-300">
-                            EGG #{String(compatEgg.eggNumber).padStart(2, '0')} ({compatEgg.crestName})
-                          </span>
-                        )}
-                        {armorSpecies && (
-                          <span className="text-amber-300">→ {armorSpecies.name}</span>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex flex-col items-end gap-1.5 shrink-0">
-                    {!isOwned ? (
-                      <>
-                        <span className="font-pixel text-xs text-amber-300 font-bold whitespace-nowrap">
-                          🪙 {relic.price} BITS
-                        </span>
-                        <button
-                          disabled={!canAfford || !onBuySpecialItem}
-                          onClick={() => handleBuyRelic(relic.id, relic.price)}
-                          className="bg-cyan-500 hover:bg-cyan-400 disabled:opacity-40 text-slate-950 font-pixel text-[10px] px-3.5 py-2 rounded-xl font-bold whitespace-nowrap active:scale-95 transition-transform cursor-pointer"
-                        >
-                          BUY RELIC
-                        </button>
-                      </>
-                    ) : (
-                      <button
-                        onClick={() => {
-                          sound.playButton();
-                          onEquipSpecialItem?.(isEquipped ? null : relic.id);
-                        }}
-                        className={`font-pixel text-[10px] px-3.5 py-2 rounded-xl font-bold whitespace-nowrap active:scale-95 transition-transform flex items-center gap-1 cursor-pointer ${
-                          isEquipped
-                            ? 'bg-amber-500 text-slate-950 border border-amber-300'
-                            : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950'
-                        }`}
-                      >
-                        {isEquipped && <Check className="w-3 h-3" />}
-                        <span>{isEquipped ? 'EQUIPPED' : 'EQUIP'}</span>
-                      </button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
 
         {/* Footer info */}
         <div className="pt-3 border-t border-slate-800 flex items-center justify-between text-slate-400 font-pixel text-[9px]">

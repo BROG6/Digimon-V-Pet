@@ -5,7 +5,8 @@ import { FURNITURE_SHOP, ROOM_THEMES } from '../data/digidex';
 import { DigimonSprite } from './DigimonSprite';
 import { PixelMeatIcon } from './PixelItemIcons';
 import { sound } from '../utils/audio';
-import { Home, ShoppingBag, Palette, X, Sparkles, Plus, Trash2, Check } from 'lucide-react';
+import { Home, ShoppingBag, Palette, X, Sparkles, Plus, Trash2, Check, Moon, Sun } from 'lucide-react';
+import type { DayNightPreference } from '../utils/dayNightCycle';
 
 interface DigiRoomProps {
   pet: PetState;
@@ -17,6 +18,9 @@ interface DigiRoomProps {
   onRemoveFurniture: (instanceId: string) => void;
   onUpdateFurniturePosition?: (instanceId: string, x: number, y: number) => void;
   onChangeTheme: (themeId: string) => void;
+  isNightTime?: boolean;
+  dayNightPref?: DayNightPreference;
+  onCycleDayNight?: () => void;
 }
 
 export const DigiRoom: React.FC<DigiRoomProps> = ({
@@ -29,6 +33,9 @@ export const DigiRoom: React.FC<DigiRoomProps> = ({
   onRemoveFurniture,
   onUpdateFurniturePosition,
   onChangeTheme,
+  isNightTime = false,
+  dayNightPref = 'auto',
+  onCycleDayNight,
 }) => {
   const [activeTab, setActiveTab] = useState<'room' | 'shop' | 'themes'>('room');
   const [interactMsg, setInteractMsg] = useState<string | null>(null);
@@ -131,14 +138,39 @@ export const DigiRoom: React.FC<DigiRoomProps> = ({
               <p className="text-slate-400 text-xs">Hellopet-style interactive sanctuary</p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
+            {onCycleDayNight && (
+              <button
+                onClick={() => {
+                  sound.playButton();
+                  onCycleDayNight();
+                }}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full font-pixel text-[9px] border cursor-pointer transition-colors ${
+                  isNightTime
+                    ? 'bg-indigo-950/90 border-indigo-400/60 text-indigo-200 hover:bg-indigo-900'
+                    : 'bg-amber-950/60 border-amber-400/50 text-amber-200 hover:bg-amber-900/60'
+                }`}
+                title="Cycle Day/Night Lighting (Auto / Night / Day)"
+              >
+                {isNightTime ? <Moon className="w-3 h-3 text-indigo-300" /> : <Sun className="w-3 h-3 text-amber-300" />}
+                <span>
+                  {dayNightPref === 'auto'
+                    ? isNightTime
+                      ? 'AUTO: NIGHT'
+                      : 'AUTO: DAY'
+                    : dayNightPref === 'night'
+                    ? 'NIGHT MODE'
+                    : 'DAY MODE'}
+                </span>
+              </button>
+            )}
             <div className="flex items-center gap-1.5 px-3 py-1 bg-slate-800 rounded-full font-pixel text-xs text-amber-300 border border-slate-700">
               <span>🪙</span>
               <span>{pet.digiBits} BITS</span>
             </div>
             <button
               onClick={onClose}
-              className="p-1.5 rounded-full hover:bg-slate-800 text-slate-400 hover:text-white"
+              className="p-1.5 rounded-full hover:bg-slate-800 text-slate-400 hover:text-white cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
@@ -186,10 +218,24 @@ export const DigiRoom: React.FC<DigiRoomProps> = ({
             className="relative w-full h-[360px] sm:h-[420px] rounded-2xl overflow-hidden border-2 border-slate-700 select-none flex flex-col justify-between"
           >
             {/* Room Sky / Wall Background */}
-            <div className={`absolute inset-0 bg-gradient-to-b ${currentTheme.skyColor} opacity-90`} />
+            <div className={`absolute inset-0 bg-gradient-to-b ${currentTheme.skyColor} opacity-90 transition-colors duration-700`} />
 
             {/* Room Floor */}
-            <div className={`absolute bottom-0 left-0 right-0 h-[45%] bg-gradient-to-t ${currentTheme.floorColor} border-t-2 border-black/20 shadow-inner`} />
+            <div className={`absolute bottom-0 left-0 right-0 h-[45%] bg-gradient-to-t ${currentTheme.floorColor} border-t-2 border-black/20 shadow-inner transition-colors duration-700`} />
+
+            {/* Evening Starlight & Ambient Dimmer Overlay */}
+            {(isNightTime || currentTheme.id === 'starlit-island') && (
+              <div className="absolute inset-0 pointer-events-none z-10">
+                <div className="absolute inset-0 bg-slate-950/35" />
+                <div className="absolute top-6 right-10 w-8 h-8 rounded-full bg-amber-100/90 shadow-[0_0_24px_rgba(253,230,138,0.65)]">
+                  <div className="w-6 h-6 rounded-full bg-indigo-950/95 translate-x-2 -translate-y-0.5" />
+                </div>
+                <div className="absolute top-8 left-12 w-1.5 h-1.5 rounded-full bg-amber-100/80 animate-pulse" />
+                <div className="absolute top-14 left-36 w-1 h-1 rounded-full bg-sky-100/75" />
+                <div className="absolute top-10 left-1/2 w-1.5 h-1.5 rounded-full bg-indigo-100/80 animate-pulse" />
+                <div className="absolute top-16 right-28 w-1 h-1 rounded-full bg-amber-100/70" />
+              </div>
+            )}
 
             {/* Hint Overlay */}
             <div className="absolute top-3 left-3 z-30 bg-slate-950/70 backdrop-blur-sm px-2.5 py-1 rounded-lg text-[9px] font-pixel text-slate-300 border border-slate-700 flex items-center gap-1.5 pointer-events-none">
@@ -279,6 +325,9 @@ export const DigiRoom: React.FC<DigiRoomProps> = ({
                 action={pet.isSleeping ? 'sleep' : digimonAction}
                 facing={digimonFacing}
                 scale={1.1}
+                hunger={pet.hunger}
+                happiness={pet.happiness}
+                showMoodIndicator={!pet.isDead && !pet.isFrozen && pet.stage !== 'egg' && !pet.isSleeping && !pet.isSick}
               />
             </motion.div>
 

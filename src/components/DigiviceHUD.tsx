@@ -43,6 +43,7 @@ interface DigiviceHUDProps {
   onEvolveTrigger?: () => void;
   onResetEgg?: () => void;
   canEvolve: boolean;
+  isNightTime?: boolean;
   externalAction?: { pose: DigimonPose | 'flushing'; nonce: number; eatItem?: 'meat' | 'vitamin' } | null;
 }
 
@@ -168,6 +169,7 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
   onEvolveTrigger,
   onResetEgg,
   canEvolve,
+  isNightTime = false,
   externalAction,
 }) => {
   const [shellIndex, setShellIndex] = useState<number>(0);
@@ -633,12 +635,16 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
 
             {/* THE LCD SCREEN WINDOW (FULL-COLOR DIGITAL WORLD LANDSCAPE) */}
             <div 
-              className={`absolute top-3 bottom-3 left-3 right-7 rounded-lg border-2 border-[#090d16] p-1.5 sm:p-2 overflow-hidden flex flex-col justify-between shadow-[inset_0_4px_10px_rgba(0,0,0,0.8)] z-20 ${
-                isLightsOff ? 'bg-[#081813]' : 'bg-gradient-to-b from-[#38bdf8] via-[#7dd3fc] 55% to-[#16a34a]'
+              className={`absolute top-3 bottom-3 left-3 right-7 rounded-lg border-2 border-[#090d16] p-1.5 sm:p-2 overflow-hidden flex flex-col justify-between shadow-[inset_0_4px_10px_rgba(0,0,0,0.8)] z-20 transition-colors duration-700 ${
+                isLightsOff
+                  ? 'bg-[#081813]'
+                  : isNightTime
+                  ? 'bg-gradient-to-b from-[#0b1120] via-[#1e1b4b] 58% to-[#064e3b]'
+                  : 'bg-gradient-to-b from-[#38bdf8] via-[#7dd3fc] 55% to-[#16a34a]'
               }`}
             >
-              {/* Landscape Pixel Art Elements (Digital World Hills & Grass) */}
-              {!isLightsOff && (
+              {/* Landscape Pixel Art Elements (Daytime Digital World Hills & Grass) */}
+              {!isLightsOff && !isNightTime && (
                 <div className="absolute inset-0 pointer-events-none z-0">
                   {/* Pixel Clouds */}
                   <div className="absolute top-2 left-3 w-8 h-2 bg-white/70 rounded-full blur-[0.5px]" />
@@ -653,6 +659,28 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
 
                   {/* Green Grassy Ground */}
                   <div className="absolute bottom-0 left-0 right-0 h-[32px] bg-gradient-to-b from-[#22c55e] to-[#15803d] border-t border-[#16a34a] shadow-inner" />
+                </div>
+              )}
+
+              {/* Evening Natural Light Landscape (Starlit Sky, Crescent Moon & Dimmed Grass) */}
+              {!isLightsOff && isNightTime && (
+                <div className="absolute inset-0 pointer-events-none z-0">
+                  <div className="absolute top-3 left-6 w-1 h-1 bg-amber-100/80 rounded-full animate-pulse" />
+                  <div className="absolute top-6 left-16 w-0.5 h-0.5 bg-sky-200/70 rounded-full" />
+                  <div className="absolute top-4 right-14 w-1 h-1 bg-sky-100/75 rounded-full animate-pulse" />
+                  <div className="absolute top-9 right-20 w-0.5 h-0.5 bg-indigo-200/70 rounded-full" />
+                  {/* Glowing Crescent Moon */}
+                  <div className="absolute top-3 right-5 w-4 h-4 rounded-full bg-amber-200/90 shadow-[0_0_8px_rgba(253,230,138,0.65)]">
+                    <div className="w-3 h-3 rounded-full bg-[#111536] translate-x-1 -translate-y-0.5" />
+                  </div>
+                  {/* Nocturnal Mountain Silhouettes */}
+                  <svg viewBox="0 0 200 60" className="absolute bottom-[28px] left-0 right-0 w-full h-12 opacity-85" preserveAspectRatio="none">
+                    <polygon points="0,60 30,25 70,60" fill="#0f172a" />
+                    <polygon points="50,60 95,15 140,60" fill="#1e1b4b" />
+                    <polygon points="120,60 160,28 200,60" fill="#0f172a" />
+                  </svg>
+                  {/* Dimmed Moonlit Grassy Ground */}
+                  <div className="absolute bottom-0 left-0 right-0 h-[32px] bg-gradient-to-b from-[#166534] to-[#052e16] border-t border-[#14532d] shadow-inner" />
                 </div>
               )}
 
@@ -679,6 +707,8 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
                       className={`w-7 h-7 rounded flex flex-col items-center justify-center transition-all cursor-pointer ${
                         isSelected
                           ? 'bg-[#0f172a] text-amber-300 font-bold scale-110 border border-amber-300 shadow-md ring-1 ring-amber-400'
+                          : isLightsOff || isNightTime
+                          ? 'text-sky-200/90 hover:bg-white/10'
                           : 'text-[#0f172a] hover:bg-black/10'
                       }`}
                       title={item.label}
@@ -694,7 +724,11 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
                 <div className="relative flex-1 w-full overflow-hidden flex flex-col justify-between py-0.5 z-10">
                   
                   {/* Top LCD Telemetry Row (matching Bandai 25th photo) */}
-                  <div className="relative z-20 flex justify-between items-center px-1 text-[8px] font-pixel text-[#0f172a] font-bold select-none drop-shadow-[0_1px_0_rgba(255,255,255,0.4)]">
+                  <div className={`relative z-20 flex justify-between items-center px-1 text-[8px] font-pixel font-bold select-none ${
+                    isLightsOff || isNightTime
+                      ? 'text-sky-100 drop-shadow-[0_1px_1px_rgba(0,0,0,0.9)]'
+                      : 'text-[#0f172a] drop-shadow-[0_1px_0_rgba(255,255,255,0.4)]'
+                  }`}>
                     <span className="uppercase tracking-tight">
                       {pet.isDead
                         ? 'MEMORIAL'
@@ -841,12 +875,26 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
                         facing={pet.stage === 'egg' || pet.isDead ? 'right' : facing}
                         lcdMode={false}
                         scale={0.92}
+                        hunger={pet.hunger}
+                        happiness={pet.happiness}
+                        showMoodIndicator={
+                          !pet.isDead &&
+                          !pet.isFrozen &&
+                          pet.stage !== 'egg' &&
+                          !pet.isSleeping &&
+                          !pet.lightsOff &&
+                          !pet.isSick
+                        }
                       />
                     </div>
                   </div>
 
                   {/* Bottom LCD Telemetry Row (matching Bandai 25th photo) */}
-                  <div className="relative z-20 flex justify-between items-center px-1 text-[7px] font-pixel text-[#0f172a] font-bold select-none drop-shadow-[0_1px_0_rgba(255,255,255,0.4)]">
+                  <div className={`relative z-20 flex justify-between items-center px-1 text-[7px] font-pixel font-bold select-none ${
+                    isLightsOff || isNightTime
+                      ? 'text-emerald-100 drop-shadow-[0_1px_1px_rgba(0,0,0,0.9)]'
+                      : 'text-[#0f172a] drop-shadow-[0_1px_0_rgba(255,255,255,0.4)]'
+                  }`}>
                     <span>
                       {pet.stage === 'egg'
                         ? (egg?.crestName || 'DIGITAMA').toUpperCase()
@@ -1058,6 +1106,8 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
                       className={`w-7 h-7 rounded flex flex-col items-center justify-center transition-all cursor-pointer ${
                         isSelected
                           ? 'bg-[#0f172a] text-amber-300 font-bold scale-110 border border-amber-300 shadow-md ring-1 ring-amber-400'
+                          : isLightsOff || isNightTime
+                          ? 'text-emerald-100/90 hover:bg-white/10'
                           : 'text-[#0f172a] hover:bg-black/10'
                       }`}
                       title={item.label}

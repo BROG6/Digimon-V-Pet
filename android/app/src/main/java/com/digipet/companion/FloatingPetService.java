@@ -151,6 +151,10 @@ public class FloatingPetService extends Service {
     // Display & Viewport metrics
     private int viewW;
     private int viewH;
+    private int awakeViewW = 0;
+    private int awakeViewH = 0;
+    private int sleepViewW = 0;
+    private int sleepViewH = 0;
     private int footOffsetPx;
     private int screenW = 1080;
     private int screenH = 2200;
@@ -514,10 +518,42 @@ public class FloatingPetService extends Service {
             layoutType = WindowManager.LayoutParams.TYPE_PHONE;
         }
 
-        // Generous window so oversized and sleeping sprites never clip at WebView edges
+        // Tightly size overlay window to the rendered Digimon sprite bounds (expands automatically for large or sleeping sprites)
         viewW = dpToPx(184);
         viewH = dpToPx(184);
         footOffsetPx = dpToPx(6);
+        webView = new WebView(this);
+        webView.setBackgroundColor(Color.TRANSPARENT);
+        webView.setClickable(false);
+        webView.setFocusable(false);
+        webView.setOnTouchListener(new View.OnTouchListener() {
+            @Override
+            public boolean onTouch(View v, MotionEvent event) {
+                return false;
+            }
+        });
+
+        WebSettings webSettings = webView.getSettings();
+        webSettings.setJavaScriptEnabled(true);
+        webSettings.setDomStorageEnabled(true);
+        webSettings.setAllowFileAccess(true);
+        webSettings.setAllowContentAccess(true);
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
+            webSettings.setAllowFileAccessFromFileURLs(true);
+            webSettings.setAllowUniversalAccessFromFileURLs(true);
+        }
+        webView.setVerticalScrollBarEnabled(false);
+        webView.setHorizontalScrollBarEnabled(false);
+        webView.addJavascriptInterface(new NativeBubbleBridge(), "NativeBubbleBridge");
+
+        loadWebViewFromIntent(intent, pendingEvolvedMessage);
+        pendingEvolvedMessage = "";
+        int initTargetW = isPetSleeping ? sleepViewW : awakeViewW;
+        int initTargetH = isPetSleeping ? sleepViewH : awakeViewH;
+        if (initTargetW > 0 && initTargetH > 0) {
+            viewW = initTargetW;
+            viewH = initTargetH;
+        }
 
         params = new WindowManager.LayoutParams(
             viewW,
@@ -556,33 +592,6 @@ public class FloatingPetService extends Service {
             }
         };
         rootLayout.setBackgroundColor(Color.TRANSPARENT);
-
-        webView = new WebView(this);
-        webView.setBackgroundColor(Color.TRANSPARENT);
-        webView.setClickable(false);
-        webView.setFocusable(false);
-        webView.setOnTouchListener(new View.OnTouchListener() {
-            @Override
-            public boolean onTouch(View v, MotionEvent event) {
-                return false;
-            }
-        });
-
-        WebSettings webSettings = webView.getSettings();
-        webSettings.setJavaScriptEnabled(true);
-        webSettings.setDomStorageEnabled(true);
-        webSettings.setAllowFileAccess(true);
-        webSettings.setAllowContentAccess(true);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
-            webSettings.setAllowFileAccessFromFileURLs(true);
-            webSettings.setAllowUniversalAccessFromFileURLs(true);
-        }
-        webView.setVerticalScrollBarEnabled(false);
-        webView.setHorizontalScrollBarEnabled(false);
-        webView.addJavascriptInterface(new NativeBubbleBridge(), "NativeBubbleBridge");
-
-        loadWebViewFromIntent(intent, pendingEvolvedMessage);
-        pendingEvolvedMessage = "";
 
         rootLayout.addView(webView, new FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
@@ -1017,6 +1026,15 @@ public class FloatingPetService extends Service {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             hudButtonsContainer.setElevation(dpToPx(8));
         }
+        hudButtonsContainer.setOnTouchListener(new View.OnTouchListener() {
+            @Override
+            public boolean onTouch(View v, MotionEvent event) {
+                if (event.getAction() == MotionEvent.ACTION_DOWN) {
+                    resetHudAutoHide();
+                }
+                return false;
+            }
+        });
 
         LinearLayout meatBtn = createHudActionButton("🍖", "MEAT", 0xFFFDBA74, 0xFFEA580C, true);
         hudMeatLabel = (TextView) meatBtn.getChildAt(1);
@@ -1201,7 +1219,7 @@ public class FloatingPetService extends Service {
     private void resetHudAutoHide() {
         physicsHandler.removeCallbacks(hudAutoHideRunnable);
         if (hudVisible) {
-            physicsHandler.postDelayed(hudAutoHideRunnable, 10000L);
+            physicsHandler.postDelayed(hudAutoHideRunnable, 3000L);
         }
     }
 
@@ -1648,6 +1666,7 @@ public class FloatingPetService extends Service {
             }
 
             if (isPetSleeping) {
+                applyWindowDimensionsForSleepState(true);
                 if (offScreenPhase == OffScreenPhase.HIDDEN) {
                     setOverlayHidden(false);
                     posX = Math.max(dpToPx(20), (screenW - viewW) * 0.5f);
@@ -1662,6 +1681,7 @@ public class FloatingPetService extends Service {
                 carriedItem = "";
                 syncVisualState("sleep", facingRight, "", null);
             } else if ("sleep".equals(lastJsAnimMode)) {
+                applyWindowDimensionsForSleepState(false);
                 if (isFlyingPet) {
                     petState = PetState.FLYING;
                     pickNextFlyWaypoint();
@@ -2247,6 +2267,88 @@ public class FloatingPetService extends Service {
         );
     }
 
+    private int[] measureMaxSpriteDims(String framesJson, int defaultW, int defaultH) {
+        int maxW = Math.max(1, defaultW);
+        int maxH = Math.max(1, defaultH);
+        if (framesJson == null || framesJson.isEmpty()) {
+            return new int[] { maxW, maxH };
+        }
+        try {
+            JSONArray arr = new JSONArray(framesJson);
+            for (int i = 0; i < arr.length(); i++) {
+                JSONObject obj = arr.optJSONObject(i);
+                if (obj == null) continue;
+                int fw = Math.max(1, obj.optInt("w", defaultW));
+                int fh = Math.max(1, obj.optInt("h", defaultH));
+                int rot = obj.optInt("rotate", 0);
+                boolean isRot = (rot == 90 || rot == -90 || rot == 270);
+                int uw = isRot ? fh : fw;
+                int uh = isRot ? fw : fh;
+                if (uw > maxW) maxW = uw;
+                if (uh > maxH) maxH = uh;
+            }
+        } catch (Exception ignored) {
+            // Keep default bounds
+        }
+        return new int[] { maxW, maxH };
+    }
+
+    private void computeSpriteWindowDimensions(
+        int stageWidth,
+        int stageHeight,
+        int frameW,
+        int frameH,
+        int frameRotate,
+        String standingFramesJson,
+        String walkingFramesJson,
+        String sleepingFramesJson
+    ) {
+        boolean fbRot = (frameRotate == 90 || frameRotate == -90 || frameRotate == 270);
+        int fbW = Math.max(1, fbRot ? frameH : frameW);
+        int fbH = Math.max(1, fbRot ? frameW : frameH);
+        int[] standDims = measureMaxSpriteDims(standingFramesJson, fbW, fbH);
+        int[] walkDims = measureMaxSpriteDims(walkingFramesJson, fbW, fbH);
+        int[] sleepDims = measureMaxSpriteDims(sleepingFramesJson, fbW, fbH);
+
+        int awakeMaxW = Math.max(stageWidth > 0 ? stageWidth : fbW, Math.max(standDims[0], walkDims[0]));
+        int awakeMaxH = Math.max(stageHeight > 0 ? stageHeight : fbH, Math.max(standDims[1], walkDims[1]));
+        int sleepMaxW = Math.max(stageWidth > 0 ? stageWidth : fbW, sleepDims[0]);
+        int sleepMaxH = Math.max(stageHeight > 0 ? stageHeight : fbH, sleepDims[1]);
+
+        int maxAllW = Math.max(awakeMaxW, sleepMaxW);
+        int maxAllH = Math.max(awakeMaxH, sleepMaxH);
+        double scale = Math.min(1.22, Math.min(168.0 / Math.max(1, maxAllW), 152.0 / Math.max(1, maxAllH)));
+
+        awakeViewW = dpToPx(Math.max(44, Math.min(184, (int) Math.ceil(awakeMaxW * scale) + 10)));
+        awakeViewH = dpToPx(Math.max(48, Math.min(184, (int) Math.ceil(awakeMaxH * scale) + 20)));
+        sleepViewW = dpToPx(Math.max(48, Math.min(184, (int) Math.ceil(sleepMaxW * scale) + 12)));
+        sleepViewH = dpToPx(Math.max(48, Math.min(184, (int) Math.ceil(sleepMaxH * scale) + 22)));
+    }
+
+    private void applyWindowDimensionsForSleepState(boolean sleeping) {
+        int targetW = sleeping ? sleepViewW : awakeViewW;
+        int targetH = sleeping ? sleepViewH : awakeViewH;
+        if (targetW <= 0 || targetH <= 0) return;
+        if (targetW == viewW && targetH == viewH) return;
+
+        float oldCenterX = posX + viewW * 0.5f;
+        float oldFootY = getFootYForTopY(posY);
+        viewW = targetW;
+        viewH = targetH;
+        if (params != null && floatingView != null) {
+            params.width = viewW;
+            params.height = viewH;
+            posX = Math.max(-dpToPx(4), Math.min(Math.max(0, screenW - viewW + dpToPx(4)), oldCenterX - viewW * 0.5f));
+            if (isFlyingPet || petState == PetState.OFF_SCREEN) {
+                posY = Math.max(0, oldFootY - (viewH - footOffsetPx) - topSystemOffsetPx);
+            } else {
+                currentRowIndex = Math.max(0, Math.min(currentRowIndex, rowYs.length - 1));
+                posY = getTopYForFootY(rowYs[currentRowIndex]);
+            }
+            applyWindowPosition();
+        }
+    }
+
     private void loadWebViewFromFields(
         String rawSpriteUrl,
         int sheetWidth,
@@ -2266,6 +2368,18 @@ public class FloatingPetService extends Service {
         String evolvedMessage,
         boolean initialIsSleeping
     ) {
+        computeSpriteWindowDimensions(
+            stageWidth,
+            stageHeight,
+            frameW,
+            frameH,
+            frameRotate,
+            standingFramesJson,
+            walkingFramesJson,
+            sleepingFramesJson
+        );
+        applyWindowDimensionsForSleepState(initialIsSleeping);
+
         String relSpriteUrl = rawSpriteUrl != null ? rawSpriteUrl : "assets/digidestined/agumon.png";
         if (relSpriteUrl.startsWith("file:///android_asset/public/")) {
             relSpriteUrl = relSpriteUrl.substring("file:///android_asset/public/".length());
@@ -2292,11 +2406,13 @@ public class FloatingPetService extends Service {
             "#petWrap.evolving #spriteBox { animation:evoFlash 1.3s ease-in-out; }" +
             "@keyframes evoBurst { 0% { transform:scale(0.4); opacity:0; } 30% { transform:scale(1.45); opacity:1; } 100% { transform:scale(1.9); opacity:0; } }" +
             "@keyframes evoFlash { 0%, 100% { filter:brightness(1); transform:scale(1); } 25% { filter:brightness(2.8) drop-shadow(0 0 12px #fde047); transform:scale(1.18); } 60% { filter:brightness(2.0) drop-shadow(0 0 10px #38bdf8); transform:scale(1.08); } }" +
-            "#sleepBadge { display:none; position:absolute; top:-16px; right:2px; z-index:22; color:#67e8f9; font-family:monospace; font-weight:900; font-size:12px; text-shadow:0 1px 4px rgba(15,23,42,0.95), 0 0 8px rgba(56,189,248,0.7); pointer-events:none; }" +
+            "#sleepBadge { display:none; position:absolute; top:-12px; right:2px; z-index:22; color:#67e8f9; font-family:monospace; font-weight:900; font-size:12px; text-shadow:0 1px 4px rgba(15,23,42,0.95), 0 0 8px rgba(56,189,248,0.7); pointer-events:none; }" +
             "#petWrap.sleeping #sleepBadge { display:block; animation:zzzFloat 1.8s ease-out infinite; }" +
             "#petWrap.sleeping #spriteBox { filter:brightness(0.88); }" +
+            "#petWrap.sleeping #frameClip { transform-origin:bottom center; animation:sleepBreathe 2.6s ease-in-out infinite; }" +
+            "@keyframes sleepBreathe { 0%, 100% { transform:scale(1, 1); } 50% { transform:scale(1.035, 1.045); } }" +
             "@keyframes zzzFloat { 0% { transform:translate(0px, 2px) scale(0.85); opacity:0; } 35% { opacity:1; } 100% { transform:translate(8px, -14px) scale(1.1); opacity:0; } }" +
-            "#carryBadge { display:none; position:absolute; top:-16px; right:-18px; z-index:20; background:#1e1b4b; border:1.5px solid #fbbf24; border-radius:8px; padding:2px; box-shadow:0 2px 6px rgba(0,0,0,0.5); }" +
+            "#carryBadge { display:none; position:absolute; top:-12px; right:-4px; z-index:20; background:#1e1b4b; border:1.5px solid #fbbf24; border-radius:8px; padding:2px; box-shadow:0 2px 6px rgba(0,0,0,0.5); }" +
             "#carryBadge.show { display:block; }" +
             "#spriteBox { position:relative; overflow:visible; z-index:10; }" +
             "#frameClip { position:relative; overflow:hidden; }" +

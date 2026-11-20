@@ -20,7 +20,6 @@ import {
   setSavedGridPreset,
   getGridRowRatios,
   isFlyingSpecies,
-  computeSurfaceRowYs,
   computeParabolicJumpPoint,
   stepWaypointFlight,
 } from '../utils/petOverlayEngine';
@@ -31,7 +30,6 @@ interface NativePipOverlayProps {
   species?: DigimonSpecies;
   isOpen: boolean;
   onClose: () => void;
-  onStartInAppOverlay?: () => void;
   onOpenGridAlignment?: () => void;
 }
 
@@ -40,7 +38,6 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
   species,
   isOpen,
   onClose,
-  onStartInAppOverlay,
   onOpenGridAlignment,
 }) => {
   const [isPipActive, setIsPipActive] = useState<boolean>(false);
@@ -89,7 +86,7 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
     } catch (e) {
       console.warn('Error loading sprite config for PiP:', e);
     }
-  }, [pet?.currentSpeciesId]);
+  }, [pet?.currentSpeciesId, species?.spriteId]);
 
   // Screen Wake Lock API management
   const toggleWakeLock = async () => {
@@ -205,10 +202,13 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
     let isCancelled = false;
     let frame = 0;
     const rowRatios = getGridRowRatios(gridPreset);
-    const previewRowYs = computeSurfaceRowYs(canvas.height, rowRatios);
+    // Map launcher row ratios directly into the 240x180 preview viewport without the 320px real-screen floor
+    const previewRowYs = rowRatios.map((r) =>
+      Math.round(48 + Math.max(0.12, Math.min(0.96, r)) * Math.max(60, canvas.height - 70))
+    );
     let currentRow = Math.max(0, previewRowYs.length - 1);
     let xPos = 60;
-    let yPos = isFlying ? canvas.height * 0.45 : (previewRowYs[currentRow] || canvas.height - 24);
+    let yPos = isFlying ? canvas.height * 0.55 : (previewRowYs[currentRow] || canvas.height - 28);
     let targetX = canvas.width - 60;
     let targetY = yPos;
     let dir = 1;
@@ -324,7 +324,6 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
           ? config.frames.standing
           : [{ x: 0, y: 0, w: 32, h: 32 }];
 
-        const renderScale = 1.43;
         const usesSharedStage = Boolean(config?.stageWidth && config?.stageHeight);
         const frameIndex = usesSharedStage
           ? Math.floor(performance.now() / 62.5) % Math.max(1, walkFrames.length)
@@ -335,15 +334,22 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
         const srcY = currentFrame.y || 0;
         const srcW = Math.max(1, currentFrame.w || 32);
         const srcH = Math.max(1, currentFrame.h || 32);
+        const rot = currentFrame.rotate || 0;
+        const isRot = rot === 90 || rot === -90 || rot === 270;
+        const unitW = isRot ? srcH : srcW;
+        const unitH = isRot ? srcW : srcH;
 
-        const destW = srcW * renderScale;
-        const destH = srcH * renderScale;
+        const maxDim = Math.max(config?.stageWidth || unitW, config?.stageHeight || unitH, unitW, unitH, 32);
+        const renderScale = Math.min(1.35, 70 / maxDim);
+
+        const destW = unitW * renderScale;
+        const destH = unitH * renderScale;
 
         let destX: number;
         let destY: number;
         if (usesSharedStage) {
-          const stageW = (config!.stageWidth || srcW) * renderScale;
-          const stageH = (config!.stageHeight || srcH) * renderScale;
+          const stageW = (config!.stageWidth || unitW) * renderScale;
+          const stageH = (config!.stageHeight || unitH) * renderScale;
           const stageLeft = xPos - stageW / 2;
           const stageTop = floorY - stageH;
           destX = stageLeft + (currentFrame.offsetX || 0) * renderScale;
@@ -366,13 +372,18 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
 
         if (spriteImg && spriteImg.complete && spriteImg.naturalWidth > 0) {
           ctx.save();
+          const cx = destX + destW / 2;
+          const cy = destY + destH / 2;
+          ctx.translate(cx, cy);
           if (dir < 0) {
-            ctx.translate(destX + destW, destY);
             ctx.scale(-1, 1);
-            ctx.drawImage(spriteImg, srcX, srcY, srcW, srcH, 0, 0, destW, destH);
-          } else {
-            ctx.drawImage(spriteImg, srcX, srcY, srcW, srcH, destX, destY, destW, destH);
           }
+          if (rot) {
+            ctx.rotate((rot * Math.PI) / 180);
+          }
+          const drawW = srcW * renderScale;
+          const drawH = srcH * renderScale;
+          ctx.drawImage(spriteImg, srcX, srcY, srcW, srcH, -drawW / 2, -drawH / 2, drawW, drawH);
           ctx.restore();
         } else {
           // Fallback animated avatar if sprite is loading
@@ -671,21 +682,6 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
                 : '🚀 POP OUT FLOATING COMPANION (OVER ALL APPS)'}
             </span>
           </button>
-
-          {/* Primary Action 2: Float directly on this screen (In-App Hellopet mode) */}
-          {onStartInAppOverlay && (
-            <button
-              onClick={() => {
-                sound.playButton();
-                onClose();
-                onStartInAppOverlay();
-              }}
-              className="w-full py-3 px-4 bg-gradient-to-r from-purple-700 to-indigo-700 hover:from-purple-600 hover:to-indigo-600 text-white rounded-2xl font-pixel text-xs font-bold transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer active:scale-98"
-            >
-              <Sparkles className="w-4 h-4 text-amber-300" />
-              <span>✨ FLOAT PET ON THIS SCREEN (IN-APP MODE)</span>
-            </button>
-          )}
 
           {/* Launcher Surface Grid & Navigation Mode Selector */}
           <div className="p-3.5 bg-slate-950/90 border border-slate-800 rounded-2xl space-y-2.5">

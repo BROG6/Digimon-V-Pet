@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { DigimonSpecies, DigiEggInfo } from '../types/digimon';
 import { 
   YUKIMIBOTAMON_SPRITESHEET_PATH,
@@ -32,9 +32,76 @@ interface DigimonSpriteProps {
   scale?: number;
   facing?: 'left' | 'right';
   lcdMode?: boolean;
+  hunger?: number;
+  happiness?: number;
+  showMoodIndicator?: boolean;
   onClick?: () => void;
   className?: string;
 }
+
+type MoodKind = 'heart' | 'question' | 'sweat' | 'angry';
+
+function getMoodKind(hunger?: number, happiness?: number): MoodKind | null {
+  if (typeof hunger !== 'number' && typeof happiness !== 'number') return null;
+  const h = typeof hunger === 'number' ? hunger : 80;
+  const hap = typeof happiness === 'number' ? happiness : 80;
+
+  if (hap <= 30 || (h <= 25 && hap <= 60)) return 'angry';
+  if (h <= 40 || hap <= 45) return 'sweat';
+  if (h < 70 || hap < 70) return 'question';
+  return 'heart';
+}
+
+const PixelMoodIcon: React.FC<{ mood: MoodKind }> = ({ mood }) => {
+  if (mood === 'heart') {
+    return (
+      <svg viewBox="0 0 16 16" className="w-4 h-4 drop-shadow-[0_1px_2px_rgba(0,0,0,0.85)]" shapeRendering="crispEdges">
+        <rect x="2" y="2" width="4" height="2" fill="#9f1239" />
+        <rect x="10" y="2" width="4" height="2" fill="#9f1239" />
+        <rect x="1" y="4" width="14" height="4" fill="#f43f5e" />
+        <rect x="3" y="3" width="3" height="2" fill="#fb7185" />
+        <rect x="10" y="3" width="3" height="2" fill="#fb7185" />
+        <rect x="3" y="4" width="2" height="2" fill="#ffe4e6" />
+        <rect x="2" y="8" width="12" height="2" fill="#e11d48" />
+        <rect x="4" y="10" width="8" height="2" fill="#e11d48" />
+        <rect x="6" y="12" width="4" height="2" fill="#be123c" />
+        <rect x="7" y="14" width="2" height="1" fill="#9f1239" />
+      </svg>
+    );
+  }
+  if (mood === 'angry') {
+    return (
+      <svg viewBox="0 0 16 16" className="w-4 h-4 drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]" shapeRendering="crispEdges">
+        <rect x="1" y="1" width="14" height="14" rx="2" fill="#7f1d1d" opacity="0.85" />
+        {/* Classic 4-corner comic/V-pet anger vein */}
+        <path d="M3,6 L6,6 L6,3 M10,3 L10,6 L13,6 M3,10 L6,10 L6,13 M10,13 L10,10 L13,10" stroke="#fca5a5" strokeWidth="2" fill="none" />
+        <path d="M3,6 L6,6 L6,3 M10,3 L10,6 L13,6 M3,10 L6,10 L6,13 M10,13 L10,10 L13,10" stroke="#ef4444" strokeWidth="1" fill="none" />
+      </svg>
+    );
+  }
+  if (mood === 'sweat') {
+    return (
+      <svg viewBox="0 0 16 16" className="w-4 h-4 drop-shadow-[0_1px_2px_rgba(0,0,0,0.85)]" shapeRendering="crispEdges">
+        <rect x="7" y="1" width="2" height="2" fill="#0369a1" />
+        <rect x="6" y="3" width="4" height="2" fill="#38bdf8" />
+        <rect x="5" y="5" width="6" height="3" fill="#38bdf8" />
+        <rect x="4" y="8" width="8" height="4" fill="#0ea5e9" />
+        <rect x="5" y="12" width="6" height="2" fill="#0284c7" />
+        <rect x="6" y="14" width="4" height="1" fill="#0369a1" />
+        <rect x="6" y="6" width="2" height="3" fill="#e0f2fe" />
+      </svg>
+    );
+  }
+  return (
+    <svg viewBox="0 0 16 16" className="w-4 h-4 drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]" shapeRendering="crispEdges">
+      <rect x="2" y="1" width="12" height="14" rx="3" fill="#0f172a" opacity="0.88" />
+      <rect x="5" y="3" width="6" height="2" fill="#fbbf24" />
+      <rect x="9" y="5" width="2" height="2" fill="#fbbf24" />
+      <rect x="7" y="7" width="2" height="3" fill="#fde047" />
+      <rect x="7" y="11" width="2" height="2" fill="#fde047" />
+    </svg>
+  );
+};
 
 export const DigimonSprite: React.FC<DigimonSpriteProps> = ({
   species,
@@ -46,6 +113,9 @@ export const DigimonSprite: React.FC<DigimonSpriteProps> = ({
   scale = 1,
   facing = 'right',
   lcdMode = false,
+  hunger,
+  happiness,
+  showMoodIndicator = true,
   onClick,
   className = '',
 }) => {
@@ -68,6 +138,47 @@ export const DigimonSprite: React.FC<DigimonSpriteProps> = ({
   const [frameIndex, setFrameIndex] = useState<number>(0);
   const [eatBeat, setEatBeat] = useState<number>(0);
   const [spriteRevision, setSpriteRevision] = useState<number>(0);
+  const [moodPulseKey, setMoodPulseKey] = useState<number>(0);
+  const [isMoodVisible, setIsMoodVisible] = useState<boolean>(false);
+
+  const canShowMood =
+    showMoodIndicator &&
+    !egg &&
+    Boolean(species) &&
+    (activePose === 'standing' || activePose === 'walking' || activePose === 'sitting');
+  const currentMood = canShowMood ? getMoodKind(hunger, happiness) : null;
+
+  // Periodic floating mood pulse above the Digimon's head
+  useEffect(() => {
+    if (!canShowMood || !currentMood) {
+      setIsMoodVisible(false);
+      return;
+    }
+
+    let hideTimeout: number | undefined;
+    let intervalId: number | undefined;
+
+    const triggerPulse = () => {
+      setMoodPulseKey((k) => k + 1);
+      setIsMoodVisible(true);
+      if (hideTimeout) window.clearTimeout(hideTimeout);
+      hideTimeout = window.setTimeout(() => {
+        setIsMoodVisible(false);
+      }, 2200);
+    };
+
+    const initialTimer = window.setTimeout(() => {
+      triggerPulse();
+      const repeatMs = currentMood === 'angry' || currentMood === 'sweat' ? 5200 : 7200;
+      intervalId = window.setInterval(triggerPulse, repeatMs);
+    }, 1200);
+
+    return () => {
+      window.clearTimeout(initialTimer);
+      if (hideTimeout) window.clearTimeout(hideTimeout);
+      if (intervalId) window.clearInterval(intervalId);
+    };
+  }, [canShowMood, currentMood]);
 
   // Listen for custom sprite edits from Sprite Studio
   useEffect(() => {
@@ -501,6 +612,44 @@ export const DigimonSprite: React.FC<DigimonSpriteProps> = ({
           </motion.div>
         )}
 
+        {/* Periodic Mood Indicator Badge (Heart / Angry / Sweat / Question) */}
+        <div
+          className="absolute -top-6 left-1/2 -translate-x-1/2 pointer-events-none z-20"
+        >
+          <div style={{ transform: facing === 'left' ? 'scaleX(-1)' : undefined }}>
+            <AnimatePresence>
+              {isMoodVisible && currentMood && (
+                <motion.div
+                  key={`mood-${currentMood}-${moodPulseKey}`}
+                  initial={{ opacity: 0, y: 4, scale: 0.65 }}
+                  animate={
+                    currentMood === 'angry'
+                      ? { opacity: [0, 1, 1, 0], x: [-2, 2, -2, 2, 0], y: [2, -6, -8, -10], scale: [0.7, 1.15, 1.05, 0.9] }
+                      : currentMood === 'sweat'
+                      ? { opacity: [0, 1, 1, 0], y: [-5, 0, 2, 4], scale: [0.75, 1.08, 1, 0.85] }
+                      : currentMood === 'question'
+                      ? { opacity: [0, 1, 1, 0], y: [2, -6, -8, -10], rotate: [-6, 6, -3, 0], scale: [0.7, 1.1, 1, 0.9] }
+                      : { opacity: [0, 1, 1, 0], y: [3, -7, -11, -15], scale: [0.7, 1.15, 1.05, 0.9] }
+                  }
+                  exit={{ opacity: 0, scale: 0.7, transition: { duration: 0.18 } }}
+                  transition={{ duration: 2.1, ease: 'easeOut' }}
+                  title={
+                    currentMood === 'heart'
+                      ? 'Happy & Well-Fed'
+                      : currentMood === 'angry'
+                      ? 'Hungry or Upset!'
+                      : currentMood === 'sweat'
+                      ? 'Needs Food or Attention'
+                      : 'Curious / Peckish'
+                  }
+                >
+                  <PixelMoodIcon mood={currentMood} />
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+        </div>
+
         {/* Shared-origin frame stacking (no artificial bobbing/shifting for baked 16fps frames) */}
         {(() => {
           const isRotated = currentFrame.rotate === 90 || currentFrame.rotate === -90 || currentFrame.rotate === 270;
@@ -541,12 +690,18 @@ export const DigimonSprite: React.FC<DigimonSpriteProps> = ({
                   : eatBeat === 3
                   ? { x: 0, y: -4, scaleX: 1, scaleY: 1, rotate: 0 }
                   : { x: 0, y: 0, scaleX: 1, scaleY: 1, rotate: 0 })
+              : activePose === 'sleeping'
+              ? { x: 0, y: 0, scaleX: [1, 1.035, 1], scaleY: [1, 1.045, 1], rotate: 0 }
               : { x: 0, y: 0, scaleX: 1, scaleY: 1, rotate: 0 };
 
             return (
               <motion.div
                 animate={chompAnim}
-                transition={{ duration: activePose === 'eating' ? 0.14 : 0.08, ease: 'easeOut' }}
+                transition={
+                  activePose === 'sleeping'
+                    ? { repeat: Infinity, duration: 2.6, ease: 'easeInOut' }
+                    : { duration: activePose === 'eating' ? 0.14 : 0.08, ease: 'easeOut' }
+                }
                 className="relative overflow-visible pixel-art"
                 style={{
                   width: `${stageW}px`,
@@ -607,23 +762,37 @@ export const DigimonSprite: React.FC<DigimonSpriteProps> = ({
             <motion.div
               animate={
                 activePose === 'walking'
-                  ? { y: [0, -2.5, 0, -1] }
+                  ? {
+                      y: [
+                        effectiveGroundOffsetY,
+                        effectiveGroundOffsetY - 2.5,
+                        effectiveGroundOffsetY,
+                        effectiveGroundOffsetY - 1,
+                      ],
+                      x: 0,
+                      scaleX: 1,
+                      scaleY: 1,
+                    }
                   : activePose === 'training'
-                  ? { x: [0, -2, 4, 0] }
-                  : undefined
+                  ? { x: [0, -2, 4, 0], y: effectiveGroundOffsetY, scaleX: 1, scaleY: 1 }
+                  : activePose === 'sleeping'
+                  ? { x: 0, y: 0, scaleX: [1, 1.035, 1], scaleY: [1, 1.045, 1] }
+                  : { x: 0, y: effectiveGroundOffsetY, scaleX: 1, scaleY: 1 }
               }
               transition={
                 activePose === 'walking'
                   ? { repeat: Infinity, duration: 0.56, ease: 'easeInOut' }
                   : activePose === 'training'
                   ? { repeat: Infinity, duration: 0.6 }
-                  : undefined
+                  : activePose === 'sleeping'
+                  ? { repeat: Infinity, duration: 2.6, ease: 'easeInOut' }
+                  : { duration: 0.12 }
               }
               className="relative overflow-hidden pixel-art"
               style={{
                 width: `${displayW}px`,
                 height: `${displayH}px`,
-                transform: `translateY(${effectiveGroundOffsetY}px)`,
+                transformOrigin: 'bottom center',
               }}
             >
               <div
@@ -676,12 +845,19 @@ export const DigimonSprite: React.FC<DigimonSpriteProps> = ({
       <motion.div
         animate={
           activePose === 'walking'
-            ? { y: [0, -3, 0] }
+            ? { y: [0, -3, 0], x: 0, scaleX: 1, scaleY: 1 }
             : activePose === 'training'
-            ? { x: [0, -3, 6, 0] }
-            : { y: [0, -2, 0] }
+            ? { x: [0, -3, 6, 0], y: 0, scaleX: 1, scaleY: 1 }
+            : activePose === 'sleeping'
+            ? { x: 0, y: 0, scaleX: [1, 1.035, 1], scaleY: [1, 1.045, 1] }
+            : { y: [0, -2, 0], x: 0, scaleX: 1, scaleY: 1 }
         }
-        transition={{ duration: 0.3 }}
+        transition={
+          activePose === 'sleeping'
+            ? { repeat: Infinity, duration: 2.6, ease: 'easeInOut' }
+            : { duration: 0.3 }
+        }
+        style={{ transformOrigin: 'bottom center' }}
         className="relative flex items-center justify-center"
       >
         <svg viewBox="0 0 110 100" className="w-20 h-20 overflow-visible pixel-art">

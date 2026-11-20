@@ -12,7 +12,6 @@ import {
 import { DIGI_EGGS, DIGIMON_DATABASE, FURNITURE_SHOP, ROOM_THEMES, SPECIAL_ITEMS } from './data/digidex';
 import { DigiviceHUD } from './components/DigiviceHUD';
 import { PixelMeatIcon, PixelVitaminIcon, PixelPoopIcon } from './components/PixelItemIcons';
-import { FloatingOverlay } from './components/FloatingOverlay';
 import { EggSelectionModal } from './components/EggSelectionModal';
 import { TrainingArena } from './components/TrainingArena';
 import { FoodCatchGame } from './components/FoodCatchGame';
@@ -72,6 +71,15 @@ import {
   setCareAlertsEnabled,
   syncBackgroundCareAlarms,
 } from './utils/careNotifications';
+import {
+  DayNightPreference,
+  DARK_ROOM_THEME_IDS,
+  loadDayNightPref,
+  resolveNightMode,
+  saveDayNightPref,
+  saveDaytimeTheme,
+  syncRoomThemeForLightCycle,
+} from './utils/dayNightCycle';
 import confetti from 'canvas-confetti';
 import { sound, triggerHaptic } from './utils/audio';
 import { 
@@ -101,14 +109,20 @@ import {
   SlidersHorizontal,
   Compass,
   Bell,
-  BellOff
+  BellOff,
+  Moon,
+  Sun
 } from 'lucide-react';
 
 const STORAGE_KEY = 'digipet_vpet_save_v1';
 
 export default function App() {
+  const [dayNightPref, setDayNightPref] = useState<DayNightPreference>(() => loadDayNightPref());
+  const [isNightMode, setIsNightMode] = useState<boolean>(() => resolveNightMode(loadDayNightPref()));
+
   // Master Pet State
   const [pet, setPet] = useState<PetState>(() => {
+    const initialNight = resolveNightMode(loadDayNightPref());
     try {
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
@@ -119,6 +133,10 @@ export default function App() {
           ...(parsed.stage && parsed.stage !== 'egg' ? [validSpeciesId] : []),
         ];
         const unlockedSpeciesIds = saveUnlockedSpeciesIds(loadUnlockedSpeciesIds(seedUnlocked));
+        const syncedTheme = syncRoomThemeForLightCycle(
+          parsed.activeRoomTheme || 'file-island',
+          initialNight
+        );
         return {
           playerName: '',
           effort: 0,
@@ -133,6 +151,7 @@ export default function App() {
           isDead: false,
           neglectTicks: 0,
           ...parsed,
+          activeRoomTheme: syncedTheme,
           stageEnteredAt: parsed.stageEnteredAt || Date.now(),
           lastHungerDropAt: parsed.lastHungerDropAt || parsed.lastCareCheck || Date.now(),
           lastPoopAt: parsed.lastPoopAt || parsed.lastCareCheck || Date.now(),
@@ -175,7 +194,7 @@ export default function App() {
       digiBits: 150,
       bigMeatStock: 8,
       vitaminStock: 5,
-      activeRoomTheme: 'file-island',
+      activeRoomTheme: syncRoomThemeForLightCycle('file-island', initialNight),
       placedFurniture: [
         { instanceId: 'init-1', furnitureId: 'meat-grill', x: 28, y: 68 },
         { instanceId: 'init-2', furnitureId: 'cozy-cushion', x: 74, y: 72 },
@@ -197,7 +216,6 @@ export default function App() {
   const currentEgg: DigiEggInfo = DIGI_EGGS.find((e) => e.id === pet.eggId) || DIGI_EGGS[0];
 
   // Active UI Views & Modals
-  const [isOverlayMode, setIsOverlayMode] = useState<boolean>(false);
   const [isEggModalOpen, setIsEggModalOpen] = useState<boolean>(false);
   const [isTrainingOpen, setIsTrainingOpen] = useState<boolean>(false);
   const [isFoodGameOpen, setIsFoodGameOpen] = useState<boolean>(false);
@@ -226,6 +244,46 @@ export default function App() {
     window.addEventListener(GRID_RATIOS_CHANGED_EVENT, syncGridFlag);
     return () => window.removeEventListener(GRID_RATIOS_CHANGED_EVENT, syncGridFlag);
   }, []);
+
+  // Day/Night Cycle: auto-evaluate evening hours on resume/focus/minute tick
+  const manualThemeOverrideRef = useRef<boolean>(false);
+  useEffect(() => {
+    const evaluateCycle = () => {
+      const nextNight = resolveNightMode(dayNightPref);
+      setIsNightMode((prevNight) => {
+        if (prevNight !== nextNight) {
+          manualThemeOverrideRef.current = false;
+        }
+        return nextNight;
+      });
+      if (!manualThemeOverrideRef.current) {
+        setPet((prev) => {
+          const synced = syncRoomThemeForLightCycle(
+            prev.activeRoomTheme || 'file-island',
+            nextNight
+          );
+          return synced !== prev.activeRoomTheme
+            ? { ...prev, activeRoomTheme: synced }
+            : prev;
+        });
+      }
+    };
+
+    evaluateCycle();
+    const timer = window.setInterval(evaluateCycle, 60_000);
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        evaluateCycle();
+      }
+    };
+    window.addEventListener('focus', evaluateCycle);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.clearInterval(timer);
+      window.removeEventListener('focus', evaluateCycle);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [dayNightPref]);
 
   // Background Auto-Updater check on startup (Native APK builds only — Web app is always up to date)
   useEffect(() => {
@@ -381,12 +439,6 @@ export default function App() {
   const handleLaunchFloatOverApps = async () => {
     sound.playButton();
     try {
-      if (isOverlayMode) {
-        setIsOverlayMode(false);
-        showNotification('Docked Digimon back into Digivice.');
-        return;
-      }
-
       if (!requireAliveAndHatched()) return;
 
       if (Capacitor.isNativePlatform()) {
@@ -720,7 +772,7 @@ export default function App() {
       return;
     }
 
-    triggerEvolution(evoTiming.nextId, { silentForOverlay: isOverlayMode });
+    triggerEvolution(evoTiming.nextId);
   }, [
     pet.isDead,
     pet.evolutionLocked,
@@ -732,7 +784,6 @@ export default function App() {
     currentEgg.crestName,
     currentEgg.crestColor,
     currentEgg.baby1Id,
-    isOverlayMode,
     isTrainingOpen,
     isFoodGameOpen,
     isColosseumOpen,
@@ -1234,28 +1285,6 @@ export default function App() {
     showNotification(`Purchased item from Bazaar! 🪙 (-${cost} Bits)`);
   };
 
-  const handleBuySpecialItem = (itemId: SpecialItemId, cost: number) => {
-    if (pet.digiBits < cost) {
-      sound.playAlert();
-      showNotification('Not enough DigiBits to purchase this Relic!');
-      return;
-    }
-    const relic = SPECIAL_ITEMS[itemId];
-    setPet((prev) => {
-      const existing = prev.ownedSpecialItems || [];
-      if (existing.includes(itemId)) return prev;
-      const nextOwned = [...existing, itemId];
-      const shouldAutoEquip = relic && prev.eggId === relic.eggId;
-      return {
-        ...prev,
-        digiBits: prev.digiBits - cost,
-        ownedSpecialItems: nextOwned,
-        equippedSpecialItem: shouldAutoEquip ? itemId : prev.equippedSpecialItem,
-      };
-    });
-    showNotification(`Acquired ${relic?.shortName || itemId}! ✨ Ready in Special Item slot.`);
-  };
-
   const handleEquipSpecialItem = (itemId: SpecialItemId | null) => {
     setPet((prev) => ({
       ...prev,
@@ -1270,10 +1299,35 @@ export default function App() {
   };
 
   const handleChangeTheme = (themeId: string) => {
+    manualThemeOverrideRef.current = true;
+    if (!DARK_ROOM_THEME_IDS.has(themeId)) {
+      saveDaytimeTheme(themeId);
+    }
     setPet((prev) => ({
       ...prev,
       activeRoomTheme: themeId,
     }));
+  };
+
+  const handleCycleDayNight = () => {
+    const order: DayNightPreference[] = ['auto', 'night', 'day'];
+    const nextPref = order[(order.indexOf(dayNightPref) + 1) % order.length];
+    saveDayNightPref(nextPref);
+    setDayNightPref(nextPref);
+    manualThemeOverrideRef.current = false;
+    const nextNight = resolveNightMode(nextPref);
+    setIsNightMode(nextNight);
+    setPet((prev) => ({
+      ...prev,
+      activeRoomTheme: syncRoomThemeForLightCycle(prev.activeRoomTheme || 'file-island', nextNight),
+    }));
+    showNotification(
+      nextPref === 'auto'
+        ? `🕒 Day/Night Cycle set to AUTO (${nextNight ? 'Evening Night' : 'Daytime'})`
+        : nextPref === 'night'
+        ? '🌙 Evening Mode enabled — UI dimmed & dark room theme active.'
+        : '☀️ Daylight Mode enabled — Full brightness & daytime room restored.'
+    );
   };
 
   const handleUpdatePlayerName = (name: string) => {
@@ -1392,52 +1446,35 @@ export default function App() {
   const careNeeds = evaluateCareNeeds(pet, evoNowMs);
 
   return (
-    <div className="relative min-h-screen w-full bg-slate-950 text-slate-100 flex flex-col justify-between font-display overflow-x-hidden selection:bg-amber-400 selection:text-slate-950">
+    <div
+      className={`relative min-h-screen w-full text-slate-100 flex flex-col justify-between font-display overflow-x-hidden selection:bg-amber-400 selection:text-slate-950 transition-colors duration-700 ${
+        isNightMode ? 'bg-[#02040a]' : 'bg-slate-950'
+      }`}
+    >
       
-      {/* Dynamic Background Mesh / Digital Grid */}
-      <div className="fixed inset-0 pointer-events-none opacity-20">
-        <div className="absolute inset-0 bg-[radial-gradient(#38bdf8_1px,transparent_1px)] [background-size:24px_24px]" />
+      {/* Dynamic Background Mesh / Digital Grid (shifts to quiet evening starfield at night) */}
+      <div className={`fixed inset-0 pointer-events-none transition-opacity duration-700 ${isNightMode ? 'opacity-30' : 'opacity-20'}`}>
+        <div
+          className={`absolute inset-0 ${
+            isNightMode
+              ? 'bg-[radial-gradient(#818cf8_1px,transparent_1px)] [background-size:28px_28px]'
+              : 'bg-[radial-gradient(#38bdf8_1px,transparent_1px)] [background-size:24px_24px]'
+          }`}
+        />
       </div>
 
-      {/* Hellopet Floating Screen Overlay (Active when toggled) */}
-      <FloatingOverlay
-        pet={pet}
-        species={currentSpecies}
-        egg={pet.stage === 'egg' ? currentEgg : undefined}
-        onFeedMeat={handleFeedMeat}
-        onGiveVitamin={handleGiveVitamin}
-        onCleanPoop={handleCleanPoop}
-        onPet={handlePetDigimon}
-        onForageReward={(reward) => {
-          if (reward === 'meat') {
-            setPet((prev) => ({
-              ...prev,
-              bigMeatStock: prev.bigMeatStock + 1,
-              happiness: Math.min(100, prev.happiness + 4),
-            }));
-            showNotification(`${pet.nickname?.trim() || currentSpecies?.name || 'Digimon'} returned from foraging with +1 Big Meat!`);
-          } else {
-            setPet((prev) => ({
-              ...prev,
-              happiness: Math.min(100, prev.happiness + 10),
-            }));
-            showNotification(`${pet.nickname?.trim() || currentSpecies?.name || 'Digimon'} visited friends! (+10 Happiness)`);
-          }
-        }}
-        onOpenRoom={() => setIsRoomOpen(true)}
-        onOpenColosseum={() => setIsColosseumOpen(true)}
-        onOpenDigivice={() => setIsOverlayMode(false)}
-        onOpenTraining={() => setIsTrainingOpen(true)}
-        onOpenNativePip={() => setIsNativePipOpen(true)}
-        onUpdatePlayerName={handleUpdatePlayerName}
-        isOverlayActive={isOverlayMode}
-        onToggleOverlay={() => setIsOverlayMode(false)}
-      />
-
+      {/* Subtle Nighttime Ambient Dimming Veil */}
+      {isNightMode && (
+        <div className="fixed inset-0 pointer-events-none z-[35] bg-[#020512]/28 transition-opacity duration-700" />
+      )}
 
       {/* TOP APP HEADER BAR (MOBILE-NATIVE & NOTCH SAFE) */}
       <header
-        className="sticky top-0 z-40 border-b border-slate-800/80 bg-slate-900/95 backdrop-blur-md px-3.5 py-2 flex items-center justify-between gap-2 android-safe-top-bar"
+        className={`sticky top-0 z-40 border-b backdrop-blur-md px-3.5 py-2 flex items-center justify-between gap-2 android-safe-top-bar transition-all duration-700 ${
+          isNightMode
+            ? 'border-indigo-950/90 bg-slate-950/95 brightness-[0.88]'
+            : 'border-slate-800/80 bg-slate-900/95'
+        }`}
         style={extraTopPad > 0 ? { paddingTop: `calc(max(calc(env(safe-area-inset-top, 0px) + 0.5rem), 2.75rem) + ${extraTopPad}px)` } : undefined}
       >
         {/* Left: Crest Badge + Name + Stage + Quick Vitals */}
@@ -1489,15 +1526,11 @@ export default function App() {
               triggerHaptic('medium');
               handleLaunchFloatOverApps();
             }}
-            className={`px-2.5 py-1.5 rounded-xl font-pixel text-[9px] font-bold shadow-md flex items-center gap-1 cursor-pointer active:scale-95 transition-all ${
-              isOverlayMode
-                ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-emerald-500/25 ring-1 ring-emerald-400'
-                : 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white shadow-purple-500/25'
-            }`}
-            title={isOverlayMode ? 'Dock Digimon back to Digivice' : 'Float Digimon on screen'}
+            className="px-2.5 py-1.5 rounded-xl font-pixel text-[9px] font-bold shadow-md flex items-center gap-1 cursor-pointer active:scale-95 transition-all bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white shadow-purple-500/25"
+            title="Float Digimon over all apps"
           >
-            <span>{isOverlayMode ? '📟' : '📱'}</span>
-            <span>{isOverlayMode ? 'DOCK' : 'FLOAT'}</span>
+            <span>📱</span>
+            <span>FLOAT</span>
           </motion.button>
 
           {/* Reset / Hatch New Egg */}
@@ -1578,7 +1611,11 @@ export default function App() {
       </AnimatePresence>
 
       {/* MAIN VIEWPORT: EDGE-TO-EDGE MOBILE & TABLET LAYOUT */}
-      <main className="flex-1 flex flex-col items-center justify-start px-0 py-2 relative z-10 max-w-2xl mx-auto w-full pb-24">
+      <main
+        className={`flex-1 flex flex-col items-center justify-start px-0 py-2 relative z-10 max-w-2xl mx-auto w-full pb-24 transition-[filter] duration-700 ${
+          isNightMode ? 'brightness-[0.84] saturate-[0.9]' : ''
+        }`}
+      >
         
         {/* Prominent Auto-Update Available Callout Banner (Native Android APK only — Web is always up-to-date) */}
         {Capacitor.isNativePlatform() && hasUpdateAvailable && updateManifest && (
@@ -1854,6 +1891,7 @@ export default function App() {
           onEvolveTrigger={() => triggerEvolution()}
           onResetEgg={() => setIsEggModalOpen(true)}
           canEvolve={evolutionCheck.can && pet.stage !== 'egg'}
+          isNightTime={isNightMode}
           externalAction={hudAction}
         />
 
@@ -2224,6 +2262,31 @@ export default function App() {
                 <button
                   onClick={() => {
                     sound.playButton();
+                    handleCycleDayNight();
+                  }}
+                  className={`p-3 border rounded-2xl flex items-center gap-2.5 cursor-pointer transition-colors ${
+                    isNightMode
+                      ? 'bg-indigo-950/75 hover:bg-indigo-900/80 border-indigo-500/50 text-indigo-200'
+                      : 'bg-slate-800 hover:bg-amber-950/40 border-amber-500/40 text-amber-200'
+                  }`}
+                >
+                  {isNightMode ? (
+                    <Moon className="w-5 h-5 text-indigo-300 shrink-0" />
+                  ) : (
+                    <Sun className="w-5 h-5 text-amber-300 shrink-0" />
+                  )}
+                  <span className="truncate text-xs">
+                    {dayNightPref === 'auto'
+                      ? `CYCLE: AUTO (${isNightMode ? 'NIGHT' : 'DAY'})`
+                      : dayNightPref === 'night'
+                      ? 'CYCLE: NIGHT MODE'
+                      : 'CYCLE: DAY MODE'}
+                  </span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    sound.playButton();
                     setIsMoreSheetOpen(false);
                     setIsEggModalOpen(true);
                   }}
@@ -2239,7 +2302,13 @@ export default function App() {
       </AnimatePresence>
 
       {/* NATIVE MOBILE FIXED BOTTOM DOCK */}
-      <nav className="fixed bottom-0 left-0 right-0 z-40 bg-slate-900/95 backdrop-blur-md border-t border-slate-800 pb-[max(calc(env(safe-area-inset-bottom,0px)+0.4rem),0.6rem)] pt-1.5 px-2">
+      <nav
+        className={`fixed bottom-0 left-0 right-0 z-40 backdrop-blur-md border-t pb-[max(calc(env(safe-area-inset-bottom,0px)+0.4rem),0.6rem)] pt-1.5 px-2 transition-all duration-700 ${
+          isNightMode
+            ? 'bg-slate-950/95 border-indigo-950/90 brightness-[0.88]'
+            : 'bg-slate-900/95 border-slate-800'
+        }`}
+      >
         <div className="max-w-md mx-auto grid grid-cols-7 gap-1 items-center text-center">
           
           {/* 1. DIGIVICE */}
@@ -2402,6 +2471,9 @@ export default function App() {
         onRemoveFurniture={handleRemoveFurniture}
         onUpdateFurniturePosition={handleUpdateFurniturePosition}
         onChangeTheme={handleChangeTheme}
+        isNightTime={isNightMode}
+        dayNightPref={dayNightPref}
+        onCycleDayNight={handleCycleDayNight}
       />
 
       <DigidexModal
@@ -2428,7 +2500,6 @@ export default function App() {
           setIsColosseumOpen(true);
         }}
         onOpenDigidex={() => setIsDigidexOpen(true)}
-        onOpenShop={() => setIsShopOpen(true)}
         onEquipSpecialItem={handleEquipSpecialItem}
         onUpdatePlayerName={handleUpdatePlayerName}
         onUpdateNickname={handleUpdateNickname}
@@ -2439,8 +2510,6 @@ export default function App() {
         onClose={() => setIsShopOpen(false)}
         pet={pet}
         onBuyItem={handleBuyShopItem}
-        onBuySpecialItem={handleBuySpecialItem}
-        onEquipSpecialItem={handleEquipSpecialItem}
       />
 
       <PwaInstallModal
@@ -2457,10 +2526,6 @@ export default function App() {
         onOpenGridAlignment={() => {
           setIsNativePipOpen(false);
           setIsGridModalOpen(true);
-        }}
-        onStartInAppOverlay={() => {
-          setIsOverlayMode(true);
-          showNotification(`✨ ${currentSpecies?.name || 'Digimon'} is now roaming on screen! Drag to move.`);
         }}
       />
 

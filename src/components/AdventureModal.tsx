@@ -232,12 +232,12 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
         setOpponentActionAnim('attack');
         setOpponentEffect('lunge');
 
-        const movePower = Math.round(opponentFighter.signatureMove.power * (0.8 + activeWave.statMultiplier * 0.25));
+        const movePower = Math.round(opponentFighter.signatureMove.power * (0.68 + activeWave.statMultiplier * 0.2));
         const rawDamage = Math.max(
-          10,
-          Math.floor(movePower - (isDefending ? playerFighter.def * 0.8 : playerFighter.def * 0.4))
+          8,
+          Math.floor(movePower - (isDefending ? playerFighter.def * 0.8 : playerFighter.def * 0.38))
         );
-        const finalDamage = isDefending ? Math.floor(rawDamage * 0.4) : rawDamage;
+        const finalDamage = isDefending ? Math.max(3, Math.floor(rawDamage * 0.4)) : rawDamage;
 
         setOpponentFighter((prev) => (prev ? { ...prev, sp: prev.sp - 50 } : null));
 
@@ -266,10 +266,10 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
         setOpponentEffect('lunge');
 
         const rawDamage = Math.max(
-          7,
-          Math.floor(opponentFighter.atk * 0.82 - (isDefending ? playerFighter.def * 0.7 : playerFighter.def * 0.3))
+          5,
+          Math.floor(opponentFighter.atk * 0.68 - (isDefending ? playerFighter.def * 0.7 : playerFighter.def * 0.32))
         );
-        const finalDamage = isDefending ? Math.floor(rawDamage * 0.4) : rawDamage;
+        const finalDamage = isDefending ? Math.max(2, Math.floor(rawDamage * 0.4)) : rawDamage;
 
         setOpponentFighter((prev) => (prev ? { ...prev, sp: Math.min(100, prev.sp + 18) } : null));
 
@@ -395,8 +395,8 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
     setPlayerActionAnim('attack');
     setPlayerEffect('lunge');
 
-    const mult = isCharged ? 1.55 : 1.0;
-    const damage = Math.max(14, Math.floor(playerFighter.atk * 0.88 * mult - opponentFighter.def * 0.35));
+    const mult = isCharged ? 1.6 : 1.0;
+    const damage = Math.max(14, Math.floor(playerFighter.atk * 0.96 * mult - opponentFighter.def * 0.28));
 
     setPlayerFighter((prev) => (prev ? { ...prev, sp: Math.min(100, prev.sp + 20) } : null));
     setIsCharged(false);

@@ -110,7 +110,7 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
       crest: species.crest || 'courage',
       currentHp: baseHp,
       maxHp: baseHp,
-      sp: 30,
+      sp: 20,
       atk,
       def,
       spd: species.baseSpd,
@@ -118,19 +118,19 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
       isPlayer: true,
     };
 
-    // Pair against an evenly matched rival scaled proportionally to the player's stage and training
+    // Pair against an evenly matched rival scaled slightly below player power for brisk 3-4 turn matches
     const opponentKeys = Object.keys(DIGIMON_DATABASE).filter(
       (k) => DIGIMON_DATABASE[k].stage === pet.stage && k !== species.id
     );
     const oppId = oppSpeciesId || (opponentKeys.length > 0 ? opponentKeys[Math.floor(Math.random() * opponentKeys.length)] : 'greymon');
     const oppSpecies = DIGIMON_DATABASE[oppId] || DIGIMON_DATABASE['agumon'];
 
-    const hpVariance = 0.94 + Math.random() * 0.14;
-    const oppHp = Math.max(oppSpecies.baseHp, Math.round(baseHp * hpVariance));
-    const oppAtk = Math.round(Math.max(oppSpecies.baseAtk * 0.92, atk * 0.78));
-    const oppDef = Math.round(Math.max(oppSpecies.baseDef * 0.85, def * 0.75));
+    const hpVariance = 0.8 + Math.random() * 0.1;
+    const oppHp = Math.max(Math.round(oppSpecies.baseHp * 0.85), Math.round(baseHp * hpVariance));
+    const oppAtk = Math.round(Math.max(oppSpecies.baseAtk * 0.72, atk * 0.62));
+    const oppDef = Math.round(Math.max(oppSpecies.baseDef * 0.65, def * 0.6));
     const scaledSigPower = Math.round(
-      Math.max(oppSpecies.signatureMove.power * 0.85, species.signatureMove.power * 0.78)
+      Math.max(oppSpecies.signatureMove.power * 0.68, species.signatureMove.power * 0.64)
     );
 
     const opponent: BattleFighter = {
@@ -194,7 +194,7 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
     const timer = setTimeout(() => {
       // Opponent chooses move
       const canUseSpecial = opponentFighter.sp >= 50;
-      const shouldUseSpecial = canUseSpecial && Math.random() < 0.55;
+      const shouldUseSpecial = canUseSpecial && Math.random() < 0.45;
 
       if (shouldUseSpecial) {
         // Special move
@@ -203,14 +203,14 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
         setOpponentActionAnim('attack');
         setOpponentEffect('lunge');
         const rawDamage = Math.max(
-          10,
+          8,
           Math.floor(
-            opponentFighter.signatureMove.power * 0.78 +
-              opponentFighter.atk * 0.14 -
-              (isDefending ? playerFighter.def * 0.7 : playerFighter.def * 0.35)
+            opponentFighter.signatureMove.power * 0.65 +
+              opponentFighter.atk * 0.1 -
+              (isDefending ? playerFighter.def * 0.65 : playerFighter.def * 0.3)
           )
         );
-        const finalDamage = isDefending ? Math.max(4, Math.floor(rawDamage * 0.4)) : rawDamage;
+        const finalDamage = isDefending ? Math.max(3, Math.floor(rawDamage * 0.4)) : rawDamage;
 
         setOpponentFighter((prev) => prev ? { ...prev, sp: prev.sp - 50 } : null);
 
@@ -243,8 +243,8 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
         setOpponentActionAnim('attack');
         setOpponentEffect('lunge');
         const rawDamage = Math.max(
-          6,
-          Math.floor(opponentFighter.atk * 0.72 - (isDefending ? playerFighter.def * 0.65 : playerFighter.def * 0.32))
+          5,
+          Math.floor(opponentFighter.atk * 0.6 - (isDefending ? playerFighter.def * 0.6 : playerFighter.def * 0.28))
         );
         const finalDamage = isDefending ? Math.max(2, Math.floor(rawDamage * 0.4)) : rawDamage;
 
@@ -310,8 +310,8 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
     setPlayerActionAnim('attack');
     setPlayerEffect('lunge');
 
-    const mult = isCharged ? 1.55 : 1.0;
-    const damage = Math.max(10, Math.floor((playerFighter.atk * 0.95 * mult) - (opponentFighter.def * 0.35)));
+    const mult = isCharged ? 1.6 : 1.0;
+    const damage = Math.max(12, Math.floor((playerFighter.atk * 0.88 * mult) - (opponentFighter.def * 0.25)));
 
     setPlayerFighter((prev) => prev ? { ...prev, sp: Math.min(100, prev.sp + 20) } : null);
     setIsCharged(false);
@@ -354,10 +354,10 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
     setPlayerActionAnim('attack');
     setPlayerEffect('lunge');
 
-    const mult = isCharged ? 1.65 : 1.25;
+    const mult = isCharged ? 1.75 : 1.3;
     const damage = Math.max(
-      18,
-      Math.floor((playerFighter.signatureMove.power * mult) + (playerFighter.atk * 0.25) - (opponentFighter.def * 0.35))
+      24,
+      Math.floor((playerFighter.signatureMove.power * mult) + (playerFighter.atk * 0.28) - (opponentFighter.def * 0.25))
     );
 
     setPlayerFighter((prev) => prev ? { ...prev, sp: prev.sp - 50 } : null);

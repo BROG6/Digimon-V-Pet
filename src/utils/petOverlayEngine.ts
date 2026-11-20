@@ -136,45 +136,76 @@ export function getGridRowRatios(presetId?: GridLayoutPresetId): number[] {
   return getDefaultGridRowRatios(id);
 }
 
-const AERIAL_SPECIES_IDS = new Set<string>([
-  'poyomon',
-  'patamon',
-  'angemon',
-  'magnaangemon',
-  'seraphimon',
-  'angewomon',
-  'magnadramon',
-  'biyomon',
+const FLAPPING_WINGS_SPECIES_IDS = new Set<string>([
+  // Flying / flapping birds (excludes ground-running Biyomon, Hawkmon, Falcomon, Muchomon, Kokatorimon, Akatorimon, Kiwimon, Penmon)
+  'soundbirdmon',
   'birdramon',
+  'saberdramon',
+  'aquilamon',
   'garudamon',
+  'karatenmon',
+  'hippogryphonmon',
+  'parrotmon',
   'phoenixmon',
+  'crossmon',
+  'valkyrimon',
+  'ravmon',
+  // Flapping angels, demons, bats & winged fairies
+  'patamon',
+  'tsukaimon',
+  'picodevimon',
+  'angemon',
+  'devimon',
+  'darcmon',
+  'neondevimon',
+  'magnaangemon',
+  'angewomon',
+  'ladydevimon',
+  'seraphimon',
+  'ophanimon',
+  'lilithmon',
+  'lillymon',
+  'lilamon',
+  'piximon',
+  'hudiemon',
+  'petermon',
+  'cherubimonvice',
+  'cherubimonvirtue',
+  // Flapping insects
   'tentomon',
   'kabuterimon',
+  'kuwagamon',
+  'flymon',
   'megakabuterimon',
+  'okuwamon',
   'herculeskabuterimon',
-  'lillymon',
-  'rosemon',
-  'metalgreymon',
-  'wargreymon',
+  'dinobeemon',
+  'stingmon',
+  'jewelbeemon',
+  'banchostingmon',
+  // Flapping winged dragons & chimeras (excludes ground-running WarGreymon, MetalGreymon, ExVeemon, etc.)
+  'devidramon',
+  'wingdramon',
+  'aeroveedramon',
+  'megadramon',
+  'gigadramon',
+  'kimeramon',
+  'imperialdramondragonmode',
+  'magnadramon',
 ]);
 
 /**
- * Flying / Floating Digimon (Patamon, winged lines, and Ultimate/Mega forms)
- * bypass surface gravity and navigate via 360-degree waypoint vector flight.
+ * Only Digimon whose sprites visibly flap wings hover/fly across the screen.
+ * Bipeds/quadrupeds that run on feet (e.g. WarGreymon, MetalGreymon, Biyomon)
+ * walk and jump along the app icon grid.
  */
-export function isFlyingSpecies(species?: Pick<DigimonSpecies, 'id' | 'stage' | 'type'> | null): boolean {
+export function isFlyingSpecies(
+  species?: Pick<DigimonSpecies, 'id' | 'spriteId' | 'stage' | 'type'> | null
+): boolean {
   if (!species) return false;
-  if (species.stage === 'ultimate' || species.stage === 'mega') return true;
-  if (AERIAL_SPECIES_IDS.has(species.id)) return true;
-  const t = (species.type || '').toLowerCase();
-  return (
-    t.includes('bird') ||
-    t.includes('angel') ||
-    t.includes('fairy') ||
-    t.includes('insect') ||
-    t.includes('sky dragon') ||
-    t.includes('holy dragon')
-  );
+  if (FLAPPING_WINGS_SPECIES_IDS.has(species.id)) return true;
+  if (species.spriteId && FLAPPING_WINGS_SPECIES_IDS.has(species.spriteId)) return true;
+  return false;
 }
 
 /**

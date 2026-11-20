@@ -195,6 +195,8 @@ export interface PetState {
   lastHungerDropAt?: number;
   lastPoopAt?: number;
   careCallStartedAt?: number;
+  isFrozen?: boolean;
+  frozenAt?: number;
   adventureClearedWave?: Record<string, number>;
   battleExp?: number;
   unlockedSpeciesIds?: string[];

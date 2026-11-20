@@ -64,12 +64,13 @@ import {
   recordUnlockedSpeciesId,
   saveUnlockedSpeciesIds,
 } from './utils/evolutionEngine';
-import { advanceCareState, evaluateCareNeeds } from './utils/carePacing';
+import { advanceCareState, computeFutureCareAlertSchedule, evaluateCareNeeds } from './utils/carePacing';
 import {
   getCareAlertsEnabled,
   requestCareNotificationPermission,
   sendCareSystemNotification,
   setCareAlertsEnabled,
+  syncBackgroundCareAlarms,
 } from './utils/careNotifications';
 import confetti from 'canvas-confetti';
 import { sound, triggerHaptic } from './utils/audio';
@@ -555,20 +556,56 @@ export default function App() {
     tracker.stage = pet.stage;
   }, [pet.hunger, pet.poopCount, pet.isSick, pet.isDead, pet.stage, pet.nickname, pet.deathReason, currentSpecies?.name, alertsEnabled]);
 
+  // Arm / update future OS background notifications (fires only when app is closed or backgrounded)
+  useEffect(() => {
+    const monName = pet.nickname?.trim() || currentSpecies?.name || 'Your Digimon';
+    const armAlarms = () => {
+      const now = Date.now();
+      const schedule = computeFutureCareAlertSchedule(pet, now);
+      syncBackgroundCareAlarms({
+        enabled: alertsEnabled,
+        petName: monName,
+        schedule,
+      });
+    };
+
+    armAlarms();
+    const handleVisibility = () => {
+      armAlarms();
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [
+    alertsEnabled,
+    pet.isDead,
+    pet.isFrozen,
+    pet.isSleeping,
+    pet.lightsOff,
+    pet.stage,
+    pet.hunger,
+    pet.poopCount,
+    pet.lastHungerDropAt,
+    pet.lastPoopAt,
+    pet.nickname,
+    currentSpecies?.name,
+  ]);
+
   const [evoNowMs, setEvoNowMs] = useState<number>(() => Date.now());
   const evoElig = checkEvolutionEligibility(pet, currentSpecies);
   const evoTiming = computeNaturalEvoTiming(pet, currentSpecies, evoNowMs);
   const evolutionCheck = { can: evoTiming.readyToEvolve, nextId: evoElig.nextId };
 
-  // Continuous 1s clock tick while Pendulum Ver. 20th timer is active (ticks even during sleep)
+  // Continuous 1s clock tick while Pendulum Ver. 20th timer is active (pauses in Cold Mode / Fridge)
   useEffect(() => {
-    if (pet.isDead || pet.evolutionLocked || pet.stage === 'mega') return;
+    if (pet.isDead || pet.evolutionLocked || pet.stage === 'mega' || pet.isFrozen) return;
     setEvoNowMs(Date.now());
     const id = setInterval(() => {
       setEvoNowMs(Date.now());
     }, 1000);
     return () => clearInterval(id);
-  }, [pet.isDead, pet.evolutionLocked, pet.stage, pet.currentSpeciesId, pet.stageEnteredAt]);
+  }, [pet.isDead, pet.evolutionLocked, pet.stage, pet.isFrozen, pet.currentSpeciesId, pet.stageEnteredAt]);
 
   // Lock evolution permanently for this lifetime if Pendulum Ver. 20th deadline expired without meeting requirements
   useEffect(() => {
@@ -608,7 +645,7 @@ export default function App() {
 
   // Automatic Egg Hatching Animation -> Baby I + Pendulum Ver. 20th Automatic Evolution
   useEffect(() => {
-    if (pet.isDead || pet.evolutionLocked) return;
+    if (pet.isDead || pet.evolutionLocked || pet.isFrozen) return;
 
     // 1. Egg -> Fresh hatching sequence on the Digivice
     if (pet.stage === 'egg' && evoTiming.readyToEvolve && !eggHatchInProgressRef.current) {
@@ -680,6 +717,7 @@ export default function App() {
   }, [
     pet.isDead,
     pet.evolutionLocked,
+    pet.isFrozen,
     pet.stage,
     evoTiming.readyToEvolve,
     evoTiming.nextId,
@@ -800,12 +838,17 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [pet.currentSpeciesId, pet.playerName, pet.hunger, pet.happiness, pet.bigMeatStock, pet.vitaminStock, pet.isSleeping, pet.lightsOff, pet.evoGoalMetAt, pet.stageEnteredAt, pet.evolutionLocked, pet.isDead]);
+  }, [pet.currentSpeciesId, pet.playerName, pet.hunger, pet.happiness, pet.bigMeatStock, pet.vitaminStock, pet.isSleeping, pet.lightsOff, pet.isFrozen, pet.evoGoalMetAt, pet.stageEnteredAt, pet.evolutionLocked, pet.isDead]);
 
   const requireAliveAndHatched = (): boolean => {
     if (pet.isDead) {
       sound.playAlert();
       showNotification('🪦 Your Digimon passed away! Hatch a new Digi-Egg to continue.');
+      return false;
+    }
+    if (pet.isFrozen) {
+      sound.playButton();
+      showNotification('❄️ Cold Mode (Fridge) is active! Unfreeze under LIGHT to resume.');
       return false;
     }
     if (pet.stage === 'egg') {
@@ -906,6 +949,49 @@ export default function App() {
       lastHungerDropAt: now,
       lastPoopAt: now,
     }));
+  };
+
+  const handleToggleFridge = () => {
+    if (pet.isDead) {
+      sound.playAlert();
+      showNotification('🪦 Hatch a new Digi-Egg to use Cold Mode.');
+      return;
+    }
+    sound.playButton();
+    const now = Date.now();
+    const monName = pet.nickname?.trim() || currentSpecies?.name || 'Digimon';
+    if (!pet.isFrozen) {
+      setPet((prev) => ({
+        ...prev,
+        isFrozen: true,
+        frozenAt: now,
+        lightsOff: false,
+        isSleeping: false,
+        lastCareCheck: now,
+        lastHungerDropAt: now,
+        lastPoopAt: now,
+      }));
+      showNotification(`❄️ Fridge (Cold Mode) ON — ${monName} is safely paused!`);
+    } else {
+      setPet((prev) => {
+        const pausedMs = prev.frozenAt ? Math.max(0, now - prev.frozenAt) : 0;
+        return {
+          ...prev,
+          isFrozen: false,
+          frozenAt: undefined,
+          stageEnteredAt: (prev.stageEnteredAt || now) + pausedMs,
+          birthTimestamp: (prev.birthTimestamp || now) + pausedMs,
+          sickSince: prev.sickSince ? prev.sickSince + pausedMs : undefined,
+          careCallStartedAt: prev.careCallStartedAt ? prev.careCallStartedAt + pausedMs : undefined,
+          evoGoalMetAt: prev.evoGoalMetAt ? prev.evoGoalMetAt + pausedMs : undefined,
+          lastCareCheck: now,
+          lastHungerDropAt: now,
+          lastPoopAt: now,
+        };
+      });
+      setEvoNowMs(now);
+      showNotification(`☀️ Fridge OFF — ${monName} resumed!`);
+    }
   };
 
   const handleCureSick = () => {
@@ -1232,6 +1318,8 @@ export default function App() {
       isSick: false,
       isSleeping: false,
       lightsOff: false,
+      isFrozen: false,
+      frozenAt: undefined,
       poopCount: 0,
       careMistakes: 0,
       battlesWon: 0,
@@ -1539,6 +1627,26 @@ export default function App() {
               </button>
             </div>
           </div>
+        ) : pet.isFrozen ? (
+          <div className="w-full px-2.5 sm:px-4">
+            <div className="w-full mb-2.5 py-2 px-3.5 rounded-2xl border border-cyan-400/60 bg-sky-950/85 text-cyan-100 flex items-center justify-between gap-2 shadow-md">
+              <div className="min-w-0">
+                <div className="font-pixel text-[10px] text-cyan-300 flex items-center gap-1.5">
+                  <span>❄️</span>
+                  <span>COLD MODE (FRIDGE ACTIVE)</span>
+                </div>
+                <div className="text-[11px] font-chakra text-cyan-100/80 truncate mt-0.5">
+                  Game state paused — no hunger drain, poop, or care mistakes.
+                </div>
+              </div>
+              <button
+                onClick={handleToggleFridge}
+                className="px-3 py-1.5 rounded-xl bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-pixel text-[9px] font-bold shrink-0 cursor-pointer active:scale-95"
+              >
+                UNFREEZE
+              </button>
+            </div>
+          </div>
         ) : pet.stage === 'egg' ? (
           <div className="w-full px-2.5 sm:px-4">
             <div className="w-full mb-2.5 bg-slate-900/95 border border-cyan-500/40 text-cyan-200 py-2 px-3.5 rounded-2xl font-pixel text-[10px] flex items-center justify-between gap-2 shadow-md">
@@ -1561,7 +1669,7 @@ export default function App() {
               <span className="text-slate-400 text-[9px]">VIEW STATS »</span>
             </button>
           </div>
-        ) : evolutionCheck.can ? (
+        ) : evolutionCheck.can && (
           <div className="w-full px-2.5 sm:px-4">
             <motion.button
               animate={{ scale: [1, 1.03, 1] }}
@@ -1576,27 +1684,10 @@ export default function App() {
               <span>⚡ DIGIVOLUTION READY! (TAP TO EVOLVE) ⚡</span>
             </motion.button>
           </div>
-        ) : pet.stage !== 'mega' && (
-          <div className="w-full px-2.5 sm:px-4">
-            <button
-              onClick={() => {
-                sound.playButton();
-                setIsStatsOpen(true);
-              }}
-              className="w-full mb-2.5 py-2 px-3.5 rounded-2xl font-pixel text-[9px] flex items-center justify-between gap-2 border cursor-pointer transition-colors bg-slate-900/90 border-slate-700/80 text-slate-200 hover:bg-slate-800/90"
-            >
-              <span className="truncate">
-                NEXT EVOLUTION: ??? (UNKNOWN)
-              </span>
-              <span className="shrink-0 tabular-nums text-cyan-300 font-bold">
-                {formatDurationMs(evoTiming.remainingMs)}
-              </span>
-            </button>
-          </div>
         )}
 
         {/* Active Hunger & Toilet Notification Alerts */}
-        {!pet.isDead && pet.stage !== 'egg' && (careNeeds.isHungry || careNeeds.needsToilet) && (
+        {!pet.isDead && !pet.isFrozen && pet.stage !== 'egg' && (careNeeds.isHungry || careNeeds.needsToilet) && (
           <div className="w-full px-2.5 sm:px-4 flex flex-col gap-1.5 mb-2.5">
             {careNeeds.isHungry && (
               <div
@@ -1728,6 +1819,7 @@ export default function App() {
           onGiveVitamin={handleGiveVitamin}
           onCleanPoop={handleCleanPoop}
           onToggleLights={handleToggleLights}
+          onToggleFridge={handleToggleFridge}
           onCureSick={handleCureSick}
           onOpenTraining={() => {
             if (!requireAliveAndHatched()) return;
@@ -1906,6 +1998,33 @@ export default function App() {
                   <span className="text-2xl">{pet.lightsOff ? '☀️' : '🌙'}</span>
                   <span>{pet.lightsOff ? 'LIGHTS ON' : 'SLEEP / OFF'}</span>
                   <span className="text-[9px] text-slate-400">{pet.isSleeping ? 'Sleeping zzz' : 'Awake'}</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    handleToggleFridge();
+                    triggerHaptic('light');
+                  }}
+                  className={`col-span-2 p-3 border rounded-2xl flex items-center justify-between gap-2 active:scale-95 transition-all cursor-pointer ${
+                    pet.isFrozen
+                      ? 'bg-sky-950/75 hover:bg-sky-900/80 border-cyan-400 text-cyan-200'
+                      : 'bg-slate-800 hover:bg-sky-950/50 border-cyan-500/40 text-cyan-300'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5 text-left">
+                    <span className="text-2xl">❄️</span>
+                    <div>
+                      <div>{pet.isFrozen ? 'TAKE OUT OF FRIDGE' : 'FRIDGE (COLD MODE)'}</div>
+                      <div className="text-[9px] text-slate-400 font-chakra">
+                        {pet.isFrozen
+                          ? 'Game state is currently paused'
+                          : 'Pauses hunger, poop & evolution while away'}
+                      </div>
+                    </div>
+                  </div>
+                  <span className="text-[9px] px-2 py-1 rounded-lg bg-slate-950/80 border border-cyan-500/40">
+                    {pet.isFrozen ? 'RESUME' : 'PAUSE'}
+                  </span>
                 </button>
               </div>
             </motion.div>
@@ -2403,6 +2522,8 @@ export default function App() {
                 battleExp: 0,
                 evolutionLocked: false,
                 isDead: false,
+                isFrozen: false,
+                frozenAt: undefined,
                 neglectTicks: 0,
                 ...parsed,
                 stageEnteredAt: parsed.stageEnteredAt || Date.now(),

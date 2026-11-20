@@ -1,6 +1,7 @@
 package com.digipet.companion;
 
 import android.Manifest;
+import android.app.AlarmManager;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
@@ -23,6 +24,49 @@ import com.getcapacitor.annotation.CapacitorPlugin;
 
 @CapacitorPlugin(name = "OverlayPlugin")
 public class OverlayPlugin extends Plugin {
+    public static volatile boolean isAppInForeground = false;
+
+    @Override
+    public void load() {
+        super.load();
+        isAppInForeground = true;
+    }
+
+    @Override
+    protected void handleOnResume() {
+        super.handleOnResume();
+        isAppInForeground = true;
+    }
+
+    @Override
+    protected void handleOnPause() {
+        super.handleOnPause();
+        isAppInForeground = false;
+    }
+
+    @Override
+    protected void handleOnDestroy() {
+        super.handleOnDestroy();
+        isAppInForeground = false;
+    }
+
+    private long readLongOption(PluginCall call, String key, long fallback) {
+        if (call == null || call.getData() == null || !call.getData().has(key)) {
+            return fallback;
+        }
+        Object val = call.getData().opt(key);
+        if (val == null || val == org.json.JSONObject.NULL) {
+            return fallback;
+        }
+        if (val instanceof Number) {
+            return ((Number) val).longValue();
+        }
+        try {
+            return Long.parseLong(String.valueOf(val).trim());
+        } catch (Exception ignored) {
+            return fallback;
+        }
+    }
 
     private int readIntOption(PluginCall call, String key, int fallback) {
         if (call == null || call.getData() == null || !call.getData().has(key)) {
@@ -291,6 +335,14 @@ public class OverlayPlugin extends Plugin {
 
     @PluginMethod
     public void showCareNotification(PluginCall call) {
+        // Never pop system notifications while the player is actively inside the game
+        if (isAppInForeground) {
+            JSObject ret = new JSObject();
+            ret.put("success", false);
+            call.resolve(ret);
+            return;
+        }
+
         Context ctx = getActivity() != null ? getActivity() : getContext();
         if (Build.VERSION.SDK_INT >= 33) {
             if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS)
@@ -305,7 +357,7 @@ public class OverlayPlugin extends Plugin {
         int id = readIntOption(call, "id", 2001);
         String title = call.getString("title", "Digivice Care Alert");
         String body = call.getString("body", "Your Digimon needs attention!");
-        String channelId = "digipet_care_alerts";
+        String channelId = CareAlarmReceiver.CHANNEL_ID;
 
         NotificationManager nm = (NotificationManager) ctx.getSystemService(Context.NOTIFICATION_SERVICE);
         if (nm == null) {
@@ -344,6 +396,102 @@ public class OverlayPlugin extends Plugin {
 
         nm.notify(id, builder.build());
 
+        JSObject ret = new JSObject();
+        ret.put("success", true);
+        call.resolve(ret);
+    }
+
+    private PendingIntent createCareAlarmPendingIntent(Context ctx, int reqCode, int notifId, String title, String body) {
+        Intent intent = new Intent(ctx, CareAlarmReceiver.class);
+        intent.putExtra("notifId", notifId);
+        intent.putExtra("title", title);
+        intent.putExtra("body", body);
+        int piFlags = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
+            ? PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+            : PendingIntent.FLAG_UPDATE_CURRENT;
+        return PendingIntent.getBroadcast(ctx, reqCode, intent, piFlags);
+    }
+
+    private void scheduleOrCancelAlarm(Context ctx, AlarmManager am, int reqCode, int notifId, long triggerAtMs, String title, String body) {
+        if (am == null) return;
+        PendingIntent pi = createCareAlarmPendingIntent(ctx, reqCode, notifId, title, body);
+        if (triggerAtMs > System.currentTimeMillis() + 1000L) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMs, pi);
+            } else {
+                am.set(AlarmManager.RTC_WAKEUP, triggerAtMs, pi);
+            }
+        } else {
+            am.cancel(pi);
+        }
+    }
+
+    @PluginMethod
+    public void scheduleCareNotifications(PluginCall call) {
+        Context ctx = getActivity() != null ? getActivity() : getContext();
+        AlarmManager am = (AlarmManager) ctx.getSystemService(Context.ALARM_SERVICE);
+
+        String petName = call.getString("petName", "Your Digimon");
+        long hungryAtMs = readLongOption(call, "hungryAtMs", 0L);
+        long starvingAtMs = readLongOption(call, "starvingAtMs", 0L);
+        long nextPoopAtMs = readLongOption(call, "nextPoopAtMs", 0L);
+        long poopFullAtMs = readLongOption(call, "poopFullAtMs", 0L);
+        int nextPoopCount = Math.max(1, Math.min(4, readIntOption(call, "nextPoopCount", 1)));
+
+        scheduleOrCancelAlarm(
+            ctx,
+            am,
+            3001,
+            2001,
+            hungryAtMs,
+            "🍖 Hunger Alert: " + petName,
+            petName + " is getting hungry (1 heart left)! Time to feed Big Meat."
+        );
+        scheduleOrCancelAlarm(
+            ctx,
+            am,
+            3002,
+            2001,
+            starvingAtMs,
+            "🚨 " + petName + " is Starving!",
+            petName + " hit 0% hunger! Feed within 10 minutes before a Care Mistake."
+        );
+        scheduleOrCancelAlarm(
+            ctx,
+            am,
+            3003,
+            2002,
+            nextPoopAtMs,
+            "💩 Toilet Alert: " + petName,
+            nextPoopCount >= 4
+                ? petName + " has 4 toilet piles and got sick! Flush & cure now."
+                : petName + " needs the toilet! (" + nextPoopCount + "/4 piles)"
+        );
+        scheduleOrCancelAlarm(
+            ctx,
+            am,
+            3004,
+            2002,
+            poopFullAtMs,
+            "🚨 Toilet Full Alert: " + petName,
+            petName + " hit 4 toilet piles and got sick! Flush & give medicine right away."
+        );
+
+        JSObject ret = new JSObject();
+        ret.put("success", true);
+        call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void cancelCareNotifications(PluginCall call) {
+        Context ctx = getActivity() != null ? getActivity() : getContext();
+        AlarmManager am = (AlarmManager) ctx.getSystemService(Context.ALARM_SERVICE);
+        if (am != null) {
+            am.cancel(createCareAlarmPendingIntent(ctx, 3001, 2001, "", ""));
+            am.cancel(createCareAlarmPendingIntent(ctx, 3002, 2001, "", ""));
+            am.cancel(createCareAlarmPendingIntent(ctx, 3003, 2002, "", ""));
+            am.cancel(createCareAlarmPendingIntent(ctx, 3004, 2002, "", ""));
+        }
         JSObject ret = new JSObject();
         ret.put("success", true);
         call.resolve(ret);

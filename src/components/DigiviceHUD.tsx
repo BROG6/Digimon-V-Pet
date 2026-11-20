@@ -18,7 +18,8 @@ import {
   Palette,
   Home,
   ShoppingBag,
-  ExternalLink
+  ExternalLink,
+  Snowflake
 } from 'lucide-react';
 
 interface DigiviceHUDProps {
@@ -31,6 +32,7 @@ interface DigiviceHUDProps {
   onGiveVitamin: () => void;
   onCleanPoop: () => void;
   onToggleLights: () => void;
+  onToggleFridge?: () => void;
   onCureSick: () => void;
   onOpenTraining: () => void;
   onOpenColosseum: () => void;
@@ -155,6 +157,7 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
   onGiveVitamin,
   onCleanPoop,
   onToggleLights,
+  onToggleFridge,
   onCureSick,
   onOpenTraining,
   onOpenColosseum,
@@ -169,7 +172,7 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
 }) => {
   const [shellIndex, setShellIndex] = useState<number>(0);
   const [selectedMenuIdx, setSelectedMenuIdx] = useState<number>(0);
-  const [activeSubMenu, setActiveSubMenu] = useState<'screen' | 'stats' | 'food'>('screen');
+  const [activeSubMenu, setActiveSubMenu] = useState<'screen' | 'stats' | 'food' | 'lights'>('screen');
   const [statsPage, setStatsPage] = useState<number>(0);
 
   // Stats Calculations
@@ -240,7 +243,7 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
     { id: 'train', label: 'TRAIN', icon: <Dumbbell className="w-3.5 h-3.5" /> },
     { id: 'battle', label: 'VS', icon: <Swords className="w-3.5 h-3.5" /> },
     { id: 'clean', label: 'FLUSH', icon: <Sparkles className="w-3.5 h-3.5" /> },
-    { id: 'lights', label: 'LIGHT', icon: pet.lightsOff ? <Moon className="w-3.5 h-3.5" /> : <Sun className="w-3.5 h-3.5" /> },
+    { id: 'lights', label: 'LIGHT / FRIDGE', icon: pet.isFrozen ? <Snowflake className="w-3.5 h-3.5 text-sky-700" /> : pet.lightsOff ? <Moon className="w-3.5 h-3.5" /> : <Sun className="w-3.5 h-3.5" /> },
     { id: 'heal', label: 'HEAL', icon: <Activity className="w-3.5 h-3.5" /> },
     { id: 'room', label: 'ROOM', icon: <Home className="w-3.5 h-3.5" /> },
   ];
@@ -264,7 +267,7 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
     } else if (id === 'clean') {
       triggerPoopClean();
     } else if (id === 'lights') {
-      onToggleLights();
+      setActiveSubMenu(activeSubMenu === 'lights' ? 'screen' : 'lights');
     } else if (id === 'heal') {
       onCureSick();
     } else if (id === 'room') {
@@ -280,6 +283,12 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
       setInternalPose('dead');
       return;
     }
+    if (pet.isFrozen) {
+      setMonX(50);
+      setFacing('right');
+      setInternalPose('standing');
+      return;
+    }
     if (pet.stage === 'egg') {
       setMonX(50);
       setFacing('right');
@@ -287,6 +296,7 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
       return;
     }
     if (pet.isSleeping || pet.lightsOff) {
+      setMonX((prev) => Math.max(24, Math.min(76, prev)));
       setInternalPose('sleeping');
       return;
     }
@@ -336,7 +346,7 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
     }, 4200);
 
     return () => clearInterval(moveInterval);
-  }, [pet.isDead, pet.stage, isHatchingEgg, pet.isSleeping, pet.lightsOff, pet.isSick, activeSubMenu, monX]);
+  }, [pet.isDead, pet.isFrozen, pet.stage, isHatchingEgg, pet.isSleeping, pet.lightsOff, pet.isSick, activeSubMenu, monX]);
 
   // Button A: Cycle selection forward
   const handleNextMenu = () => {
@@ -653,6 +663,11 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
                 </div>
               )}
 
+              {/* Fridge / Cold Mode Frost Overlay */}
+              {pet.isFrozen && (
+                <div className="absolute inset-0 pointer-events-none z-10 bg-sky-300/25 backdrop-blur-[1px] border border-cyan-200/40" />
+              )}
+
               {/* TOP 4 LCD STATUS ICONS */}
               <div className="relative z-20 flex justify-between items-center px-1 pt-0.5">
                 {menuItems.slice(0, 4).map((item, idx) => {
@@ -700,8 +715,17 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
                     </span>
                   </div>
 
+                  {/* Fridge Cold Mode Badge inside LCD */}
+                  {pet.isFrozen && (
+                    <div className="absolute top-4 left-1/2 -translate-x-1/2 text-[8px] font-pixel px-2 py-0.5 rounded font-bold bg-sky-950/90 text-cyan-200 border border-cyan-400/70 shadow z-30 whitespace-nowrap flex items-center gap-1">
+                      <span>❄️</span>
+                      <span>FRIDGE • PAUSED</span>
+                    </div>
+                  )}
+
                   {/* Attention / Hunger / Toilet / Sickness alert blinking icon */}
                   {!pet.isDead &&
+                    !pet.isFrozen &&
                     pet.stage !== 'egg' &&
                     (pet.isSick || pet.hunger <= 25 || pet.poopCount > 0 || pet.careMistakes >= 6) && (
                       <div className="absolute top-4 right-1 text-[8px] font-pixel px-1.5 py-0.5 rounded animate-pulse font-bold bg-[#dc2626] text-white border border-rose-300 shadow z-30">
@@ -831,6 +855,8 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
                     <span className="uppercase">
                       {pet.isDead
                         ? 'STATUS: DECEASED'
+                        : pet.isFrozen
+                        ? 'STATUS: FROZEN'
                         : pet.stage === 'egg'
                         ? isHatchingEgg
                           ? 'HATCHING...'
@@ -977,6 +1003,46 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
                       Need food? Buy at Shop »
                     </button>
                   )}
+                </div>
+              )}
+
+              {/* LCD VIEW: LIGHT & FRIDGE SUB-MENU */}
+              {activeSubMenu === 'lights' && (
+                <div className="relative z-20 flex-1 flex flex-col items-center justify-center gap-1.5 bg-slate-950/90 rounded border border-slate-700 p-2">
+                  <span className="text-[8px] font-pixel text-cyan-300 font-bold">LIGHT &amp; FRIDGE MODE</span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        onToggleLights();
+                        setActiveSubMenu('screen');
+                      }}
+                      className="flex flex-col items-center p-1.5 min-w-[68px] bg-slate-900 border border-amber-500/50 hover:bg-slate-800 rounded cursor-pointer"
+                    >
+                      <span className="text-sm">{pet.lightsOff ? '☀️' : '🌙'}</span>
+                      <span className="text-[7px] font-pixel text-white mt-0.5">
+                        {pet.lightsOff ? 'LIGHT ON' : 'LIGHT OFF'}
+                      </span>
+                    </button>
+                    <button
+                      onClick={() => {
+                        onToggleFridge?.();
+                        setActiveSubMenu('screen');
+                      }}
+                      className={`flex flex-col items-center p-1.5 min-w-[68px] border hover:bg-slate-800 rounded cursor-pointer ${
+                        pet.isFrozen
+                          ? 'bg-sky-950/90 border-cyan-400 text-cyan-200'
+                          : 'bg-slate-900 border-cyan-500/50 text-white'
+                      }`}
+                    >
+                      <span className="text-sm">❄️</span>
+                      <span className="text-[7px] font-pixel mt-0.5">
+                        {pet.isFrozen ? 'UNFREEZE' : 'FRIDGE'}
+                      </span>
+                    </button>
+                  </div>
+                  <span className="text-[6.5px] font-pixel text-slate-400 text-center">
+                    Fridge pauses game state to prevent care mistakes
+                  </span>
                 </div>
               )}
 

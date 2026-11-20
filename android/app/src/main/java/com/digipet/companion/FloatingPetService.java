@@ -477,9 +477,9 @@ public class FloatingPetService extends Service {
             layoutType = WindowManager.LayoutParams.TYPE_PHONE;
         }
 
-        // Compact hitbox window so launcher taps pass straight through to icons underneath
-        viewW = dpToPx(150);
-        viewH = dpToPx(154);
+        // Generous window so oversized and sleeping sprites never clip at WebView edges
+        viewW = dpToPx(184);
+        viewH = dpToPx(184);
         footOffsetPx = dpToPx(6);
 
         params = new WindowManager.LayoutParams(
@@ -2164,7 +2164,7 @@ public class FloatingPetService extends Service {
             "#petWrap.evolving #spriteBox { animation:evoFlash 1.3s ease-in-out; }" +
             "@keyframes evoBurst { 0% { transform:scale(0.4); opacity:0; } 30% { transform:scale(1.45); opacity:1; } 100% { transform:scale(1.9); opacity:0; } }" +
             "@keyframes evoFlash { 0%, 100% { filter:brightness(1); transform:scale(1); } 25% { filter:brightness(2.8) drop-shadow(0 0 12px #fde047); transform:scale(1.18); } 60% { filter:brightness(2.0) drop-shadow(0 0 10px #38bdf8); transform:scale(1.08); } }" +
-            "#sleepBadge { display:none; position:absolute; top:-20px; right:-8px; z-index:22; color:#67e8f9; font-family:monospace; font-weight:900; font-size:12px; text-shadow:0 1px 4px rgba(15,23,42,0.95), 0 0 8px rgba(56,189,248,0.7); pointer-events:none; }" +
+            "#sleepBadge { display:none; position:absolute; top:-16px; right:2px; z-index:22; color:#67e8f9; font-family:monospace; font-weight:900; font-size:12px; text-shadow:0 1px 4px rgba(15,23,42,0.95), 0 0 8px rgba(56,189,248,0.7); pointer-events:none; }" +
             "#petWrap.sleeping #sleepBadge { display:block; animation:zzzFloat 1.8s ease-out infinite; }" +
             "#petWrap.sleeping #spriteBox { filter:brightness(0.88); }" +
             "@keyframes zzzFloat { 0% { transform:translate(0px, 2px) scale(0.85); opacity:0; } 35% { opacity:1; } 100% { transform:translate(8px, -14px) scale(1.1); opacity:0; } }" +
@@ -2233,7 +2233,22 @@ public class FloatingPetService extends Service {
             "var bubble = document.getElementById('bubble');" +
             "var carryBadge = document.getElementById('carryBadge');" +
 
-            "var scale = 1.22;" +
+            "var maxSpriteW = Math.max(stageBoxW || 0, fallbackFrame.w || 48);" +
+            "var maxSpriteH = Math.max(stageBoxH || 0, fallbackFrame.h || 48);" +
+            "var allPoseLists = [standingFrames, walkingFrames, sleepingFrames];" +
+            "for (var li = 0; li < allPoseLists.length; li++) {" +
+            "  var plist = allPoseLists[li];" +
+            "  for (var fi = 0; fi < plist.length; fi++) {" +
+            "    var pf = plist[fi];" +
+            "    if (!pf) continue;" +
+            "    var pr = (pf.rotate === 90 || pf.rotate === -90 || pf.rotate === 270);" +
+            "    var pw = pr ? pf.h : pf.w;" +
+            "    var ph = pr ? pf.w : pf.h;" +
+            "    if (pw > maxSpriteW) maxSpriteW = pw;" +
+            "    if (ph > maxSpriteH) maxSpriteH = ph;" +
+            "  }" +
+            "}" +
+            "var scale = Math.min(1.22, 168 / Math.max(1, maxSpriteW), 152 / Math.max(1, maxSpriteH));" +
             "var facingRight = true;" +
             "var isWalking = false;" +
             "var walkFrameIdx = 0;" +
@@ -2254,19 +2269,26 @@ public class FloatingPetService extends Service {
             "  }" +
             "  var rot = frame.rotate || 0;" +
             "  var isRot = (rot === 90 || rot === -90 || rot === 270);" +
-            "  var dw = (isRot ? frame.h : frame.w) * scale;" +
-            "  var dh = (isRot ? frame.w : frame.h) * scale;" +
+            "  var uw = (isRot ? frame.h : frame.w);" +
+            "  var uh = (isRot ? frame.w : frame.h);" +
+            "  var dw = uw * scale;" +
+            "  var dh = uh * scale;" +
             "  if (stageBoxW > 0 && stageBoxH > 0) {" +
-            "    spriteBox.style.width = (stageBoxW * scale) + 'px';" +
-            "    spriteBox.style.height = (stageBoxH * scale) + 'px';" +
+            "    var effBoxW = isSleeping ? Math.max(stageBoxW, uw) : stageBoxW;" +
+            "    var effBoxH = isSleeping ? Math.max(stageBoxH, uh) : stageBoxH;" +
+            "    var rawOy = (frame.offsetY || 0) + groundOffset;" +
+            "    var effOx = isSleeping ? ((effBoxW - uw) * 0.5) : (frame.offsetX || 0);" +
+            "    var effOy = isSleeping ? Math.max(0, Math.min(rawOy, Math.max(0, effBoxH - uh))) : rawOy;" +
+            "    spriteBox.style.width = (effBoxW * scale) + 'px';" +
+            "    spriteBox.style.height = (effBoxH * scale) + 'px';" +
             "    spriteBox.style.transform = 'scaleX(' + (facingRight ? 1 : -1) + ')';" +
             "    frameClip.style.position = 'absolute';" +
-            "    frameClip.style.left = ((frame.offsetX || 0) * scale) + 'px';" +
-            "    frameClip.style.top = (((frame.offsetY || 0) + groundOffset) * scale) + 'px';" +
+            "    frameClip.style.left = (effOx * scale) + 'px';" +
+            "    frameClip.style.top = (effOy * scale) + 'px';" +
             "    frameClip.style.width = dw + 'px';" +
             "    frameClip.style.height = dh + 'px';" +
             "  } else {" +
-            "    var effOffset = ((frame.offsetY || 0) + groundOffset) * scale;" +
+            "    var effOffset = isSleeping ? 0 : (((frame.offsetY || 0) + groundOffset) * scale);" +
             "    spriteBox.style.width = dw + 'px';" +
             "    spriteBox.style.height = dh + 'px';" +
             "    spriteBox.style.transform = 'translateY(' + effOffset + 'px) scaleX(' + (facingRight ? 1 : -1) + ')';" +

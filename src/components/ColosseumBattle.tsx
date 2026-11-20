@@ -118,14 +118,34 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
       isPlayer: true,
     };
 
-    // Determine an evenly matched opponent
+    // Determine an evenly matched, competitive opponent scaled to the player's power
     const opponentKeys = Object.keys(DIGIMON_DATABASE).filter(
       (k) => DIGIMON_DATABASE[k].stage === pet.stage && k !== species.id
     );
     const oppId = oppSpeciesId || (opponentKeys.length > 0 ? opponentKeys[Math.floor(Math.random() * opponentKeys.length)] : 'greymon');
     const oppSpecies = DIGIMON_DATABASE[oppId] || DIGIMON_DATABASE['agumon'];
 
-    const oppHp = oppSpecies.baseHp + Math.floor(Math.random() * 20);
+    const stageScaleMap: Record<string, number> = {
+      egg: 1.0,
+      fresh: 1.1,
+      'in-training': 1.2,
+      rookie: 1.35,
+      champion: 1.48,
+      ultimate: 1.58,
+      mega: 1.68,
+    };
+    const stageMult = stageScaleMap[pet.stage] || 1.35;
+
+    const oppHp = Math.round(
+      Math.max(baseHp * 1.22, oppSpecies.baseHp * stageMult * 1.45) + 45 + Math.floor(Math.random() * 35)
+    );
+    const oppAtk = Math.round(Math.max(oppSpecies.baseAtk * 1.28, atk * 0.96) + 6);
+    const oppDef = Math.round(Math.max(oppSpecies.baseDef * 1.35, def * 1.15) + 12);
+    const scaledSigPower = Math.max(
+      oppSpecies.signatureMove.power,
+      Math.round(species.signatureMove.power * 0.95)
+    );
+
     const opponent: BattleFighter = {
       id: 'opponent-fighter',
       name: oppSpecies.name,
@@ -134,11 +154,14 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
       crest: oppSpecies.crest,
       currentHp: oppHp,
       maxHp: oppHp,
-      sp: 25,
-      atk: oppSpecies.baseAtk,
-      def: oppSpecies.baseDef,
-      spd: oppSpecies.baseSpd,
-      signatureMove: oppSpecies.signatureMove,
+      sp: 35,
+      atk: oppAtk,
+      def: oppDef,
+      spd: Math.max(oppSpecies.baseSpd, species.baseSpd),
+      signatureMove: {
+        ...oppSpecies.signatureMove,
+        power: scaledSigPower,
+      },
       isPlayer: false,
     };
 
@@ -147,7 +170,7 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
     setBattleLogs([
       {
         id: 'start-1',
-        text: `⚔️ Online Colosseum Match Started! ${player.name} VS ${opponent.name}!`,
+        text: `⚔️ Online Colosseum Match Started! ${player.name} VS Challenger ${opponent.name}!`,
         type: 'action',
       },
     ]);
@@ -184,7 +207,7 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
     const timer = setTimeout(() => {
       // Opponent chooses move
       const canUseSpecial = opponentFighter.sp >= 50;
-      const shouldUseSpecial = canUseSpecial && Math.random() < 0.7;
+      const shouldUseSpecial = canUseSpecial && Math.random() < 0.8;
 
       if (shouldUseSpecial) {
         // Special move
@@ -192,7 +215,7 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
         triggerHaptic('heavy');
         setOpponentActionAnim('attack');
         setOpponentEffect('lunge');
-        const rawDamage = Math.max(15, Math.floor(opponentFighter.signatureMove.power * 0.9 - (isDefending ? playerFighter.def * 0.8 : playerFighter.def * 0.4)));
+        const rawDamage = Math.max(18, Math.floor(opponentFighter.signatureMove.power * 1.08 - (isDefending ? playerFighter.def * 0.75 : playerFighter.def * 0.35)));
         const finalDamage = isDefending ? Math.floor(rawDamage * 0.4) : rawDamage;
 
         setOpponentFighter((prev) => prev ? { ...prev, sp: prev.sp - 50 } : null);
@@ -225,10 +248,10 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
         triggerHaptic('medium');
         setOpponentActionAnim('attack');
         setOpponentEffect('lunge');
-        const rawDamage = Math.max(10, Math.floor(opponentFighter.atk * 0.8 - (isDefending ? playerFighter.def * 0.7 : playerFighter.def * 0.3)));
+        const rawDamage = Math.max(14, Math.floor(opponentFighter.atk * 0.95 - (isDefending ? playerFighter.def * 0.7 : playerFighter.def * 0.3)));
         const finalDamage = isDefending ? Math.floor(rawDamage * 0.4) : rawDamage;
 
-        setOpponentFighter((prev) => prev ? { ...prev, sp: Math.min(100, prev.sp + 15) } : null);
+        setOpponentFighter((prev) => prev ? { ...prev, sp: Math.min(100, prev.sp + 20) } : null);
 
         // Impact timing: shake player and flash screen
         setTimeout(() => {
@@ -291,7 +314,7 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
     setPlayerEffect('lunge');
 
     const mult = isCharged ? 1.5 : 1.0;
-    const damage = Math.max(12, Math.floor((playerFighter.atk * 0.85 * mult) - (opponentFighter.def * 0.35)));
+    const damage = Math.max(12, Math.floor((playerFighter.atk * 0.82 * mult) - (opponentFighter.def * 0.48)));
 
     setPlayerFighter((prev) => prev ? { ...prev, sp: Math.min(100, prev.sp + 20) } : null);
     setIsCharged(false);
@@ -334,8 +357,8 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
     setPlayerActionAnim('attack');
     setPlayerEffect('lunge');
 
-    const mult = isCharged ? 1.6 : 1.2;
-    const damage = Math.max(25, Math.floor((playerFighter.signatureMove.power * mult) - (opponentFighter.def * 0.4)));
+    const mult = isCharged ? 1.6 : 1.15;
+    const damage = Math.max(24, Math.floor((playerFighter.signatureMove.power * mult) - (opponentFighter.def * 0.5)));
 
     setPlayerFighter((prev) => prev ? { ...prev, sp: prev.sp - 50 } : null);
     setIsCharged(false);
@@ -422,7 +445,7 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
 
   const handleClaimVictory = () => {
     sound.playEvolution();
-    onBattleEnd(true, 80, 25);
+    onBattleEnd(true, 100, 30);
     setMatchState('lobby');
     setPlayerFighter(null);
     setOpponentFighter(null);
@@ -431,7 +454,7 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
 
   const handleClaimDefeat = () => {
     sound.playButton();
-    onBattleEnd(false, 20, 5);
+    onBattleEnd(false, 25, 8);
     setMatchState('lobby');
     setPlayerFighter(null);
     setOpponentFighter(null);
@@ -440,7 +463,7 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
 
   const handleRematch = () => {
     sound.playButton();
-    onBattleEnd(matchState === 'victory', matchState === 'victory' ? 80 : 20, matchState === 'victory' ? 25 : 5);
+    onBattleEnd(matchState === 'victory', matchState === 'victory' ? 100 : 25, matchState === 'victory' ? 30 : 8);
     setMatchState('lobby');
     setPlayerFighter(null);
     setOpponentFighter(null);
@@ -779,8 +802,8 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
               Your Digimon fought heroically and earned triumphant glory in the Online Colosseum!
             </p>
             <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 my-5 flex items-center justify-center gap-6 font-pixel text-xs">
-              <span className="text-amber-400">🪙 +80 BITS</span>
-              <span className="text-cyan-400">⚡ +25 DP POWER</span>
+              <span className="text-amber-400">🪙 +100 BITS</span>
+              <span className="text-cyan-400">⚡ +30 DP POWER</span>
               <span className="text-emerald-400">★ +1 BATTLE WIN</span>
             </div>
             <div className="flex flex-col sm:flex-row gap-3">

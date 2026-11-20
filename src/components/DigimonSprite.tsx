@@ -378,9 +378,20 @@ export const DigimonSprite: React.FC<DigimonSpriteProps> = ({
     else if (species.stage === 'ultimate') stageMultiplier = 1.55;
     else if (species.stage === 'mega') stageMultiplier = 1.65;
 
-    // Special tuning using constant stageHeight so pixelScale never shifts mid-animation
-    const refH = newConfig.stageHeight || currentFrame.h;
-    if (refH > 115) {
+    // Special tuning using constant stage dimensions (and oversized frame spans) so extra-large Digimon fit cleanly
+    const isCurrentRotated = currentFrame.rotate === 90 || currentFrame.rotate === -90 || currentFrame.rotate === 270;
+    const curUnscaledW = isCurrentRotated ? currentFrame.h : currentFrame.w;
+    const curUnscaledH = isCurrentRotated ? currentFrame.w : currentFrame.h;
+    const refH = Math.max(
+      newConfig.stageHeight || curUnscaledH,
+      (newConfig.stageWidth || curUnscaledW) * 0.78,
+      activePose === 'sleeping' ? Math.max(curUnscaledH, curUnscaledW * 0.78) : 0
+    );
+    if (refH > 155) {
+      stageMultiplier = Math.min(stageMultiplier, 0.72);
+    } else if (refH > 130) {
+      stageMultiplier = Math.min(stageMultiplier, 0.84);
+    } else if (refH > 115) {
       stageMultiplier = Math.min(stageMultiplier, 0.95);
     } else if (refH > 95) {
       stageMultiplier = Math.min(stageMultiplier, 1.05);
@@ -405,9 +416,9 @@ export const DigimonSprite: React.FC<DigimonSpriteProps> = ({
         {/* Status Emoticons */}
         {activePose === 'sleeping' && (
           <motion.div
-            animate={{ y: [-4, -20], x: [0, 8], opacity: [0, 1, 0] }}
+            animate={{ y: [-4, -18], x: [0, 6], opacity: [0, 1, 0] }}
             transition={{ repeat: Infinity, duration: 1.8, ease: 'easeOut' as const }}
-            className="absolute -top-6 right-0 font-pixel text-cyan-300 text-xs font-bold pointer-events-none z-20"
+            className="absolute -top-5 right-0 font-pixel text-cyan-300 text-xs font-bold pointer-events-none z-20"
           >
             Zzz...
           </motion.div>
@@ -496,12 +507,33 @@ export const DigimonSprite: React.FC<DigimonSpriteProps> = ({
           const usesSharedOrigin = Boolean(newConfig.stageWidth && newConfig.stageHeight);
 
           if (usesSharedOrigin) {
-            const stageW = (newConfig.stageWidth || currentFrame.w) * pixelScale;
-            const stageH = (newConfig.stageHeight || currentFrame.h) * pixelScale;
-            const frameX = (currentFrame.offsetX || 0) * pixelScale;
-            const frameY = ((currentFrame.offsetY || 0) + (newConfig.groundOffset || 0)) * pixelScale;
-            const frameW = (isRotated ? currentFrame.h : currentFrame.w) * pixelScale;
-            const frameH = (isRotated ? currentFrame.w : currentFrame.h) * pixelScale;
+            const unscaledFrameW = isRotated ? currentFrame.h : currentFrame.w;
+            const unscaledFrameH = isRotated ? currentFrame.w : currentFrame.h;
+            const baseStageW = newConfig.stageWidth || unscaledFrameW;
+            const baseStageH = newConfig.stageHeight || unscaledFrameH;
+            const boxStageW = activePose === 'sleeping' ? Math.max(baseStageW, unscaledFrameW) : baseStageW;
+            const boxStageH = activePose === 'sleeping' ? Math.max(baseStageH, unscaledFrameH) : baseStageH;
+
+            const rawOffsetX = currentFrame.offsetX || 0;
+            const rawOffsetY = (currentFrame.offsetY || 0) + (newConfig.groundOffset || 0);
+
+            // Faint/sleeping animations in digimon-up slide backward horizontally (-50..-123px);
+            // center them cleanly inside the stage box so they never clip out of the viewport.
+            const effectiveOffsetX =
+              activePose === 'sleeping'
+                ? (boxStageW - unscaledFrameW) * 0.5
+                : rawOffsetX;
+            const effectiveOffsetY =
+              activePose === 'sleeping'
+                ? Math.max(0, Math.min(rawOffsetY, Math.max(0, boxStageH - unscaledFrameH)))
+                : rawOffsetY;
+
+            const stageW = boxStageW * pixelScale;
+            const stageH = boxStageH * pixelScale;
+            const frameX = effectiveOffsetX * pixelScale;
+            const frameY = effectiveOffsetY * pixelScale;
+            const frameW = unscaledFrameW * pixelScale;
+            const frameH = unscaledFrameH * pixelScale;
 
             const chompAnim = activePose === 'eating'
               ? (eatBeat === 1 || eatBeat === 2
@@ -567,7 +599,9 @@ export const DigimonSprite: React.FC<DigimonSpriteProps> = ({
 
           const displayW = (isRotated ? currentFrame.h : currentFrame.w) * pixelScale;
           const displayH = (isRotated ? currentFrame.w : currentFrame.h) * pixelScale;
-          const effectiveGroundOffsetY = ((currentFrame.offsetY || 0) + (newConfig.groundOffset || 0)) * pixelScale;
+          const effectiveGroundOffsetY = activePose === 'sleeping'
+            ? 0
+            : ((currentFrame.offsetY || 0) + (newConfig.groundOffset || 0)) * pixelScale;
 
           return (
             <motion.div

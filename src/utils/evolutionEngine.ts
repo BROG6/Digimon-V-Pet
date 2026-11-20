@@ -553,10 +553,11 @@ export function computeNaturalEvoTiming(
     };
   }
 
-  const anchorMs = pet.stageEnteredAt ?? pet.birthTimestamp ?? nowMs;
+  const effectiveNowMs = pet.isFrozen ? (pet.frozenAt ?? nowMs) : nowMs;
+  const anchorMs = pet.stageEnteredAt ?? pet.birthTimestamp ?? effectiveNowMs;
   const evolveAtMs = anchorMs + delayMs;
-  const remainingMs = Math.max(0, evolveAtMs - nowMs);
-  const windowExpired = nowMs >= evolveAtMs;
+  const remainingMs = Math.max(0, evolveAtMs - effectiveNowMs);
+  const windowExpired = !pet.isFrozen && effectiveNowMs >= evolveAtMs;
   const readyToEvolve = windowExpired && elig.goalsMet && Boolean(elig.nextId);
   const missedDeadline =
     windowExpired &&
@@ -605,6 +606,8 @@ export function applyEvolutionToPetState(
     lastPoopAt: nowMs,
     lastCareCheck: nowMs,
     careCallStartedAt: undefined,
+    isFrozen: false,
+    frozenAt: undefined,
     unlockedSpeciesIds: recordUnlockedSpeciesId(target.id, prev.unlockedSpeciesIds || []),
   };
 }
@@ -669,6 +672,7 @@ export function buildNativeOverlayPayload(params: {
 
   if (
     !pet.isDead &&
+    !pet.isFrozen &&
     !pet.evolutionLocked &&
     pet.stage !== 'egg' &&
     timing.goalsMet &&

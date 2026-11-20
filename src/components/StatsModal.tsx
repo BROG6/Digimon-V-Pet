@@ -722,7 +722,7 @@ export const StatsModal: React.FC<StatsModalProps> = ({
                     <div className="text-right shrink-0">
                       <div className="text-[9px] font-pixel text-slate-400">WINDOW REMAINING</div>
                       <div className="font-pixel text-sm text-white tabular-nums">
-                        {formatDurationMs(evoTiming.remainingMs)}
+                        {pet.isFrozen ? '❄️ PAUSED' : formatDurationMs(evoTiming.remainingMs)}
                       </div>
                     </div>
                   </div>

@@ -86,7 +86,7 @@ export function getStagePoopIntervalMs(stage: DigimonStage): number {
 }
 
 export function evaluateCareNeeds(pet: PetState, nowMs: number = Date.now()): CareNeedStatus {
-  if (pet.stage === 'egg' || pet.isDead) {
+  if (pet.stage === 'egg' || pet.isDead || pet.isFrozen) {
     return {
       isHungry: false,
       isStarving: false,
@@ -137,6 +137,19 @@ export function advanceCareState(prev: PetState, now: number = Date.now()): Care
 
   if (prev.stage === 'egg' || prev.isDead) {
     return { nextPet: prev, events: emptyEvents };
+  }
+
+  // In Fridge / Cold Mode: completely pause hunger, energy, toilet, care mistakes, and sickness
+  if (prev.isFrozen) {
+    return {
+      nextPet: {
+        ...prev,
+        lastHungerDropAt: now,
+        lastPoopAt: now,
+        lastCareCheck: now,
+      },
+      events: emptyEvents,
+    };
   }
 
   // While sleeping, hunger & poop timers pause and energy recovers gradually
@@ -318,3 +331,67 @@ export function advanceCareState(prev: PetState, now: number = Date.now()): Care
     events,
   };
 }
+
+export interface FutureCareAlertSchedule {
+  hungryAtMs: number;
+  starvingAtMs: number;
+  nextPoopAtMs: number;
+  nextPoopCount: number;
+  poopFullAtMs: number;
+}
+
+/**
+ * Computes exact future wall-clock timestamps when Hunger <= 25%, Hunger == 0%,
+ * next Poop pile, and 4/4 Poop Sickness will occur so background alarms fire on time.
+ */
+export function computeFutureCareAlertSchedule(
+  pet: PetState,
+  nowMs: number = Date.now()
+): FutureCareAlertSchedule {
+  if (pet.stage === 'egg' || pet.isDead || pet.lightsOff || pet.isFrozen) {
+    return {
+      hungryAtMs: 0,
+      starvingAtMs: 0,
+      nextPoopAtMs: 0,
+      nextPoopCount: pet.poopCount,
+      poopFullAtMs: 0,
+    };
+  }
+
+  const heartMs = getStageHungerHeartMs(pet.stage);
+  const msPerPoint = Math.max(1000, heartMs / 25);
+  const hungerAnchor = pet.lastHungerDropAt ?? pet.lastCareCheck ?? nowMs;
+
+  const hungryAtMs =
+    pet.hunger > 25
+      ? Math.max(nowMs + 5_000, Math.round(hungerAnchor + (pet.hunger - 25) * msPerPoint))
+      : 0;
+
+  const starvingAtMs =
+    pet.hunger > 0
+      ? Math.max(nowMs + 5_000, Math.round(hungerAnchor + pet.hunger * msPerPoint))
+      : 0;
+
+  const poopIntervalMs = getStagePoopIntervalMs(pet.stage);
+  const poopAnchor = pet.lastPoopAt ?? pet.lastCareCheck ?? nowMs;
+  const nextPoopCount = Math.min(4, pet.poopCount + 1);
+
+  const nextPoopAtMs =
+    pet.poopCount < 4 && poopIntervalMs > 0
+      ? Math.max(nowMs + 5_000, Math.round(poopAnchor + poopIntervalMs))
+      : 0;
+
+  const poopFullAtMs =
+    pet.poopCount < 4 && poopIntervalMs > 0
+      ? Math.max(nowMs + 5_000, Math.round(poopAnchor + (4 - pet.poopCount) * poopIntervalMs))
+      : 0;
+
+  return {
+    hungryAtMs,
+    starvingAtMs,
+    nextPoopAtMs,
+    nextPoopCount,
+    poopFullAtMs,
+  };
+}
+

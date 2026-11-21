@@ -13,9 +13,423 @@ import {
 } from '../data/battleTechniques';
 import { DigimonSprite } from './DigimonSprite';
 import { PixelMeatIcon } from './PixelItemIcons';
-import { GymStationScene } from './GymStationScene';
 import { sound } from '../utils/audio';
 import { Dumbbell, X, Flame, Check, Lock, Swords } from 'lucide-react';
+
+interface GymStationVisualProps {
+  statKey: TrainingStatKey;
+  species?: DigimonSpecies;
+  isExecuting: boolean;
+  hitState: 'idle' | 'critical' | 'weak';
+  hitNonce: number;
+  round: number;
+  actionSprite: 'idle' | 'attack' | 'happy';
+  roundResult: { text: string; isCrit: boolean } | null;
+}
+
+const GymStationVisual: React.FC<GymStationVisualProps> = ({
+  statKey,
+  species,
+  isExecuting,
+  hitState,
+  hitNonce,
+  round,
+  actionSprite,
+  roundResult,
+}) => {
+  const bgMap: Record<TrainingStatKey, string> = {
+    hp: 'from-emerald-950/90 via-stone-900 to-slate-950 border-emerald-500/40',
+    mp: 'from-cyan-950/90 via-sky-950 to-slate-950 border-cyan-500/40',
+    offense: 'from-amber-950/80 via-stone-900 to-slate-950 border-rose-500/40',
+    defense: 'from-slate-900 via-sky-950/70 to-slate-950 border-sky-500/40',
+    speed: 'from-amber-950/70 via-slate-900 to-slate-950 border-amber-500/40',
+    brains: 'from-violet-950/80 via-slate-900 to-slate-950 border-violet-500/40',
+  };
+
+  return (
+    <div
+      className={`relative w-full h-56 bg-gradient-to-b ${bgMap[statKey]} border-2 rounded-2xl overflow-hidden flex items-end justify-center pb-5 px-4 select-none`}
+    >
+      {/* Top Left HUD Pill */}
+      <div className="absolute top-2.5 left-3 px-2.5 py-1 rounded-lg bg-slate-950/80 border border-slate-700/80 font-pixel text-[9px] text-slate-200 z-20">
+        ROUND {round}/3
+      </div>
+
+      {/* Round Result Popup */}
+      {roundResult && (
+        <motion.div
+          key={`res-${hitNonce}-${round}`}
+          initial={{ y: 8, opacity: 0, scale: 0.85 }}
+          animate={{ y: -8, opacity: 1, scale: 1 }}
+          className={`absolute top-2.5 right-3 z-30 font-pixel text-[10px] px-2.5 py-1 rounded-lg border shadow-md ${
+            roundResult.isCrit
+              ? 'bg-amber-400 text-slate-950 border-amber-200 font-bold'
+              : 'bg-slate-800 text-slate-200 border-slate-600'
+          }`}
+        >
+          {roundResult.text}
+        </motion.div>
+      )}
+
+      {/* Ground Plane */}
+      <div className="absolute inset-x-0 bottom-0 h-8 bg-black/35 border-t border-white/10 pointer-events-none" />
+
+      {/* 1. HP: BOULDER PUSH */}
+      {statKey === 'hp' && (
+        <div className="relative w-full h-full flex items-end justify-center gap-2">
+          <motion.div
+            key={`boulder-mon-${hitNonce}`}
+            animate={
+              isExecuting
+                ? { x: [0, 26, 20, 0], rotate: [0, 5, 3, 0] }
+                : { x: 0, rotate: 0 }
+            }
+            transition={{ duration: 0.72, ease: 'easeInOut' }}
+            className="z-10"
+          >
+            <DigimonSprite
+              species={species}
+              action={isExecuting ? 'attack' : actionSprite}
+              facing="right"
+              scale={1.08}
+            />
+          </motion.div>
+
+          <motion.div
+            key={`boulder-${hitNonce}`}
+            animate={
+              isExecuting
+                ? {
+                    x: hitState === 'critical' ? [0, 32, 22, 0] : [0, 10, 4, 0],
+                    rotate: hitState === 'critical' ? [0, 14, 8, 0] : [0, 4, 0],
+                  }
+                : { x: 0, rotate: 0 }
+            }
+            transition={{ duration: 0.72, ease: 'easeOut' }}
+            className="relative z-10 mb-1"
+          >
+            <svg viewBox="0 0 64 56" className="w-20 h-16 drop-shadow-[0_6px_10px_rgba(0,0,0,0.65)]">
+              <polygon
+                points="10,50 4,34 14,14 34,6 54,16 60,36 52,50"
+                fill="#57534e"
+                stroke="#1c1917"
+                strokeWidth="3"
+              />
+              <polygon points="14,14 34,6 42,22 24,26" fill="#78716c" />
+              <polygon points="42,22 54,16 60,36 46,44" fill="#44403c" />
+              <path d="M24,28 L34,34 L28,44" stroke="#292524" strokeWidth="2.5" fill="none" />
+            </svg>
+            {isExecuting && hitState === 'critical' && (
+              <motion.div
+                initial={{ opacity: 1, scale: 0.6 }}
+                animate={{ opacity: 0, scale: 1.45 }}
+                transition={{ duration: 0.45 }}
+                className="absolute -left-3 bottom-1 text-emerald-300 font-pixel text-[10px]"
+              >
+                CRACK!
+              </motion.div>
+            )}
+          </motion.div>
+        </div>
+      )}
+
+      {/* 2. MP: WATERFALL MEDITATION */}
+      {statKey === 'mp' && (
+        <div className="relative w-full h-full flex items-end justify-center">
+          {/* Cascading Waterfall Columns */}
+          <div className="absolute inset-y-0 w-36 bg-gradient-to-b from-cyan-400/20 via-sky-500/25 to-cyan-300/35 border-x border-cyan-300/25 overflow-hidden flex justify-around pointer-events-none">
+            {[0, 1, 2, 3, 4].map((col) => (
+              <motion.div
+                key={col}
+                animate={{ y: ['-25%', '100%'] }}
+                transition={{ repeat: Infinity, duration: 0.75 + col * 0.12, ease: 'linear', delay: col * 0.14 }}
+                className="w-2.5 h-14 rounded-full bg-gradient-to-b from-white/60 via-cyan-200/70 to-transparent"
+              />
+            ))}
+          </div>
+          {/* Splash Foam Base */}
+          <motion.div
+            animate={{ scaleX: [1, 1.12, 1], opacity: [0.55, 0.85, 0.55] }}
+            transition={{ repeat: Infinity, duration: 1.1 }}
+            className="absolute bottom-4 w-40 h-5 rounded-full bg-cyan-200/30 blur-[2px] pointer-events-none"
+          />
+          {/* Meditating Digimon + Mana Aura */}
+          <motion.div
+            animate={
+              isExecuting
+                ? { y: [0, -6, 0], scale: [1, 1.06, 1] }
+                : { y: [0, -2, 0] }
+            }
+            transition={{ repeat: Infinity, duration: isExecuting ? 0.55 : 2.1, ease: 'easeInOut' }}
+            className="relative z-10"
+          >
+            {isExecuting && (
+              <motion.div
+                initial={{ opacity: 0.3, scale: 0.8 }}
+                animate={{ opacity: [0.8, 0.2, 0.8], scale: [0.95, 1.35, 1.05] }}
+                transition={{ repeat: Infinity, duration: 0.7 }}
+                className="absolute -inset-4 rounded-full border-2 border-cyan-300/80 shadow-[0_0_16px_rgba(34,211,238,0.6)] pointer-events-none"
+              />
+            )}
+            <DigimonSprite
+              species={species}
+              action={isExecuting ? 'happy' : 'sit'}
+              facing="right"
+              scale={1.08}
+            />
+          </motion.div>
+        </div>
+      )}
+
+      {/* 3. OFFENSE: ANCIENT TREE TRUNK */}
+      {statKey === 'offense' && (
+        <div className="relative w-full h-full flex items-end justify-center gap-4">
+          <motion.div
+            key={`tree-mon-${hitNonce}`}
+            animate={
+              isExecuting
+                ? { x: [0, 30, -4, 0], scale: [1, 1.06, 1] }
+                : { x: 0 }
+            }
+            transition={{ duration: 0.52, ease: 'easeOut' }}
+            className="z-10"
+          >
+            <DigimonSprite
+              species={species}
+              action={isExecuting ? 'attack' : actionSprite}
+              facing="right"
+              scale={1.08}
+            />
+          </motion.div>
+
+          {/* Ancient Tree Trunk */}
+          <motion.div
+            key={`tree-${hitNonce}`}
+            animate={
+              isExecuting
+                ? hitState === 'critical'
+                  ? { rotate: [0, 8, -5, 3, 0], x: [0, 7, -3, 0] }
+                  : { rotate: [0, 3, -2, 0], x: [0, 3, 0] }
+                : { rotate: 0, x: 0 }
+            }
+            transition={{ duration: 0.45 }}
+            style={{ transformOrigin: 'bottom center' }}
+            className="relative z-10"
+          >
+            <svg viewBox="0 0 64 110" className="w-20 h-32 drop-shadow-[0_6px_12px_rgba(0,0,0,0.65)]">
+              {/* Trunk */}
+              <path d="M20,106 L24,38 L40,38 L46,106 Z" fill="#78350f" stroke="#291203" strokeWidth="3" />
+              <path d="M27,44 L26,96 M35,50 L37,98" stroke="#451a03" strokeWidth="2.5" strokeLinecap="round" />
+              {/* Canopy */}
+              <circle cx="32" cy="24" r="22" fill="#15803d" stroke="#052e16" strokeWidth="3" />
+              <circle cx="18" cy="30" r="14" fill="#16a34a" stroke="#052e16" strokeWidth="2.5" />
+              <circle cx="46" cy="30" r="14" fill="#166534" stroke="#052e16" strokeWidth="2.5" />
+            </svg>
+            {isExecuting && (
+              <>
+                <motion.span
+                  initial={{ x: 0, y: -40, opacity: 1 }}
+                  animate={{ x: -24, y: 8, opacity: 0, rotate: 90 }}
+                  transition={{ duration: 0.65 }}
+                  className="absolute left-2 top-8 w-2.5 h-1.5 bg-emerald-400 rounded-full"
+                />
+                <motion.span
+                  initial={{ x: 10, y: -32, opacity: 1 }}
+                  animate={{ x: 26, y: 12, opacity: 0, rotate: -110 }}
+                  transition={{ duration: 0.65 }}
+                  className="absolute right-1 top-8 w-2.5 h-1.5 bg-lime-400 rounded-full"
+                />
+              </>
+            )}
+          </motion.div>
+        </div>
+      )}
+
+      {/* 4. DEFENSE: GIANT PUNCHING GLOVE */}
+      {statKey === 'defense' && (
+        <div className="relative w-full h-full flex items-end justify-center gap-6">
+          <motion.div
+            key={`def-mon-${hitNonce}`}
+            animate={
+              isExecuting
+                ? hitState === 'critical'
+                  ? { x: [0, -8, 2, 0], scaleX: [1, 0.92, 1.03, 1] }
+                  : { x: [0, -14, 0], rotate: [0, -6, 0] }
+                : { x: 0 }
+            }
+            transition={{ duration: 0.45, delay: 0.16 }}
+            className="z-10"
+          >
+            <DigimonSprite
+              species={species}
+              action={actionSprite}
+              facing="right"
+              scale={1.08}
+            />
+          </motion.div>
+
+          {/* Spring-loaded Giant Red Punching Glove from the Right */}
+          <motion.div
+            key={`glove-${hitNonce}`}
+            animate={
+              isExecuting
+                ? { x: [42, -32, 6, 0], scale: [1, 1.15, 0.96, 1] }
+                : { x: 32 }
+            }
+            transition={{ duration: 0.56, ease: 'easeOut' }}
+            className="relative z-20 mb-5 flex items-center"
+          >
+            <svg viewBox="0 0 88 48" className="w-28 h-16 drop-shadow-[0_6px_10px_rgba(0,0,0,0.75)]">
+              {/* Steel Coil Spring */}
+              <path
+                d="M52,24 L58,14 L64,34 L70,14 L76,34 L84,24"
+                stroke="#94a3b8"
+                strokeWidth="4"
+                fill="none"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+              {/* Giant Red Boxing Glove */}
+              <rect x="38" y="13" width="14" height="22" rx="3" fill="#e2e8f0" stroke="#0f172a" strokeWidth="2.5" />
+              <path
+                d="M38,10 C22,6 6,12 6,24 C6,36 20,42 38,38 Z"
+                fill="#dc2626"
+                stroke="#450a0a"
+                strokeWidth="3"
+              />
+              <ellipse cx="18" cy="18" rx="6" ry="3.5" fill="#f87171" opacity="0.7" />
+            </svg>
+            {isExecuting && (
+              <motion.div
+                initial={{ opacity: 1, scale: 0.6 }}
+                animate={{ opacity: 0, scale: 1.5 }}
+                transition={{ duration: 0.38, delay: 0.14 }}
+                className="absolute -left-4 top-2 text-amber-300 font-pixel text-xs font-bold"
+              >
+                BAM!
+              </motion.div>
+            )}
+          </motion.div>
+        </div>
+      )}
+
+      {/* 5. SPEED: RUNNING LAPS RIGHT-TO-LEFT WRAP */}
+      {statKey === 'speed' && (
+        <div className="relative w-full h-full flex items-end overflow-hidden">
+          {/* Speed Track Lane Lines */}
+          <div className="absolute inset-x-0 bottom-2 flex justify-around pointer-events-none opacity-60">
+            {[0, 1, 2, 3, 4, 5].map((stripe) => (
+              <div key={stripe} className="w-8 h-1.5 bg-amber-300/60 rounded-full" />
+            ))}
+          </div>
+
+          <motion.div
+            key={`speed-lap-${hitNonce}-${isExecuting ? 'run' : 'idle'}`}
+            initial={{ x: '35%' }}
+            animate={
+              isExecuting
+                ? {
+                    x: ['35%', '125%', '-35%', '125%', '-35%', '35%'],
+                  }
+                : { x: '35%' }
+            }
+            transition={
+              isExecuting
+                ? {
+                    duration: 1.32,
+                    times: [0, 0.24, 0.245, 0.64, 0.645, 1],
+                    ease: 'linear',
+                  }
+                : { duration: 0.2 }
+            }
+            className="w-full flex items-end z-10"
+          >
+            <div className="relative">
+              <DigimonSprite
+                species={species}
+                action={isExecuting ? 'walk' : actionSprite}
+                facing="right"
+                scale={1.05}
+              />
+              {isExecuting && (
+                <div className="absolute top-1/2 -left-8 -translate-y-1/2 flex flex-col gap-1 pointer-events-none">
+                  <div className="w-6 h-1 bg-amber-300/80 rounded-full" />
+                  <div className="w-4 h-1 bg-cyan-300/70 rounded-full ml-1" />
+                </div>
+              )}
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      {/* 6. BRAINS: BLACKBOARD + FLOATING BOOK & WRITING PENCIL */}
+      {statKey === 'brains' && (
+        <div className="relative w-full h-full flex items-end justify-center gap-4">
+          {/* Classroom Slate Blackboard */}
+          <div className="relative mb-3 w-36 h-24 rounded-xl bg-[#14532d] border-4 border-[#92400e] shadow-xl p-2 flex flex-col justify-between z-0">
+            <div className="text-[9px] font-mono text-emerald-100/90 leading-tight">
+              <div>ATK × 1.5 ⚡</div>
+              <div>MP → TECH</div>
+            </div>
+            <svg viewBox="0 0 80 28" className="w-full h-7 opacity-85">
+              <path d="M4,22 Q24,4 44,18 T76,6" stroke="#fde047" strokeWidth="2" fill="none" strokeDasharray="3 2" />
+              <circle cx="76" cy="6" r="2.5" fill="#fb7185" />
+            </svg>
+          </div>
+
+          {/* Studying Digimon with Floating Book + Moving Pencil Overhead */}
+          <div className="relative flex flex-col items-center z-10">
+            <motion.div
+              animate={
+                isExecuting
+                  ? { y: [-2, -7, -2], rotate: [-4, 4, -4] }
+                  : { y: [0, -3, 0] }
+              }
+              transition={{ repeat: Infinity, duration: isExecuting ? 0.5 : 1.8 }}
+              className="mb-1 flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-950/80 border border-violet-400/50 shadow-md"
+            >
+              {/* Tiny Open Book */}
+              <svg viewBox="0 0 20 14" className="w-5 h-3.5">
+                <path d="M2,2 L10,4 L18,2 L18,12 L10,13 L2,12 Z" fill="#fef3c7" stroke="#1e293b" strokeWidth="1.5" />
+                <line x1="10" y1="4" x2="10" y2="13" stroke="#94a3b8" strokeWidth="1" />
+              </svg>
+              {/* Animated Writing Pencil */}
+              <motion.svg
+                viewBox="0 0 16 16"
+                className="w-4 h-4"
+                animate={
+                  isExecuting
+                    ? { x: [-2, 3, -1, 3, -2], rotate: [-12, 8, -12] }
+                    : { x: [0, 2, 0], rotate: [-6, 4, -6] }
+                }
+                transition={{ repeat: Infinity, duration: isExecuting ? 0.32 : 1.2 }}
+              >
+                <polygon points="3,13 5,9 12,2 14,4 7,11" fill="#facc15" stroke="#1e293b" strokeWidth="1.2" />
+                <polygon points="2,14 3,13 5,11 4,14" fill="#334155" />
+              </motion.svg>
+            </motion.div>
+
+            <motion.div
+              animate={
+                isExecuting
+                  ? { rotate: [-4, 4, -4], y: [0, -3, 0] }
+                  : { rotate: [-1.5, 1.5, -1.5] }
+              }
+              transition={{ repeat: Infinity, duration: isExecuting ? 0.45 : 2.2 }}
+            >
+              <DigimonSprite
+                species={species}
+                action={isExecuting ? 'happy' : 'idle'}
+                facing="left"
+                scale={1.04}
+              />
+            </motion.div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
 
 interface TrainingArenaProps {
   pet: PetState;
@@ -414,7 +828,7 @@ export const TrainingArena: React.FC<TrainingArenaProps> = ({
               </span>
             </div>
 
-            <GymStationScene
+            <GymStationVisual
               statKey={selectedStat}
               species={species}
               isExecuting={isPunching}

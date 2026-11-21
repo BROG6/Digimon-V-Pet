@@ -1,4 +1,112 @@
-import { AdventureZone } from '../types/digimon';
+import { AdventureWave, AdventureZone, DigimonStage } from '../types/digimon';
+
+export const STAGE_RANK: Record<string, number> = {
+  egg: 0,
+  fresh: 1,
+  'in-training': 2,
+  rookie: 3,
+  champion: 4,
+  ultimate: 5,
+  mega: 6,
+};
+
+export interface StageTierModifiers {
+  playerRank: number;
+  oppRank: number;
+  stageGap: number;
+  playerDamageMult: number;
+  enemyDamageMult: number;
+  label: string | null;
+}
+
+/**
+ * Enforces evolutionary stage-tier scaling in Adventure Mode so a Rookie cannot
+ * easily defeat Champions, Ultimates, or Megas unless massively over-leveled.
+ */
+export function getStageTierCombatModifiers(
+  playerStage: DigimonStage | string,
+  oppStageLabel: AdventureWave['stageLabel'] | string
+): StageTierModifiers {
+  const playerRank = STAGE_RANK[String(playerStage).toLowerCase()] ?? 3;
+  const oppRank = STAGE_RANK[String(oppStageLabel).toLowerCase()] ?? 3;
+  const stageGap = oppRank - playerRank;
+
+  if (stageGap <= 0) {
+    return {
+      playerRank,
+      oppRank,
+      stageGap,
+      playerDamageMult: 1.0,
+      enemyDamageMult: 1.0,
+      label: null,
+    };
+  }
+
+  if (stageGap === 1) {
+    return {
+      playerRank,
+      oppRank,
+      stageGap,
+      playerDamageMult: 0.55,
+      enemyDamageMult: 1.42,
+      label: 'Stage Gap +1 (-45% DMG)',
+    };
+  }
+
+  if (stageGap === 2) {
+    return {
+      playerRank,
+      oppRank,
+      stageGap,
+      playerDamageMult: 0.34,
+      enemyDamageMult: 1.78,
+      label: 'Stage Gap +2 (-66% DMG)',
+    };
+  }
+
+  return {
+    playerRank,
+    oppRank,
+    stageGap,
+    playerDamageMult: 0.2,
+    enemyDamageMult: 2.2,
+    label: `Stage Gap +${stageGap} (-80% DMG)`,
+  };
+}
+
+/**
+ * Rolls random trail food discoveries while walking through an Adventure zone.
+ * Walk pickups only yield Mushroom or Berry (never Sirloin).
+ */
+export function rollWalkFoodDiscoveries(rng: () => number = Math.random): ('mushroom' | 'berry')[] {
+  const found: ('mushroom' | 'berry')[] = [];
+  if (rng() < 0.65) {
+    found.push(rng() < 0.5 ? 'mushroom' : 'berry');
+  }
+  if (found.length === 1 && rng() < 0.25) {
+    found.push(found[0] === 'mushroom' ? 'berry' : 'mushroom');
+  }
+  return found;
+}
+
+/**
+ * Rolls random post-battle food drops for winning an Adventure wave.
+ * Prime Sirloin drops strictly from Ultimate or Mega opponents only.
+ */
+export function rollBattleFoodDrops(
+  stageLabel: AdventureWave['stageLabel'],
+  rng: () => number = Math.random
+): { mushroom: number; berry: number; sirloin: number } {
+  const mushroom = rng() < 0.55 ? 1 : 0;
+  const berry = rng() < 0.55 ? 1 : 0;
+  let sirloin = 0;
+  if (stageLabel === 'Ultimate') {
+    sirloin = rng() < 0.45 ? 1 : 0;
+  } else if (stageLabel === 'Mega') {
+    sirloin = rng() < 0.65 ? 1 : 0;
+  }
+  return { mushroom, berry, sirloin };
+}
 
 export const ADVENTURE_ZONES: AdventureZone[] = [
   {
@@ -61,7 +169,7 @@ export const ADVENTURE_ZONES: AdventureZone[] = [
         title: 'Razor Wing Clearing',
         speciesId: 'kuwagamon',
         stageLabel: 'Champion',
-        statMultiplier: 1.0,
+        statMultiplier: 1.38,
         strengthReward: 10,
         dpReward: 24,
         effortReward: 2,
@@ -75,7 +183,7 @@ export const ADVENTURE_ZONES: AdventureZone[] = [
         title: 'Ancient Elder Grove',
         speciesId: 'cherrymon',
         stageLabel: 'Ultimate',
-        statMultiplier: 1.08,
+        statMultiplier: 1.65,
         strengthReward: 15,
         dpReward: 36,
         effortReward: 3,
@@ -89,7 +197,7 @@ export const ADVENTURE_ZONES: AdventureZone[] = [
         title: 'Amber Crown Summit',
         speciesId: 'herculeskabuterimon',
         stageLabel: 'Mega',
-        statMultiplier: 1.16,
+        statMultiplier: 1.95,
         strengthReward: 22,
         dpReward: 55,
         effortReward: 4,
@@ -159,7 +267,7 @@ export const ADVENTURE_ZONES: AdventureZone[] = [
         title: 'Serpent Whirlpool',
         speciesId: 'seadramon',
         stageLabel: 'Champion',
-        statMultiplier: 1.04,
+        statMultiplier: 1.44,
         strengthReward: 11,
         dpReward: 28,
         effortReward: 2,
@@ -173,7 +281,7 @@ export const ADVENTURE_ZONES: AdventureZone[] = [
         title: 'Surge Voltage Trench',
         speciesId: 'megaseadramon',
         stageLabel: 'Ultimate',
-        statMultiplier: 1.12,
+        statMultiplier: 1.72,
         strengthReward: 16,
         dpReward: 40,
         effortReward: 3,
@@ -187,7 +295,7 @@ export const ADVENTURE_ZONES: AdventureZone[] = [
         title: 'Chrome Leviathan Throne',
         speciesId: 'metalseadramon',
         stageLabel: 'Mega',
-        statMultiplier: 1.2,
+        statMultiplier: 2.04,
         strengthReward: 24,
         dpReward: 60,
         effortReward: 4,
@@ -258,7 +366,7 @@ export const ADVENTURE_ZONES: AdventureZone[] = [
         title: 'Glacier Bastion',
         speciesId: 'frigimon',
         stageLabel: 'Champion',
-        statMultiplier: 1.08,
+        statMultiplier: 1.5,
         strengthReward: 12,
         dpReward: 30,
         effortReward: 2,
@@ -272,7 +380,7 @@ export const ADVENTURE_ZONES: AdventureZone[] = [
         title: 'Blizzard Fang Cavern',
         speciesId: 'polarbearmon',
         stageLabel: 'Ultimate',
-        statMultiplier: 1.15,
+        statMultiplier: 1.8,
         strengthReward: 17,
         dpReward: 44,
         effortReward: 3,
@@ -286,7 +394,7 @@ export const ADVENTURE_ZONES: AdventureZone[] = [
         title: 'Zero Kelvin Citadel',
         speciesId: 'metalgarurumon',
         stageLabel: 'Mega',
-        statMultiplier: 1.24,
+        statMultiplier: 2.12,
         strengthReward: 25,
         dpReward: 65,
         effortReward: 4,
@@ -357,7 +465,7 @@ export const ADVENTURE_ZONES: AdventureZone[] = [
         title: 'Stormfront Roost',
         speciesId: 'aquilamon',
         stageLabel: 'Champion',
-        statMultiplier: 1.12,
+        statMultiplier: 1.55,
         strengthReward: 13,
         dpReward: 34,
         effortReward: 2,
@@ -371,7 +479,7 @@ export const ADVENTURE_ZONES: AdventureZone[] = [
         title: 'Crimson Gale Pillar',
         speciesId: 'garudamon',
         stageLabel: 'Ultimate',
-        statMultiplier: 1.18,
+        statMultiplier: 1.88,
         strengthReward: 18,
         dpReward: 48,
         effortReward: 3,
@@ -385,7 +493,7 @@ export const ADVENTURE_ZONES: AdventureZone[] = [
         title: 'Solar Feather Sanctum',
         speciesId: 'phoenixmon',
         stageLabel: 'Mega',
-        statMultiplier: 1.28,
+        statMultiplier: 2.22,
         strengthReward: 26,
         dpReward: 70,
         effortReward: 4,
@@ -456,7 +564,7 @@ export const ADVENTURE_ZONES: AdventureZone[] = [
         title: 'Molten Kiln Pit',
         speciesId: 'flarerizamon',
         stageLabel: 'Champion',
-        statMultiplier: 1.16,
+        statMultiplier: 1.62,
         strengthReward: 14,
         dpReward: 36,
         effortReward: 3,
@@ -470,7 +578,7 @@ export const ADVENTURE_ZONES: AdventureZone[] = [
         title: 'Blue Inferno Spire',
         speciesId: 'bluemeramon',
         stageLabel: 'Ultimate',
-        statMultiplier: 1.22,
+        statMultiplier: 1.95,
         strengthReward: 20,
         dpReward: 52,
         effortReward: 3,
@@ -484,7 +592,7 @@ export const ADVENTURE_ZONES: AdventureZone[] = [
         title: 'Gaia Force Crater',
         speciesId: 'wargreymon',
         stageLabel: 'Mega',
-        statMultiplier: 1.32,
+        statMultiplier: 2.3,
         strengthReward: 28,
         dpReward: 75,
         effortReward: 4,
@@ -555,7 +663,7 @@ export const ADVENTURE_ZONES: AdventureZone[] = [
         title: 'Missile Bulkhead',
         speciesId: 'guardromon',
         stageLabel: 'Champion',
-        statMultiplier: 1.2,
+        statMultiplier: 1.66,
         strengthReward: 15,
         dpReward: 40,
         effortReward: 3,
@@ -569,7 +677,7 @@ export const ADVENTURE_ZONES: AdventureZone[] = [
         title: 'Mainframe Overclock',
         speciesId: 'andromon',
         stageLabel: 'Ultimate',
-        statMultiplier: 1.28,
+        statMultiplier: 2.02,
         strengthReward: 22,
         dpReward: 56,
         effortReward: 3,
@@ -583,7 +691,7 @@ export const ADVENTURE_ZONES: AdventureZone[] = [
         title: 'Omega Reactor Core',
         speciesId: 'hiandromon',
         stageLabel: 'Mega',
-        statMultiplier: 1.38,
+        statMultiplier: 2.38,
         strengthReward: 30,
         dpReward: 82,
         effortReward: 4,
@@ -654,7 +762,7 @@ export const ADVENTURE_ZONES: AdventureZone[] = [
         title: 'Hall of Fallen Wings',
         speciesId: 'devimon',
         stageLabel: 'Champion',
-        statMultiplier: 1.26,
+        statMultiplier: 1.72,
         strengthReward: 17,
         dpReward: 44,
         effortReward: 3,
@@ -668,7 +776,7 @@ export const ADVENTURE_ZONES: AdventureZone[] = [
         title: 'Midnight Throne Stair',
         speciesId: 'ladydevimon',
         stageLabel: 'Ultimate',
-        statMultiplier: 1.34,
+        statMultiplier: 2.08,
         strengthReward: 24,
         dpReward: 62,
         effortReward: 4,
@@ -682,7 +790,7 @@ export const ADVENTURE_ZONES: AdventureZone[] = [
         title: 'Apex Abyssal Altar',
         speciesId: 'beelzebumon',
         stageLabel: 'Mega',
-        statMultiplier: 1.45,
+        statMultiplier: 2.48,
         strengthReward: 35,
         dpReward: 95,
         effortReward: 5,

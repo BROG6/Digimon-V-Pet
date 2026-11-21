@@ -7,7 +7,7 @@ import {
 } from '../utils/battleSpiritSprites';
 import { NEW_DIGIMON_SPRITES, SpriteFrame } from '../utils/newDigimonSprites';
 import { getEffectiveSpriteConfig } from '../utils/customSpriteManager';
-import { PixelMeatIcon, PixelVitaminIcon } from './PixelItemIcons';
+import { PixelBerryIcon, PixelMeatIcon, PixelMushroomIcon, PixelSirloinIcon, PixelVitaminIcon } from './PixelItemIcons';
 
 export type DigimonPose = 
   | 'standing' 
@@ -27,7 +27,7 @@ interface DigimonSpriteProps {
   egg?: DigiEggInfo;
   action?: 'idle' | 'walk' | 'eat' | 'sleep' | 'sick' | 'attack' | 'happy' | 'cheer' | 'sit' | 'poop' | 'train' | 'hatch' | 'dead';
   pose?: DigimonPose;
-  eatItem?: 'meat' | 'vitamin';
+  eatItem?: 'meat' | 'vitamin' | 'sirloin' | 'mushroom' | 'berry';
   isCracking?: boolean;
   scale?: number;
   facing?: 'left' | 'right';
@@ -561,6 +561,12 @@ export const DigimonSprite: React.FC<DigimonSpriteProps> = ({
             >
               {eatItem === 'vitamin' ? (
                 <PixelVitaminIcon className="w-6 h-6 drop-shadow-[0_2px_3px_rgba(0,0,0,0.75)]" />
+              ) : eatItem === 'sirloin' ? (
+                <PixelSirloinIcon className="w-7 h-7 drop-shadow-[0_2px_3px_rgba(0,0,0,0.75)]" />
+              ) : eatItem === 'mushroom' ? (
+                <PixelMushroomIcon className="w-6 h-6 drop-shadow-[0_2px_3px_rgba(0,0,0,0.75)]" />
+              ) : eatItem === 'berry' ? (
+                <PixelBerryIcon className="w-6 h-6 drop-shadow-[0_2px_3px_rgba(0,0,0,0.75)]" />
               ) : (
                 <PixelMeatIcon
                   biteStage={eatBeat === 0 ? 0 : eatBeat === 1 ? 1 : eatBeat === 2 ? 2 : 3}

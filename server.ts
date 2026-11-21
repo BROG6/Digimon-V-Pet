@@ -382,9 +382,13 @@ VOICE & ROLEPLAY GUIDELINES:
           const status = err?.status || err?.code;
           const msg = String(err?.message || '');
           const isTransient =
+            status === 404 ||
             status === 429 ||
             status === 503 ||
             status === 500 ||
+            msg.includes('404') ||
+            msg.includes('NOT_FOUND') ||
+            msg.includes('not found') ||
             msg.includes('503') ||
             msg.includes('UNAVAILABLE') ||
             msg.includes('429') ||

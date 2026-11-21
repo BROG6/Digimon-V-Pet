@@ -1,7 +1,7 @@
 import React from 'react';
 import { X } from 'lucide-react';
 import { PetState } from '../types/digimon';
-import { PixelMeatIcon, PixelVitaminIcon } from './PixelItemIcons';
+import { PixelMeatIcon, PixelSirloinIcon, PixelVitaminIcon } from './PixelItemIcons';
 import { sound } from '../utils/audio';
 
 interface ShopModalProps {
@@ -50,13 +50,13 @@ export const ShopModal: React.FC<ShopModalProps> = ({
     },
     {
       id: 'sirloin' as const,
-      name: 'Prime Sirloin 🥩',
+      name: 'Prime Sirloin',
       category: 'Food',
-      description: 'Juicy deluxe steak. Completely tops off +50 hunger and boosts +20 happiness!',
+      description: 'Double Meat deluxe steak (+50 Hunger, +4g Weight, +20 Happiness). Also drops from Ultimates & Megas!',
       price: 25,
-      rewardText: '+2 Big Meats & +35 Hunger',
-      icon: '🥩',
-      currentStock: pet.bigMeatStock,
+      rewardText: '+1 Prime Sirloin (Double Meat)',
+      icon: <PixelSirloinIcon className="w-8 h-8" />,
+      currentStock: pet.sirloinStock ?? 0,
     },
     {
       id: 'vitamin' as const,

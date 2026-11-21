@@ -5,7 +5,7 @@
  */
 
 import { Capacitor } from '@capacitor/core';
-import { AppUpdatePlugin, resolveFullUrl } from './appUpdater';
+import { AppUpdatePlugin, resolveTalkEndpointCandidates } from './appUpdater';
 import { DIGIMON_DATABASE } from '../data/digidex';
 
 export interface DigimonPersonalityProfile {
@@ -465,12 +465,33 @@ export interface DigimonTalkResult {
   error?: string;
 }
 
+function parseTalkPayload(rawText: string): { data: any; parseError?: string } {
+  const trimmed = String(rawText || '').trim();
+  if (!trimmed) {
+    return { data: null, parseError: 'Empty response from server.' };
+  }
+  if (trimmed.startsWith('<')) {
+    return {
+      data: null,
+      parseError: 'Server returned HTML instead of JSON (auth gate or wrong host). Try setting the public Shared App URL in Updater Settings.',
+    };
+  }
+  try {
+    return { data: JSON.parse(trimmed) };
+  } catch {
+    return {
+      data: null,
+      parseError: 'Server returned non-JSON response.',
+    };
+  }
+}
+
 /**
  * Requests an AI-powered conversational reply from the server's Gemini endpoint.
- * Propagates server/API errors transparently and only uses local quotes when offline.
+ * Propagates server/API errors transparently and only uses local quotes for spontaneous idle remarks when offline.
  */
 export async function fetchDigimonAiDialogue(params: DigimonTalkParams): Promise<DigimonTalkResult> {
-  const targetUrl = resolveFullUrl('/api/digimon/talk');
+  const candidates = resolveTalkEndpointCandidates();
   const dbMon = params.speciesId ? DIGIMON_DATABASE[params.speciesId] : undefined;
 
   const payload: DigimonTalkParams = {
@@ -481,22 +502,21 @@ export async function fetchDigimonAiDialogue(params: DigimonTalkParams): Promise
     signatureMove: params.signatureMove || dbMon?.signatureMove?.name,
     playerName: params.playerName?.trim() || undefined,
   };
+  const bodyJson = JSON.stringify(payload);
 
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => {
-    try {
-      controller.abort();
-    } catch {}
-  }, 35000);
-
-  const handleParsedResponse = (ok: boolean, status: number, data: any): DigimonTalkResult => {
+  const handleParsedResponse = (
+    ok: boolean,
+    status: number,
+    data: any,
+    parseError?: string
+  ): DigimonTalkResult => {
     if (ok && data && typeof data.text === 'string' && data.text.trim()) {
       return {
         text: data.text.trim(),
         source: 'ai',
       };
     }
-    const errMsg = data?.error || `Server returned ${status}`;
+    const errMsg = data?.error || parseError || `Server returned ${status}`;
     return {
       text: `(${params.speciesName} couldn't connect right now: ${errMsg})`,
       source: 'offline',
@@ -504,56 +524,102 @@ export async function fetchDigimonAiDialogue(params: DigimonTalkParams): Promise
     };
   };
 
-  try {
-    const res = await fetch(targetUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
-      signal: controller.signal,
-    });
+  let lastErrorReason = 'Network unreachable right now.';
 
-    clearTimeout(timeoutId);
-
-    const data = await res.json().catch(() => null);
-    return handleParsedResponse(res.ok, res.status, data);
-  } catch (err: any) {
-    if (Capacitor.isNativePlatform()) {
+  // On Capacitor Native Android/iOS, call native AppUpdatePlugin.httpPost FIRST to bypass WebView CORS
+  if (Capacitor.isNativePlatform()) {
+    for (const url of candidates) {
       try {
         const nativeRes = await AppUpdatePlugin.httpPost({
-          url: targetUrl,
-          body: JSON.stringify(payload),
+          url,
+          body: bodyJson,
         });
-        const data = nativeRes?.data ? JSON.parse(nativeRes.data) : null;
-        return handleParsedResponse(Boolean(nativeRes?.ok), Number(nativeRes?.status || 502), data);
+        const status = Number(nativeRes?.status || 502);
+        const { data, parseError } = parseTalkPayload(nativeRes?.data || '');
+        if (nativeRes?.ok && data && typeof data.text === 'string' && data.text.trim()) {
+          return {
+            text: data.text.trim(),
+            source: 'ai',
+          };
+        }
+        const errMsg = data?.error || parseError || `Server returned ${status}`;
+        lastErrorReason = errMsg;
+        // If blocked by auth redirect or HTML login page on this candidate, continue to next candidate
+        if (status === 401 || status === 403 || status === 404 || parseError) {
+          continue;
+        }
+        // Real backend/API error (e.g., 503 missing key or 429) — return immediately
+        return handleParsedResponse(false, status, data, parseError);
       } catch (nativeErr: any) {
-        console.warn('Native httpPost fallback failed:', nativeErr);
+        console.warn(`Native httpPost error for ${url}:`, nativeErr);
+        lastErrorReason = nativeErr?.message || 'Native connection failed.';
       }
     }
-
-    console.warn('Gemini AI talk request failed or timed out:', err);
-    if (!params.userMessage) {
-      return {
-        text: getContextualQuote(params.speciesId, {
-          playerName: params.playerName,
-          isSick: params.isSick,
-          hunger: params.hunger,
-          poopCount: params.poopCount,
-          happiness: params.happiness,
-        }),
-        source: 'offline',
-      };
-    }
-    const reason = err?.name === 'AbortError'
-      ? 'Connection timed out. Please try again!'
-      : 'Network unreachable right now.';
-    return {
-      text: `(${params.speciesName} couldn't reach the Digi-Network: ${reason})`,
-      source: 'offline',
-      error: reason,
-    };
-  } finally {
-    clearTimeout(timeoutId);
   }
+
+  // Web path (or final fallback if native plugin wasn't registered)
+  for (const url of candidates) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+      try {
+        controller.abort();
+      } catch {}
+    }, 35000);
+
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: bodyJson,
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+      const rawText = await res.text();
+      const { data, parseError } = parseTalkPayload(rawText);
+
+      if (res.ok && data && typeof data.text === 'string' && data.text.trim()) {
+        return {
+          text: data.text.trim(),
+          source: 'ai',
+        };
+      }
+
+      const errMsg = data?.error || parseError || `Server returned ${res.status}`;
+      lastErrorReason = errMsg;
+      if (res.status === 401 || res.status === 403 || res.status === 404 || parseError) {
+        continue;
+      }
+      return handleParsedResponse(false, res.status, data, parseError);
+    } catch (err: any) {
+      clearTimeout(timeoutId);
+      console.warn(`Gemini AI talk request failed (${url}):`, err);
+      lastErrorReason =
+        err?.name === 'AbortError'
+          ? 'Connection timed out. Please try again!'
+          : err?.message || lastErrorReason;
+    }
+  }
+
+  if (!params.userMessage) {
+    return {
+      text: getContextualQuote(params.speciesId, {
+        playerName: params.playerName,
+        isSick: params.isSick,
+        hunger: params.hunger,
+        poopCount: params.poopCount,
+        happiness: params.happiness,
+      }),
+      source: 'offline',
+    };
+  }
+
+  return {
+    text: `(${params.speciesName} couldn't reach the Digi-Network: ${lastErrorReason})`,
+    source: 'offline',
+    error: lastErrorReason,
+  };
 }

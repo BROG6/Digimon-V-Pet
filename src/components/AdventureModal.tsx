@@ -9,7 +9,12 @@ import {
   DigimonSpecies,
   PetState,
 } from '../types/digimon';
-import { ADVENTURE_ZONES } from '../data/adventureZones';
+import {
+  ADVENTURE_ZONES,
+  getStageTierCombatModifiers,
+  rollBattleFoodDrops,
+  rollWalkFoodDiscoveries,
+} from '../data/adventureZones';
 import { DIGIMON_DATABASE, SPECIAL_ITEMS } from '../data/digidex';
 import {
   ATTACK_ELEMENT_META,
@@ -20,16 +25,26 @@ import {
   mapMoveTypeToElement,
 } from '../data/battleTechniques';
 import { DigimonSprite } from './DigimonSprite';
-import { PixelMeatIcon, PixelVitaminIcon } from './PixelItemIcons';
+import {
+  PixelBerryIcon,
+  PixelMeatIcon,
+  PixelMushroomIcon,
+  PixelSirloinIcon,
+  PixelVitaminIcon,
+} from './PixelItemIcons';
 import { sound, triggerHaptic } from '../utils/audio';
 import confetti from 'canvas-confetti';
 import {
+  AlertTriangle,
   ChevronLeft,
   ChevronRight,
   Compass,
+  FastForward,
   Flame,
+  Footprints,
   Lock,
   Shield,
+  Sparkles,
   Swords,
   Trophy,
   X,
@@ -46,13 +61,209 @@ interface AdventureModalProps {
   onAdventureComplete: (result: AdventureBattleResult) => void;
 }
 
-type ScreenView = 'zones' | 'trail' | 'battling' | 'victory' | 'defeat';
+type ScreenView = 'zones' | 'trail' | 'walking' | 'battling' | 'victory' | 'defeat';
 
 const STAGE_STYLES: Record<AdventureWave['stageLabel'], string> = {
   Rookie: 'text-emerald-300 border-emerald-500/40 bg-emerald-950/60',
   Champion: 'text-sky-300 border-sky-500/40 bg-sky-950/60',
   Ultimate: 'text-amber-300 border-amber-500/40 bg-amber-950/60',
   Mega: 'text-rose-300 border-rose-500/40 bg-rose-950/60',
+};
+
+interface BiomeStyleConfig {
+  skyGradient: string;
+  trailColor: string;
+  trailEdge: string;
+  silhouetteFill: string;
+  ambientLabel: string;
+  props: 'jungle' | 'ocean' | 'tundra' | 'spire' | 'caldera' | 'factory' | 'citadel';
+}
+
+const BIOME_SCENES: Record<string, BiomeStyleConfig> = {
+  'emerald-jungle': {
+    skyGradient: 'from-emerald-950 via-teal-900/90 to-emerald-950',
+    trailColor: 'bg-gradient-to-b from-amber-900/75 via-emerald-950/90 to-slate-950',
+    trailEdge: 'border-t-2 border-emerald-500/50',
+    silhouetteFill: 'bg-emerald-900/55',
+    ambientLabel: 'Sunlit Canopy Trail',
+    props: 'jungle',
+  },
+  'net-ocean': {
+    skyGradient: 'from-sky-950 via-blue-900/85 to-cyan-950',
+    trailColor: 'bg-gradient-to-b from-cyan-900/70 via-blue-950/90 to-slate-950',
+    trailEdge: 'border-t-2 border-cyan-400/50',
+    silhouetteFill: 'bg-cyan-900/45',
+    ambientLabel: 'Abyssal Reef Current',
+    props: 'ocean',
+  },
+  'frost-tundra': {
+    skyGradient: 'from-cyan-950 via-indigo-900/80 to-slate-950',
+    trailColor: 'bg-gradient-to-b from-sky-200/20 via-slate-900/90 to-slate-950',
+    trailEdge: 'border-t-2 border-sky-300/60',
+    silhouetteFill: 'bg-sky-800/45',
+    ambientLabel: 'Glacier Ridge Path',
+    props: 'tundra',
+  },
+  'tempest-spire': {
+    skyGradient: 'from-violet-950 via-indigo-900/80 to-slate-950',
+    trailColor: 'bg-gradient-to-b from-violet-900/55 via-slate-900/90 to-slate-950',
+    trailEdge: 'border-t-2 border-violet-400/50',
+    silhouetteFill: 'bg-violet-800/45',
+    ambientLabel: 'Cloud Citadel Walkway',
+    props: 'spire',
+  },
+  'pyro-caldera': {
+    skyGradient: 'from-rose-950 via-orange-950/90 to-stone-950',
+    trailColor: 'bg-gradient-to-b from-stone-800/85 via-red-950/90 to-slate-950',
+    trailEdge: 'border-t-2 border-orange-500/60',
+    silhouetteFill: 'bg-red-900/50',
+    ambientLabel: 'Volcanic Basalt Ridge',
+    props: 'caldera',
+  },
+  'cyber-factory': {
+    skyGradient: 'from-slate-950 via-cyan-950/85 to-slate-900',
+    trailColor: 'bg-gradient-to-b from-slate-700/80 via-slate-900/95 to-slate-950',
+    trailEdge: 'border-t-2 border-cyan-400/60',
+    silhouetteFill: 'bg-cyan-900/40',
+    ambientLabel: 'Automated Sector Catwalk',
+    props: 'factory',
+  },
+  'dark-citadel': {
+    skyGradient: 'from-purple-950 via-fuchsia-950/80 to-slate-950',
+    trailColor: 'bg-gradient-to-b from-purple-950/85 via-slate-950/95 to-black',
+    trailEdge: 'border-t-2 border-fuchsia-500/50',
+    silhouetteFill: 'bg-purple-900/50',
+    ambientLabel: 'Obsidian Fortress Causeway',
+    props: 'citadel',
+  },
+};
+
+const BiomeBackdropArt: React.FC<{ biome: BiomeStyleConfig; animatedWalk?: boolean }> = ({
+  biome,
+  animatedWalk = false,
+}) => {
+  return (
+    <div className="absolute inset-0 pointer-events-none overflow-hidden">
+      {/* Distant horizon silhouettes */}
+      <div className="absolute inset-x-0 bottom-16 h-28 flex items-end justify-around opacity-65">
+        {biome.props === 'jungle' && (
+          <>
+            <div className="w-16 h-24 rounded-t-full bg-emerald-900/60 border-t border-emerald-500/30" />
+            <div className="w-24 h-28 rounded-t-full bg-teal-900/60 border-t border-emerald-400/30" />
+            <div className="w-20 h-20 rounded-t-full bg-emerald-950/80 border-t border-emerald-500/20" />
+            <div className="w-28 h-26 rounded-t-full bg-emerald-900/55 border-t border-emerald-400/25" />
+          </>
+        )}
+        {biome.props === 'ocean' && (
+          <>
+            <div className="w-8 h-20 rounded-t-full bg-cyan-800/45 border border-cyan-400/25" />
+            <div className="w-12 h-24 rounded-t-2xl bg-teal-800/45 border border-cyan-300/20" />
+            <div className="w-10 h-16 rounded-t-full bg-blue-800/50 border border-sky-400/25" />
+            <div className="w-14 h-22 rounded-t-xl bg-cyan-900/55 border border-cyan-400/25" />
+          </>
+        )}
+        {biome.props === 'tundra' && (
+          <>
+            <div className="w-0 h-0 border-l-[38px] border-r-[38px] border-b-[92px] border-l-transparent border-r-transparent border-b-sky-900/60" />
+            <div className="w-0 h-0 border-l-[48px] border-r-[48px] border-b-[112px] border-l-transparent border-r-transparent border-b-cyan-800/55" />
+            <div className="w-0 h-0 border-l-[34px] border-r-[34px] border-b-[80px] border-l-transparent border-r-transparent border-b-indigo-900/60" />
+          </>
+        )}
+        {biome.props === 'spire' && (
+          <>
+            <div className="w-24 h-10 rounded-full bg-violet-400/20 blur-[1px] mb-12" />
+            <div className="w-14 h-28 rounded-t-lg bg-indigo-900/55 border-t border-violet-300/30" />
+            <div className="w-28 h-12 rounded-full bg-slate-200/15 blur-[1px] mb-14" />
+            <div className="w-12 h-24 rounded-t-lg bg-violet-900/55 border-t border-violet-300/30" />
+          </>
+        )}
+        {biome.props === 'caldera' && (
+          <>
+            <div className="w-0 h-0 border-l-[42px] border-r-[42px] border-b-[88px] border-l-transparent border-r-transparent border-b-stone-900/90" />
+            <div className="w-0 h-0 border-l-[54px] border-r-[54px] border-b-[108px] border-l-transparent border-r-transparent border-b-red-950/85" />
+            <div className="w-0 h-0 border-l-[36px] border-r-[36px] border-b-[78px] border-l-transparent border-r-transparent border-b-stone-900/85" />
+          </>
+        )}
+        {biome.props === 'factory' && (
+          <>
+            <div className="w-12 h-28 bg-slate-800/80 border border-cyan-400/30 flex flex-col justify-evenly p-1.5">
+              <span className="h-1 bg-cyan-400/50 rounded" />
+              <span className="h-1 bg-emerald-400/40 rounded" />
+              <span className="h-1 bg-cyan-400/50 rounded" />
+            </div>
+            <div className="w-16 h-24 bg-slate-900/80 border border-cyan-500/25 flex flex-col justify-evenly p-1.5">
+              <span className="h-1 bg-amber-400/50 rounded" />
+              <span className="h-1 bg-cyan-400/50 rounded" />
+            </div>
+            <div className="w-14 h-28 bg-slate-800/80 border border-cyan-400/30 flex flex-col justify-evenly p-1.5">
+              <span className="h-1 bg-cyan-400/50 rounded" />
+              <span className="h-1 bg-cyan-400/50 rounded" />
+            </div>
+          </>
+        )}
+        {biome.props === 'citadel' && (
+          <>
+            <div className="w-10 h-28 bg-purple-950/80 border-x border-t border-fuchsia-500/30 rounded-t-sm" />
+            <div className="w-16 h-24 bg-slate-950/85 border-x border-t border-purple-500/30 rounded-t-full" />
+            <div className="w-10 h-28 bg-purple-950/80 border-x border-t border-fuchsia-500/30 rounded-t-sm" />
+          </>
+        )}
+      </div>
+
+      {/* Ambient particles */}
+      <div className="absolute inset-0">
+        {biome.props === 'jungle' && (
+          <>
+            <span className="absolute top-10 left-[18%] w-1.5 h-1.5 rounded-full bg-lime-300/70 animate-pulse" />
+            <span className="absolute top-16 left-[58%] w-1.5 h-1.5 rounded-full bg-emerald-300/70 animate-ping" />
+            <span className="absolute top-8 left-[80%] w-1 h-1 rounded-full bg-amber-300/70 animate-pulse" />
+          </>
+        )}
+        {biome.props === 'ocean' && (
+          <>
+            <span className="absolute top-14 left-[24%] w-2.5 h-2.5 rounded-full border border-cyan-300/60 animate-bounce" />
+            <span className="absolute top-10 left-[62%] w-2 h-2 rounded-full border border-sky-200/60 animate-pulse" />
+            <span className="absolute top-20 left-[82%] w-3 h-3 rounded-full border border-cyan-300/40 animate-bounce" />
+          </>
+        )}
+        {biome.props === 'tundra' && (
+          <>
+            <span className="absolute top-8 left-[20%] w-1.5 h-1.5 rounded-full bg-white/80 animate-bounce" />
+            <span className="absolute top-14 left-[50%] w-1.5 h-1.5 rounded-full bg-sky-100/80 animate-pulse" />
+            <span className="absolute top-6 left-[75%] w-2 h-2 rounded-full bg-white/70 animate-bounce" />
+          </>
+        )}
+        {biome.props === 'caldera' && (
+          <>
+            <span className="absolute top-16 left-[28%] w-1.5 h-1.5 rounded-full bg-orange-400/90 animate-ping" />
+            <span className="absolute top-10 left-[65%] w-1.5 h-1.5 rounded-full bg-amber-400/80 animate-pulse" />
+          </>
+        )}
+        {(biome.props === 'spire' || biome.props === 'factory' || biome.props === 'citadel') && (
+          <>
+            <span className="absolute top-12 left-[22%] w-6 h-[1px] bg-white/30 animate-pulse" />
+            <span className="absolute top-16 left-[64%] w-8 h-[1px] bg-cyan-300/35 animate-pulse" />
+          </>
+        )}
+      </div>
+
+      {/* Ground walking path */}
+      <div className={`absolute inset-x-0 bottom-0 h-16 ${biome.trailColor} ${biome.trailEdge}`}>
+        {/* Path stepping stones / grid markers */}
+        <div
+          className={`absolute inset-x-0 top-3 flex justify-around opacity-40 ${
+            animatedWalk ? 'animate-pulse' : ''
+          }`}
+        >
+          <span className="w-8 h-1.5 rounded-full bg-white/30" />
+          <span className="w-10 h-1.5 rounded-full bg-white/25" />
+          <span className="w-7 h-1.5 rounded-full bg-white/30" />
+          <span className="w-9 h-1.5 rounded-full bg-white/25" />
+          <span className="w-8 h-1.5 rounded-full bg-white/30" />
+        </div>
+      </div>
+    </div>
+  );
 };
 
 export const AdventureModal: React.FC<AdventureModalProps> = ({
@@ -65,6 +276,13 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
   const [view, setView] = useState<ScreenView>('zones');
   const [selectedZoneId, setSelectedZoneId] = useState<string>(ADVENTURE_ZONES[0].id);
   const [activeWave, setActiveWave] = useState<AdventureWave | null>(null);
+
+  // Walking expedition state
+  const [walkProgress, setWalkProgress] = useState<number>(0);
+  const [walkLoot, setWalkLoot] = useState<('mushroom' | 'berry')[]>([]);
+  const [walkLootClaimedIndex, setWalkLootClaimedIndex] = useState<number>(0);
+  const [walkDiscoveryBanner, setWalkDiscoveryBanner] = useState<string | null>(null);
+  const walkLootRef = useRef<('mushroom' | 'berry')[]>([]);
 
   // Combat State
   const [playerFighter, setPlayerFighter] = useState<BattleFighter | null>(null);
@@ -95,6 +313,8 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
     [selectedZoneId]
   );
 
+  const activeBiome = BIOME_SCENES[selectedZone.id] || BIOME_SCENES['emerald-jungle'];
+
   const totalClearedWaves = useMemo(
     () => ADVENTURE_ZONES.reduce((acc, z) => acc + Math.min(z.waves.length, clearedMap[z.id] ?? 0), 0),
     [clearedMap]
@@ -123,6 +343,11 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
       setMeatUsed(0);
       setVitaminsUsed(0);
       setLastResult(null);
+      setWalkProgress(0);
+      setWalkLoot([]);
+      setWalkLootClaimedIndex(0);
+      setWalkDiscoveryBanner(null);
+      walkLootRef.current = [];
       completionReportedRef.current = false;
     }
   }, [isOpen]);
@@ -153,15 +378,12 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
       hp: Math.round(oppSpecies.baseHp * mult),
       atk: Math.round(oppSpecies.baseAtk * mult),
       def: Math.round(oppSpecies.baseDef * mult),
-      spd: Math.round(oppSpecies.baseSpd * (0.9 + (mult - 0.8) * 0.4)),
+      spd: Math.round(oppSpecies.baseSpd * (0.95 + (mult - 0.8) * 0.4)),
     };
   };
 
-  const startWaveBattle = (zone: AdventureZone, wave: AdventureWave) => {
+  const beginBattleEncounter = (zone: AdventureZone, wave: AdventureWave) => {
     if (!species || pet.stage === 'egg') return;
-
-    sound.playButton();
-    triggerHaptic('medium');
 
     const stats = getEffectiveBattleStats(pet, species);
     const equippedMoves = getEquippedBattleMoves(pet, species);
@@ -190,9 +412,11 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
 
     const { oppSpecies, hp, atk: oppAtk, def: oppDef, spd } = estimateOpponentStats(wave);
     const oppEl = getSpeciesElementType(oppSpecies);
+    const isHiddenBoss =
+      wave.waveNumber === zone.waves.length && (clearedMap[zone.id] ?? 0) < zone.waves.length;
     const opponent: BattleFighter = {
       id: `adv-opp-${wave.waveNumber}`,
-      name: oppSpecies.name,
+      name: isHiddenBoss ? '??? (Area Boss)' : oppSpecies.name,
       speciesId: oppSpecies.id,
       stage: oppSpecies.stage,
       crest: oppSpecies.crest,
@@ -201,7 +425,7 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
       maxHp: hp,
       mp: 60,
       maxMp: 60,
-      sp: wave.waveNumber >= 4 ? 30 : 15,
+      sp: wave.waveNumber >= 4 ? 35 : 15,
       atk: oppAtk,
       def: oppDef,
       spd,
@@ -228,20 +452,93 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
     setBattleLogs([
       {
         id: 'adv-start',
-        text: `${zone.name} · Wave ${wave.waveNumber}: ${wave.bossFlavor}`,
+        text: `${zone.name} · Wave ${wave.waveNumber}: ${isHiddenBoss ? 'A towering shadowed guardian blocks the summit!' : wave.bossFlavor}`,
         type: 'action',
       },
     ]);
     setView('battling');
   };
 
+  // Start Walking Expedition along the styled Biome Trail before Combat
+  const startWaveBattle = (zone: AdventureZone, wave: AdventureWave) => {
+    if (!species || pet.stage === 'egg') return;
+
+    sound.playButton();
+    triggerHaptic('medium');
+
+    const rolledWalkLoot = rollWalkFoodDiscoveries();
+    walkLootRef.current = rolledWalkLoot;
+    setSelectedZoneId(zone.id);
+    setActiveWave(wave);
+    setWalkLoot(rolledWalkLoot);
+    setWalkLootClaimedIndex(0);
+    setWalkDiscoveryBanner(null);
+    setWalkProgress(0);
+    setView('walking');
+  };
+
+  // Walking Expedition Timer Loop
+  useEffect(() => {
+    if (view !== 'walking' || !activeWave) return;
+
+    const startTime = Date.now();
+    const walkDurationMs = 2800;
+
+    const interval = window.setInterval(() => {
+      const elapsed = Date.now() - startTime;
+      const pct = Math.min(100, Math.round((elapsed / walkDurationMs) * 100));
+      setWalkProgress(pct);
+
+      // Reveal first trail pickup at 32% and second at 56%
+      if (pct >= 32 && walkLootRef.current.length >= 1) {
+        setWalkLootClaimedIndex((prev) => {
+          if (prev < 1) {
+            sound.playEat();
+            triggerHaptic('light');
+            const item = walkLootRef.current[0];
+            setWalkDiscoveryBanner(
+              item === 'mushroom' ? 'Found +1 Digi-Mushroom on the trail!' : 'Found +1 Digi-Berry on the trail!'
+            );
+            return 1;
+          }
+          return prev;
+        });
+      }
+      if (pct >= 56 && walkLootRef.current.length >= 2) {
+        setWalkLootClaimedIndex((prev) => {
+          if (prev < 2) {
+            sound.playEat();
+            triggerHaptic('light');
+            const item = walkLootRef.current[1];
+            setWalkDiscoveryBanner(
+              item === 'mushroom' ? 'Found another +1 Digi-Mushroom!' : 'Found another +1 Digi-Berry!'
+            );
+            return 2;
+          }
+          return prev;
+        });
+      }
+
+      if (pct >= 100) {
+        window.clearInterval(interval);
+        sound.playAlert();
+        triggerHaptic('medium');
+        beginBattleEncounter(selectedZone, activeWave);
+      }
+    }, 60);
+
+    return () => window.clearInterval(interval);
+  }, [view, activeWave, selectedZone]);
+
   // Enemy Turn Loop
   useEffect(() => {
     if (view !== 'battling' || isPlayerTurn || !opponentFighter || !playerFighter || !activeWave) return;
 
+    const stageMods = getStageTierCombatModifiers(pet.stage, activeWave.stageLabel);
+
     const timer = setTimeout(() => {
       const canUseSpecial = opponentFighter.sp >= 50;
-      const specialChance = activeWave.waveNumber >= 5 ? 0.65 : 0.48;
+      const specialChance = activeWave.waveNumber >= 5 ? 0.72 : activeWave.waveNumber >= 4 ? 0.58 : 0.45;
       const shouldUseSpecial = canUseSpecial && Math.random() < specialChance;
       const oppSpecies = DIGIMON_DATABASE[opponentFighter.speciesId];
 
@@ -253,12 +550,15 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
 
         const moveEl = mapMoveTypeToElement(opponentFighter.signatureMove, oppSpecies);
         const typeMult = getElementDamageMultiplier(moveEl, playerFighter.element || 'neutral');
-        const movePower = Math.round(opponentFighter.signatureMove.power * (0.64 + activeWave.statMultiplier * 0.18));
-        const rawDamage = Math.max(
-          7,
-          Math.floor((movePower - (isDefending ? playerFighter.def * 0.8 : playerFighter.def * 0.36)) * typeMult)
+        const movePower = Math.round(
+          opponentFighter.signatureMove.power * (0.72 + activeWave.statMultiplier * 0.22)
         );
-        const finalDamage = isDefending ? Math.max(3, Math.floor(rawDamage * 0.4)) : rawDamage;
+        const baseDmg = Math.max(
+          9,
+          Math.floor((movePower - (isDefending ? playerFighter.def * 0.78 : playerFighter.def * 0.34)) * typeMult)
+        );
+        const tierScaled = Math.round(baseDmg * stageMods.enemyDamageMult);
+        const finalDamage = isDefending ? Math.max(4, Math.floor(tierScaled * 0.4)) : tierScaled;
 
         setOpponentFighter((prev) => (prev ? { ...prev, sp: prev.sp - 50 } : null));
 
@@ -292,13 +592,16 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
 
         const oppEl = opponentFighter.element || 'neutral';
         const typeMult = getElementDamageMultiplier(oppEl, playerFighter.element || 'neutral');
-        const rawDamage = Math.max(
-          5,
-          Math.floor((opponentFighter.atk * 0.64 - (isDefending ? playerFighter.def * 0.7 : playerFighter.def * 0.32)) * typeMult)
+        const baseDmg = Math.max(
+          7,
+          Math.floor((opponentFighter.atk * 0.72 - (isDefending ? playerFighter.def * 0.68 : playerFighter.def * 0.3)) * typeMult)
         );
-        const finalDamage = isDefending ? Math.max(2, Math.floor(rawDamage * 0.4)) : rawDamage;
+        const tierScaled = Math.round(baseDmg * stageMods.enemyDamageMult);
+        const finalDamage = isDefending ? Math.max(3, Math.floor(tierScaled * 0.4)) : tierScaled;
 
-        setOpponentFighter((prev) => (prev ? { ...prev, sp: Math.min(100, prev.sp + 18) } : null));
+        setOpponentFighter((prev) =>
+          prev ? { ...prev, sp: Math.min(100, prev.sp + (activeWave.waveNumber >= 4 ? 22 : 18)) } : null
+        );
 
         setTimeout(() => {
           setPlayerEffect('hit');
@@ -334,12 +637,15 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
     }, 1050);
 
     return () => clearTimeout(timer);
-  }, [isPlayerTurn, view, opponentFighter, playerFighter, isDefending, activeWave]);
+  }, [isPlayerTurn, view, opponentFighter, playerFighter, isDefending, activeWave, pet.stage]);
 
   // Detect Battle Completion & Immediately Persist Rewards
   useEffect(() => {
     if (view !== 'battling' || !playerFighter || !opponentFighter || !activeWave) return;
     if (completionReportedRef.current) return;
+
+    const walkMushrooms = walkLootRef.current.filter((f) => f === 'mushroom').length;
+    const walkBerries = walkLootRef.current.filter((f) => f === 'berry').length;
 
     if (opponentFighter.currentHp <= 0) {
       completionReportedRef.current = true;
@@ -364,6 +670,9 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
       const supplyCacheBonusMeat = isBossWave && isFirstClearOfWave && !selectedZone.firstClearRelicId ? 3 : 0;
       const supplyCacheBonusVit = isBossWave && isFirstClearOfWave && !selectedZone.firstClearRelicId ? 2 : 0;
 
+      // Random food drops: Mushroom & Berry any tier; Prime Sirloin STRICTLY Ultimate/Mega only
+      const battleFood = rollBattleFoodDrops(activeWave.stageLabel);
+
       const result: AdventureBattleResult = {
         zoneId: selectedZone.id,
         waveNumber: activeWave.waveNumber,
@@ -374,6 +683,10 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
         bitsGained: activeWave.bitsReward + supplyCacheBonusBits + (isFirstClearOfWave ? 20 : 0),
         meatGained: activeWave.meatDrop + supplyCacheBonusMeat,
         vitaminsGained: activeWave.vitaminDrop + supplyCacheBonusVit,
+        mushroomGained: walkMushrooms + battleFood.mushroom,
+        berryGained: walkBerries + battleFood.berry,
+        sirloinGained: battleFood.sirloin,
+        walkFoodFound: walkLootRef.current,
         unlockedRelicId,
         meatUsed,
         vitaminsUsed,
@@ -395,6 +708,10 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
         bitsGained: 15,
         meatGained: 0,
         vitaminsGained: 0,
+        mushroomGained: walkMushrooms,
+        berryGained: walkBerries,
+        sirloinGained: 0,
+        walkFoodFound: walkLootRef.current,
         meatUsed,
         vitaminsUsed,
         isFirstClearOfWave: false,
@@ -419,22 +736,24 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
 
   // Player Combat Actions
   const handlePlayerAttack = () => {
-    if (!isPlayerTurn || !playerFighter || !opponentFighter) return;
+    if (!isPlayerTurn || !playerFighter || !opponentFighter || !activeWave) return;
     setIsPlayerTurn(false);
     sound.playPunch();
     triggerHaptic('medium');
     setPlayerActionAnim('attack');
     setPlayerEffect('lunge');
 
+    const stageMods = getStageTierCombatModifiers(pet.stage, activeWave.stageLabel);
     const chargeMult = isCharged ? 1.6 : 1.0;
     const typeMult = getElementDamageMultiplier(
       playerFighter.element || 'neutral',
       opponentFighter.element || 'neutral'
     );
-    const damage = Math.max(
-      14,
-      Math.floor((playerFighter.atk * 0.96 * chargeMult - opponentFighter.def * 0.26) * typeMult)
+    const rawDamage = Math.max(
+      12,
+      Math.floor((playerFighter.atk * 0.96 * chargeMult - opponentFighter.def * 0.28) * typeMult)
     );
+    const damage = Math.max(3, Math.floor(rawDamage * stageMods.playerDamageMult));
 
     setPlayerFighter((prev) =>
       prev
@@ -478,21 +797,23 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
   };
 
   const handlePlayerSpecial = () => {
-    if (!isPlayerTurn || !playerFighter || !opponentFighter || playerFighter.sp < 50) return;
+    if (!isPlayerTurn || !playerFighter || !opponentFighter || !activeWave || playerFighter.sp < 50) return;
     setIsPlayerTurn(false);
     sound.playBlast();
     triggerHaptic('heavy');
     setPlayerActionAnim('attack');
     setPlayerEffect('lunge');
 
+    const stageMods = getStageTierCombatModifiers(pet.stage, activeWave.stageLabel);
     const moveEl = mapMoveTypeToElement(playerFighter.signatureMove, species);
     const typeMult = getElementDamageMultiplier(moveEl, opponentFighter.element || 'neutral');
     const mult = isCharged ? 1.65 : 1.25;
     const brainsBonus = Math.floor((playerFighter.brains || 20) * 0.14);
-    const damage = Math.max(
-      26,
+    const rawDamage = Math.max(
+      24,
       Math.floor((playerFighter.signatureMove.power * mult + playerFighter.atk * 0.35 + brainsBonus - opponentFighter.def * 0.35) * typeMult)
     );
+    const damage = Math.max(6, Math.floor(rawDamage * stageMods.playerDamageMult));
 
     setPlayerFighter((prev) => (prev ? { ...prev, sp: prev.sp - 50 } : null));
     setIsCharged(false);
@@ -528,7 +849,7 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
   };
 
   const handleUseLearnedTechnique = (move: BattleMove) => {
-    if (!isPlayerTurn || !playerFighter || !opponentFighter) return;
+    if (!isPlayerTurn || !playerFighter || !opponentFighter || !activeWave) return;
     const currentMp = playerFighter.mp ?? 0;
     if (currentMp < move.mpCost) return;
 
@@ -539,13 +860,15 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
     setPlayerActionAnim('attack');
     setPlayerEffect('lunge');
 
+    const stageMods = getStageTierCombatModifiers(pet.stage, activeWave.stageLabel);
     const typeMult = getElementDamageMultiplier(move.element, opponentFighter.element || 'neutral');
     const chargeMult = isCharged ? 1.55 : 1.0;
     const brainsBonus = Math.floor((playerFighter.brains || 20) * 0.16);
-    const damage = Math.max(
+    const rawDamage = Math.max(
       18,
       Math.floor((move.power * 1.15 * chargeMult + playerFighter.atk * 0.42 + brainsBonus - opponentFighter.def * 0.25) * typeMult)
     );
+    const damage = Math.max(5, Math.floor(rawDamage * stageMods.playerDamageMult));
 
     setPlayerFighter((prev) =>
       prev
@@ -716,10 +1039,19 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
   if (!isOpen) return null;
 
   const zoneClearedCount = Math.min(selectedZone.waves.length, clearedMap[selectedZone.id] ?? 0);
+  const isSelectedZoneBossDefeated = zoneClearedCount >= selectedZone.waves.length;
+  const activeIsHiddenBoss = Boolean(
+    activeWave &&
+      activeWave.waveNumber === selectedZone.waves.length &&
+      !isSelectedZoneBossDefeated
+  );
   const nextWaveAfterVictory =
     activeWave && activeWave.waveNumber < selectedZone.waves.length
       ? selectedZone.waves[activeWave.waveNumber]
       : null;
+  const activeStageMods = activeWave
+    ? getStageTierCombatModifiers(pet.stage, activeWave.stageLabel)
+    : null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-4 bg-slate-950/90 backdrop-blur-md android-safe-modal">
@@ -800,7 +1132,7 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
                   </div>
                 </div>
                 <div className="text-xs text-emerald-300 font-chakra">
-                  Waves 1–3 Rookie · Wave 4 Champion · Wave 5 Ultimate · Wave 6 Mega Boss
+                  Trail drops Mushrooms/Berries · Ultimates & Megas drop Prime Sirloin!
                 </div>
               </div>
 
@@ -808,7 +1140,7 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
                 {ADVENTURE_ZONES.map((zone) => {
                   const zoneCleared = Math.min(zone.waves.length, clearedMap[zone.id] ?? 0);
-                  const isComplete = zoneCleared >= zone.waves.length;
+                  const isBossDefeated = zoneCleared >= zone.waves.length;
                   const bossWave = zone.waves[zone.waves.length - 1];
                   const bossSpecies = DIGIMON_DATABASE[bossWave.speciesId];
                   const relic = zone.firstClearRelicId ? SPECIAL_ITEMS[zone.firstClearRelicId] : undefined;
@@ -826,7 +1158,7 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
                         setView('trail');
                       }}
                       className={`group text-left rounded-2xl border p-4 transition-all cursor-pointer bg-gradient-to-br ${zone.backdropClass} hover:brightness-110 active:scale-[0.99] min-h-[138px] flex flex-col justify-between ${
-                        isComplete
+                        isBossDefeated
                           ? 'border-emerald-400/50'
                           : 'border-slate-700/80 hover:border-slate-500'
                       }`}
@@ -843,8 +1175,21 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
                         </div>
 
                         {bossSpecies && (
-                          <div className="w-16 h-16 rounded-xl bg-slate-950/65 border border-white/10 flex items-center justify-center shrink-0 overflow-hidden">
-                            <DigimonSprite species={bossSpecies} action="idle" facing="left" scale={0.7} />
+                          <div className="relative w-16 h-16 rounded-xl bg-slate-950/80 border border-white/15 flex items-center justify-center shrink-0 overflow-hidden">
+                            <div
+                              className={
+                                !isBossDefeated
+                                  ? 'brightness-0 contrast-200 opacity-85 select-none pointer-events-none'
+                                  : ''
+                              }
+                            >
+                              <DigimonSprite species={bossSpecies} action="idle" facing="left" scale={0.7} />
+                            </div>
+                            {!isBossDefeated && (
+                              <span className="absolute bottom-1 right-1 px-1 py-0.5 rounded bg-slate-900/90 border border-white/20 font-pixel text-[8px] text-amber-300">
+                                ???
+                              </span>
+                            )}
                           </div>
                         )}
                       </div>
@@ -899,7 +1244,10 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
                   const isUnlocked = wave.waveNumber <= zoneClearedCount + 1;
                   const isCleared = wave.waveNumber <= zoneClearedCount;
                   const isNextTarget = wave.waveNumber === zoneClearedCount + 1;
+                  const isBossWave = wave.waveNumber === selectedZone.waves.length;
+                  const isBossBlanked = isBossWave && !isCleared;
                   const stageStyle = STAGE_STYLES[wave.stageLabel];
+                  const waveMods = getStageTierCombatModifiers(pet.stage, wave.stageLabel);
 
                   return (
                     <div
@@ -913,18 +1261,36 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
                       }`}
                     >
                       <div className="flex items-center gap-3.5 min-w-0">
-                        <div className="w-16 h-16 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center shrink-0 overflow-hidden">
-                          <DigimonSprite species={opp.oppSpecies} action="idle" facing="left" scale={0.72} />
+                        <div className="relative w-16 h-16 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center shrink-0 overflow-hidden">
+                          <div
+                            className={
+                              isBossBlanked
+                                ? 'brightness-0 contrast-200 opacity-85 select-none pointer-events-none'
+                                : ''
+                            }
+                          >
+                            <DigimonSprite species={opp.oppSpecies} action="idle" facing="left" scale={0.72} />
+                          </div>
+                          {isBossBlanked && (
+                            <span className="absolute bottom-1 right-1 px-1 py-0.5 rounded bg-slate-950/90 border border-rose-500/40 font-pixel text-[8px] text-rose-300">
+                              BOSS
+                            </span>
+                          )}
                         </div>
 
                         <div className="min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-chakra font-bold text-white text-base truncate">
-                              Wave {wave.waveNumber}: {opp.oppSpecies.name}
+                              Wave {wave.waveNumber}: {isBossBlanked ? '??? (Area Boss)' : opp.oppSpecies.name}
                             </span>
                             <span className={`text-[11px] font-chakra font-semibold px-2 py-0.5 rounded-md border ${stageStyle}`}>
                               {wave.stageLabel}
                             </span>
+                            {waveMods.label && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-chakra font-semibold px-2 py-0.5 rounded-md border border-rose-500/45 bg-rose-950/60 text-rose-300">
+                                <AlertTriangle className="w-3 h-3" /> {waveMods.label}
+                              </span>
+                            )}
                             {isCleared && (
                               <span className="inline-flex items-center gap-1 text-xs text-emerald-400 font-chakra">
                                 <CheckCircle2 className="w-3.5 h-3.5" /> Cleared
@@ -932,12 +1298,18 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
                             )}
                           </div>
 
-                          <div className="text-xs text-slate-300 mt-0.5 truncate">{wave.title}</div>
+                          <div className="text-xs text-slate-300 mt-0.5 truncate">
+                            {isBossBlanked
+                              ? `${wave.title} — Defeat this Area Boss to reveal its identity!`
+                              : wave.title}
+                          </div>
 
                           <div className="text-xs text-slate-400 mt-1 tabular-nums">
-                            HP {opp.hp} · ATK {opp.atk} · Rewards: +{wave.strengthReward} STR · +{wave.dpReward} DP · +
-                            {wave.bitsReward} Bits · +{wave.meatDrop} Meat
+                            {isBossBlanked ? 'HP ??? · ATK ???' : `HP ${opp.hp} · ATK ${opp.atk}`} · Rewards: +
+                            {wave.strengthReward} STR · +{wave.dpReward} DP · +{wave.bitsReward} Bits · +{wave.meatDrop} Meat
                             {wave.vitaminDrop > 0 ? ` · +${wave.vitaminDrop} Vit` : ''}
+                            {(wave.stageLabel === 'Ultimate' || wave.stageLabel === 'Mega') &&
+                              ' · Chance: Prime Sirloin'}
                           </div>
                         </div>
                       </div>
@@ -960,11 +1332,11 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
                             </>
                           ) : isCleared ? (
                             <>
-                              <RotateCcw className="w-4 h-4" /> Replay Wave
+                              <RotateCcw className="w-4 h-4" /> Explore & Replay
                             </>
                           ) : (
                             <>
-                              <Swords className="w-4 h-4" /> Fight Wave {wave.waveNumber}
+                              <Footprints className="w-4 h-4" /> Walk Wave {wave.waveNumber}
                             </>
                           )}
                         </button>
@@ -976,19 +1348,160 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
             </div>
           )}
 
+          {/* VIEW 2.5: BIOME WALKING PATH & FOOD DISCOVERY */}
+          {view === 'walking' && activeWave && species && (
+            <div className="space-y-4 py-1">
+              <div
+                className={`relative w-full h-64 sm:h-72 rounded-2xl border border-slate-700 bg-gradient-to-b ${activeBiome.skyGradient} overflow-hidden flex flex-col justify-between p-4`}
+              >
+                <BiomeBackdropArt biome={activeBiome} animatedWalk />
+
+                {/* Top Path Banner */}
+                <div className="relative z-20 flex items-center justify-between gap-2">
+                  <div className="px-3 py-1 rounded-xl bg-slate-950/85 border border-white/15 font-chakra text-xs text-slate-200 flex items-center gap-1.5">
+                    <Footprints className="w-3.5 h-3.5 text-emerald-300 animate-pulse" />
+                    <span>
+                      {selectedZone.name} · {activeBiome.ambientLabel}
+                    </span>
+                  </div>
+                  <div className="px-2.5 py-1 rounded-xl bg-slate-950/85 border border-white/15 font-pixel text-[9px] text-amber-300 tabular-nums">
+                    TRAIL {walkProgress}%
+                  </div>
+                </div>
+
+                {/* Mid-Walk Discovery Toast */}
+                {walkDiscoveryBanner && (
+                  <div className="relative z-20 self-center px-3.5 py-1.5 rounded-full bg-amber-950/90 border border-amber-400/70 text-amber-200 font-chakra font-bold text-xs flex items-center gap-1.5 shadow-lg animate-bounce">
+                    <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                    <span>{walkDiscoveryBanner}</span>
+                  </div>
+                )}
+
+                {/* Walking Actors along the ground trail */}
+                <div className="relative z-10 h-32 w-full flex items-end justify-between px-4 sm:px-10 pb-3">
+                  {/* Player walking smoothly left-to-mid */}
+                  <div
+                    className="transition-all duration-150 flex flex-col items-center"
+                    style={{ transform: `translateX(${Math.min(48, walkProgress * 0.48)}px)` }}
+                  >
+                    <DigimonSprite species={species} action="walk" facing="right" scale={0.95} />
+                  </div>
+
+                  {/* Trail food pickup on the path before reaching enemy */}
+                  {walkLoot.length > 0 && walkProgress < 68 && (
+                    <div
+                      className={`mb-2 flex items-center gap-1.5 px-2 py-1 rounded-xl bg-slate-950/80 border border-amber-400/50 transition-all duration-300 ${
+                        walkLootClaimedIndex > 0 ? 'opacity-40 -translate-y-4 scale-90' : 'animate-bounce'
+                      }`}
+                    >
+                      {walkLoot[0] === 'mushroom' ? (
+                        <PixelMushroomIcon className="w-6 h-6" />
+                      ) : (
+                        <PixelBerryIcon className="w-6 h-6" />
+                      )}
+                    </div>
+                  )}
+
+                  {/* Incoming enemy appears along the path from ~55% onwards */}
+                  {(() => {
+                    const oppSpecies = DIGIMON_DATABASE[activeWave.speciesId];
+                    const showEnemy = walkProgress >= 55 && oppSpecies;
+                    return (
+                      <div
+                        className={`transition-all duration-500 flex flex-col items-center ${
+                          showEnemy ? 'opacity-100 translate-x-0' : 'opacity-0 translate-x-10'
+                        }`}
+                      >
+                        {showEnemy && oppSpecies && (
+                          <>
+                            <span className="mb-1 px-2 py-0.5 rounded bg-rose-950/90 border border-rose-500/50 font-pixel text-[8px] text-rose-200">
+                              {activeIsHiddenBoss ? '??? APPROACHING!' : `${oppSpecies.name} AHEAD!`}
+                            </span>
+                            <div
+                              className={
+                                activeIsHiddenBoss
+                                  ? 'brightness-0 contrast-200 opacity-90 select-none pointer-events-none'
+                                  : ''
+                              }
+                            >
+                              <DigimonSprite species={oppSpecies} action="idle" facing="left" scale={0.95} />
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </div>
+              </div>
+
+              {/* Progress Bar & Skip Button */}
+              <div className="bg-slate-950/85 border border-slate-800 rounded-2xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between text-xs font-chakra text-slate-300 mb-1.5">
+                    <span>
+                      {walkProgress < 55
+                        ? `Exploring ${waveTitleOrFallback(activeWave, activeIsHiddenBoss)}...`
+                        : activeIsHiddenBoss
+                        ? 'Shadowed Area Boss detected ahead!'
+                        : `${DIGIMON_DATABASE[activeWave.speciesId]?.name || 'Wild Digimon'} appeared along the path!`}
+                    </span>
+                    {walkLootClaimedIndex > 0 && (
+                      <span className="text-emerald-300 font-semibold flex items-center gap-1">
+                        Picked up{' '}
+                        {walkLoot.slice(0, walkLootClaimedIndex).map((item, idx) =>
+                          item === 'mushroom' ? (
+                            <PixelMushroomIcon key={idx} className="w-4 h-4 inline" />
+                          ) : (
+                            <PixelBerryIcon key={idx} className="w-4 h-4 inline" />
+                          )
+                        )}
+                      </span>
+                    )}
+                  </div>
+                  <div className="w-full h-2.5 bg-slate-800 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-gradient-to-r from-emerald-400 to-cyan-400 transition-all duration-100"
+                      style={{ width: `${walkProgress}%` }}
+                    />
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => {
+                    sound.playButton();
+                    beginBattleEncounter(selectedZone, activeWave);
+                  }}
+                  className="min-h-[40px] px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-600 text-slate-200 font-chakra font-bold text-xs flex items-center justify-center gap-1.5 cursor-pointer shrink-0"
+                >
+                  <FastForward className="w-3.5 h-3.5" /> Skip Walk to Battle
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* VIEW 3: ENVIRONMENT COMBAT STAGE */}
           {view === 'battling' && playerFighter && opponentFighter && activeWave && (
             <div className="space-y-3.5">
+              {/* Stage Disadvantage Warning if fighting higher tier */}
+              {activeStageMods?.label && (
+                <div className="px-3 py-2 rounded-xl bg-rose-950/65 border border-rose-500/50 text-rose-200 text-xs font-chakra flex items-center justify-between gap-2">
+                  <span className="flex items-center gap-1.5 font-semibold">
+                    <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                    <span>
+                      Tier Disadvantage ({pet.stage.toUpperCase()} vs {activeWave.stageLabel.toUpperCase()}):{' '}
+                      {activeStageMods.label} & Enemy hits {activeStageMods.enemyDamageMult}x harder!
+                    </span>
+                  </span>
+                </div>
+              )}
+
               {/* Arena Canvas */}
               <div
-                className={`relative w-full h-56 sm:h-64 rounded-2xl border border-slate-700 bg-gradient-to-b ${selectedZone.backdropClass} p-3.5 sm:p-5 flex justify-between items-center overflow-hidden ${
+                className={`relative w-full h-56 sm:h-64 rounded-2xl border border-slate-700 bg-gradient-to-b ${activeBiome.skyGradient} p-3.5 sm:p-5 flex justify-between items-center overflow-hidden ${
                   arenaShake ? 'battle-arena-shake' : ''
                 }`}
               >
-                {/* Ground plane accent */}
-                <div
-                  className={`absolute inset-x-0 bottom-0 h-20 bg-gradient-to-t ${selectedZone.groundClass} pointer-events-none`}
-                />
+                <BiomeBackdropArt biome={activeBiome} />
 
                 {/* Screen Impact Flash */}
                 {screenFlash !== 'none' && (
@@ -1128,12 +1641,20 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
                         : ''
                     }`}
                   >
-                    <DigimonSprite
-                      species={DIGIMON_DATABASE[opponentFighter.speciesId]}
-                      action={opponentActionAnim}
-                      facing="left"
-                      scale={1.0}
-                    />
+                    <div
+                      className={
+                        activeIsHiddenBoss
+                          ? 'brightness-0 contrast-200 opacity-90 select-none pointer-events-none'
+                          : ''
+                      }
+                    >
+                      <DigimonSprite
+                        species={DIGIMON_DATABASE[opponentFighter.speciesId]}
+                        action={opponentActionAnim}
+                        facing="left"
+                        scale={1.0}
+                      />
+                    </div>
 
                     {damagePopups
                       .filter((p) => p.target === 'opponent')
@@ -1323,12 +1844,43 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
                 </div>
                 <div>
                   <div className="text-xs text-slate-400">Big Meat Drop</div>
-                  <div className="font-chakra font-bold text-lg text-orange-300">+{lastResult.meatGained}</div>
+                  <div className="font-chakra font-bold text-lg text-orange-300 flex items-center gap-1.5">
+                    <PixelMeatIcon className="w-5 h-5" /> +{lastResult.meatGained}
+                  </div>
                 </div>
                 <div>
                   <div className="text-xs text-slate-400">Vitamin Drop</div>
-                  <div className="font-chakra font-bold text-lg text-purple-300">+{lastResult.vitaminsGained}</div>
+                  <div className="font-chakra font-bold text-lg text-purple-300 flex items-center gap-1.5">
+                    <PixelVitaminIcon className="w-5 h-5" /> +{lastResult.vitaminsGained}
+                  </div>
                 </div>
+
+                {(lastResult.mushroomGained ?? 0) > 0 && (
+                  <div>
+                    <div className="text-xs text-slate-400">Digi-Mushroom</div>
+                    <div className="font-chakra font-bold text-lg text-amber-300 flex items-center gap-1.5">
+                      <PixelMushroomIcon className="w-5 h-5" /> +{lastResult.mushroomGained}
+                    </div>
+                  </div>
+                )}
+
+                {(lastResult.berryGained ?? 0) > 0 && (
+                  <div>
+                    <div className="text-xs text-slate-400">Digi-Berry</div>
+                    <div className="font-chakra font-bold text-lg text-rose-300 flex items-center gap-1.5">
+                      <PixelBerryIcon className="w-5 h-5" /> +{lastResult.berryGained}
+                    </div>
+                  </div>
+                )}
+
+                {(lastResult.sirloinGained ?? 0) > 0 && (
+                  <div>
+                    <div className="text-xs text-amber-300">Prime Sirloin (2x Meat!)</div>
+                    <div className="font-chakra font-bold text-lg text-rose-200 flex items-center gap-1.5">
+                      <PixelSirloinIcon className="w-5 h-5" /> +{lastResult.sirloinGained}
+                    </div>
+                  </div>
+                )}
               </div>
 
               {lastResult.unlockedRelicId && SPECIAL_ITEMS[lastResult.unlockedRelicId] && (
@@ -1343,7 +1895,7 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
                     onClick={() => startWaveBattle(selectedZone, nextWaveAfterVictory)}
                     className="min-h-[44px] px-6 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-chakra font-bold text-sm cursor-pointer whitespace-nowrap"
                   >
-                    Next Wave: {DIGIMON_DATABASE[nextWaveAfterVictory.speciesId]?.name} ({nextWaveAfterVictory.stageLabel})
+                    Next Wave: {nextWaveAfterVictory.waveNumber === selectedZone.waves.length && !isSelectedZoneBossDefeated ? '??? (Area Boss)' : DIGIMON_DATABASE[nextWaveAfterVictory.speciesId]?.name} ({nextWaveAfterVictory.stageLabel})
                   </button>
                 ) : (
                   <button
@@ -1380,12 +1932,16 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
           {/* VIEW 5: DEFEAT & CONSOLATION EXP */}
           {view === 'defeat' && lastResult && activeWave && (
             <div className="py-6 flex flex-col items-center text-center">
-              <h3 className="font-chakra font-bold text-white text-2xl sm:text-3xl">Defeated by {DIGIMON_DATABASE[activeWave.speciesId]?.name}</h3>
+              <h3 className="font-chakra font-bold text-white text-2xl sm:text-3xl">
+                Defeated by {activeIsHiddenBoss ? '??? (Area Boss)' : DIGIMON_DATABASE[activeWave.speciesId]?.name}
+              </h3>
               <p className="text-slate-300 text-sm mt-1 max-w-md">
-                Even a tough defeat built combat instinct. Train in the Dojo, evolve higher, or stock up on Big Meat and Vitamins before returning!
+                {activeStageMods?.label
+                  ? `That ${activeWave.stageLabel} Digimon out-tiered your ${pet.stage}! Evolve higher or over-train your stats in the Dojo before challenging again.`
+                  : 'Even a tough defeat built combat instinct. Train in the Dojo, evolve higher, or stock up on supplies before returning!'}
               </p>
 
-              <div className="w-full max-w-sm bg-slate-950 border border-slate-800 rounded-2xl p-4 my-5 flex items-center justify-around font-chakra tabular-nums">
+              <div className="w-full max-w-md bg-slate-950 border border-slate-800 rounded-2xl p-4 my-5 flex flex-wrap items-center justify-around gap-3 font-chakra tabular-nums">
                 <div>
                   <div className="text-xs text-slate-400">Battle Exp</div>
                   <div className="font-bold text-emerald-300">+{lastResult.strengthGained} STR</div>
@@ -1398,6 +1954,22 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
                   <div className="text-xs text-slate-400">Bits</div>
                   <div className="font-bold text-amber-300">+{lastResult.bitsGained}</div>
                 </div>
+                {(lastResult.mushroomGained ?? 0) > 0 && (
+                  <div>
+                    <div className="text-xs text-slate-400">Trail Mushroom</div>
+                    <div className="font-bold text-amber-300 flex items-center justify-center gap-1">
+                      <PixelMushroomIcon className="w-4 h-4" /> +{lastResult.mushroomGained}
+                    </div>
+                  </div>
+                )}
+                {(lastResult.berryGained ?? 0) > 0 && (
+                  <div>
+                    <div className="text-xs text-slate-400">Trail Berry</div>
+                    <div className="font-bold text-rose-300 flex items-center justify-center gap-1">
+                      <PixelBerryIcon className="w-4 h-4" /> +{lastResult.berryGained}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="flex flex-wrap items-center justify-center gap-3">
@@ -1424,3 +1996,7 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
     </div>
   );
 };
+
+function waveTitleOrFallback(wave: AdventureWave, isHiddenBoss: boolean): string {
+  return isHiddenBoss ? 'the Summit Altar' : wave.title;
+}

@@ -30,6 +30,7 @@ import { DigiRoom } from './components/DigiRoom';
 import { DigidexModal } from './components/DigidexModal';
 import { StatsModal } from './components/StatsModal';
 import { ShopModal } from './components/ShopModal';
+import { InventoryModal } from './components/InventoryModal';
 import { PwaInstallModal } from './components/PwaInstallModal';
 import { NativePipOverlay } from './components/NativePipOverlay';
 import { DigiChat } from './components/DigiChat';
@@ -119,7 +120,8 @@ import {
   Bell,
   BellOff,
   Moon,
-  Sun
+  Sun,
+  Backpack
 } from 'lucide-react';
 
 const STORAGE_KEY = 'digipet_vpet_save_v1';
@@ -158,6 +160,9 @@ export default function App() {
           evolutionLocked: false,
           isDead: false,
           neglectTicks: 0,
+          sirloinStock: 0,
+          mushroomStock: 0,
+          berryStock: 0,
           ...parsed,
           activeRoomTheme: syncedTheme,
           stageEnteredAt: parsed.stageEnteredAt || Date.now(),
@@ -201,6 +206,9 @@ export default function App() {
       ownedSpecialItems: [],
       digiBits: 150,
       bigMeatStock: 8,
+      sirloinStock: 0,
+      mushroomStock: 0,
+      berryStock: 0,
       vitaminStock: 5,
       activeRoomTheme: syncRoomThemeForLightCycle('file-island', initialNight),
       placedFurniture: [
@@ -233,6 +241,7 @@ export default function App() {
   const [isDigidexOpen, setIsDigidexOpen] = useState<boolean>(false);
   const [isStatsOpen, setIsStatsOpen] = useState<boolean>(false);
   const [isShopOpen, setIsShopOpen] = useState<boolean>(false);
+  const [isInventoryOpen, setIsInventoryOpen] = useState<boolean>(false);
   const [isPwaModalOpen, setIsPwaModalOpen] = useState<boolean>(false);
   const [isNativePipOpen, setIsNativePipOpen] = useState<boolean>(false);
   const [isChatOpen, setIsChatOpen] = useState<boolean>(false);
@@ -360,7 +369,11 @@ export default function App() {
   const [isMuted, setIsMuted] = useState<boolean>(sound.getMuted());
   const [alertsEnabled, setAlertsEnabled] = useState<boolean>(() => getCareAlertsEnabled());
   const [statusNotification, setStatusNotification] = useState<string | null>(null);
-  const [hudAction, setHudAction] = useState<{ pose: 'eating' | 'happy' | 'flushing'; nonce: number; eatItem?: 'meat' | 'vitamin' } | null>(null);
+  const [hudAction, setHudAction] = useState<{
+    pose: 'eating' | 'happy' | 'flushing';
+    nonce: number;
+    eatItem?: 'meat' | 'vitamin' | 'sirloin' | 'mushroom' | 'berry';
+  } | null>(null);
 
   // Android Safe Area & Status Bar Clearance Custom Offset
   const [extraTopPad, setExtraTopPad] = useState<number>(() => {
@@ -1008,6 +1021,83 @@ export default function App() {
     showNotification('Fed delicious Big Meat! (+25 Hunger, +2g Weight)');
   };
 
+  const handleFeedSirloin = () => {
+    if (!requireAliveAndHatched()) return;
+    if ((pet.sirloinStock ?? 0) <= 0) {
+      sound.playAlert();
+      showNotification('Out of Prime Sirloin! Defeat Ultimates/Megas in Adventure Mode or visit the Shop.');
+      return;
+    }
+    sound.playEat();
+    setHudAction({ pose: 'eating', nonce: Date.now() + Math.random(), eatItem: 'sirloin' });
+    setPet((prev) => {
+      const now = Date.now();
+      const nextHunger = Math.min(100, prev.hunger + 50);
+      return {
+        ...prev,
+        sirloinStock: Math.max(0, (prev.sirloinStock ?? 0) - 1),
+        hunger: nextHunger,
+        weight: prev.weight + 4,
+        happiness: Math.min(100, prev.happiness + 20),
+        neglectTicks: 0,
+        lastHungerDropAt: now,
+        careCallStartedAt: nextHunger > 0 ? undefined : prev.careCallStartedAt,
+      };
+    });
+    showNotification('Fed Prime Sirloin (2x Meat)! (+50 Hunger, +4g Weight, +20 Happy)');
+  };
+
+  const handleFeedMushroom = () => {
+    if (!requireAliveAndHatched()) return;
+    if ((pet.mushroomStock ?? 0) <= 0) {
+      sound.playAlert();
+      showNotification('Out of Digi-Mushrooms! Forage them in Adventure Mode.');
+      return;
+    }
+    sound.playEat();
+    setHudAction({ pose: 'eating', nonce: Date.now() + Math.random(), eatItem: 'mushroom' });
+    setPet((prev) => {
+      const now = Date.now();
+      const nextHunger = Math.min(100, prev.hunger + 18);
+      return {
+        ...prev,
+        mushroomStock: Math.max(0, (prev.mushroomStock ?? 0) - 1),
+        hunger: nextHunger,
+        energy: Math.min(100, prev.energy + 15),
+        weight: prev.weight + 1,
+        neglectTicks: 0,
+        lastHungerDropAt: now,
+        careCallStartedAt: nextHunger > 0 ? undefined : prev.careCallStartedAt,
+      };
+    });
+    showNotification('Fed Digi-Mushroom! (+18 Hunger, +15 Energy, +1g Weight)');
+  };
+
+  const handleFeedBerry = () => {
+    if (!requireAliveAndHatched()) return;
+    if ((pet.berryStock ?? 0) <= 0) {
+      sound.playAlert();
+      showNotification('Out of Digi-Berries! Forage them in Adventure Mode.');
+      return;
+    }
+    sound.playEat();
+    setHudAction({ pose: 'eating', nonce: Date.now() + Math.random(), eatItem: 'berry' });
+    setPet((prev) => {
+      const now = Date.now();
+      const nextHunger = Math.min(100, prev.hunger + 12);
+      return {
+        ...prev,
+        berryStock: Math.max(0, (prev.berryStock ?? 0) - 1),
+        hunger: nextHunger,
+        happiness: Math.min(100, prev.happiness + 20),
+        neglectTicks: 0,
+        lastHungerDropAt: now,
+        careCallStartedAt: nextHunger > 0 ? undefined : prev.careCallStartedAt,
+      };
+    });
+    showNotification('Fed sweet Digi-Berry! (+12 Hunger, +20 Happiness)');
+  };
+
   const handleGiveVitamin = () => {
     if (!requireAliveAndHatched()) return;
     if (pet.vitaminStock <= 0) {
@@ -1279,6 +1369,9 @@ export default function App() {
         effort: Math.min(10, (prev.effort ?? 0) + result.effortGained),
         digiBits: prev.digiBits + result.bitsGained,
         bigMeatStock: Math.max(0, prev.bigMeatStock - result.meatUsed) + result.meatGained,
+        sirloinStock: (prev.sirloinStock ?? 0) + (result.sirloinGained ?? 0),
+        mushroomStock: (prev.mushroomStock ?? 0) + (result.mushroomGained ?? 0),
+        berryStock: (prev.berryStock ?? 0) + (result.berryGained ?? 0),
         vitaminStock: Math.max(0, prev.vitaminStock - result.vitaminsUsed) + result.vitaminsGained,
         energy: Math.max(10, prev.energy - 12),
         ownedSpecialItems: nextRelics,
@@ -1294,8 +1387,15 @@ export default function App() {
       const relicNote = result.unlockedRelicId
         ? ` · Unlocked ${SPECIAL_ITEMS[result.unlockedRelicId]?.shortName || result.unlockedRelicId}!`
         : '';
+      const bonusFoods = [
+        result.sirloinGained ? `+${result.sirloinGained} Sirloin` : '',
+        result.mushroomGained ? `+${result.mushroomGained} Mushroom` : '',
+        result.berryGained ? `+${result.berryGained} Berry` : '',
+      ]
+        .filter(Boolean)
+        .join(', ');
       showNotification(
-        `Adventure Wave ${result.waveNumber} Cleared! +${result.strengthGained} STR, +${result.bitsGained} Bits & Items${relicNote}`
+        `Adventure Wave ${result.waveNumber} Cleared! +${result.strengthGained} STR, +${result.bitsGained} Bits${bonusFoods ? ` · ${bonusFoods}` : ''}${relicNote}`
       );
     } else {
       showNotification(`Adventure Battle Exp: +${result.strengthGained} STR & +${result.dpGained} DP gained!`);
@@ -1350,10 +1450,9 @@ export default function App() {
 
     setPet((prev) => {
       let bigMeatStock = prev.bigMeatStock;
+      let sirloinStock = prev.sirloinStock ?? 0;
       let vitaminStock = prev.vitaminStock;
       let energy = prev.energy;
-      let hunger = prev.hunger;
-      let happiness = prev.happiness;
       let isSick = prev.isSick;
 
       if (itemId === 'meat') {
@@ -1361,9 +1460,7 @@ export default function App() {
       } else if (itemId === 'meat_bundle') {
         bigMeatStock += 5;
       } else if (itemId === 'sirloin') {
-        bigMeatStock += 2;
-        hunger = Math.min(100, hunger + 35);
-        happiness = Math.min(100, happiness + 20);
+        sirloinStock += 1;
       } else if (itemId === 'vitamin') {
         vitaminStock += 1;
       } else if (itemId === 'vitamin_bundle') {
@@ -1378,10 +1475,9 @@ export default function App() {
         ...prev,
         digiBits: prev.digiBits - cost,
         bigMeatStock,
+        sirloinStock,
         vitaminStock,
         energy,
-        hunger,
-        happiness,
         isSick,
         sickSince: itemId === 'medicine' ? undefined : prev.sickSince,
         neglectTicks: itemId === 'medicine' ? 0 : prev.neglectTicks,
@@ -1509,8 +1605,11 @@ export default function App() {
       equippedSpecialItem: null,
       ownedSpecialItems: prev.ownedSpecialItems || [],
       digiBits: Math.max(100, prev.digiBits),
-      bigMeatStock: 8,
-      vitaminStock: 5,
+      bigMeatStock: Math.max(8, prev.bigMeatStock),
+      sirloinStock: prev.sirloinStock ?? 0,
+      mushroomStock: prev.mushroomStock ?? 0,
+      berryStock: prev.berryStock ?? 0,
+      vitaminStock: Math.max(5, prev.vitaminStock),
       activeRoomTheme: prev.activeRoomTheme || 'file-island',
       placedFurniture: prev.placedFurniture?.length
         ? prev.placedFurniture
@@ -2278,6 +2377,18 @@ export default function App() {
                   onClick={() => {
                     sound.playButton();
                     setIsMoreSheetOpen(false);
+                    setIsInventoryOpen(true);
+                  }}
+                  className="p-3 bg-slate-800 hover:bg-cyan-950/60 border border-cyan-500/40 rounded-2xl flex items-center gap-2.5 text-cyan-300 cursor-pointer"
+                >
+                  <Backpack className="w-5 h-5 text-cyan-400 shrink-0" />
+                  <span className="truncate">INVENTORY &amp; EGGS</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    sound.playButton();
+                    setIsMoreSheetOpen(false);
                     setIsDigidexOpen(true);
                   }}
                   className="p-3 bg-slate-800 hover:bg-sky-950/60 border border-sky-500/40 rounded-2xl flex items-center gap-2.5 text-sky-300 cursor-pointer"
@@ -2302,50 +2413,12 @@ export default function App() {
                   onClick={() => {
                     sound.playButton();
                     setIsMoreSheetOpen(false);
-                    setIsFoodGameOpen(true);
-                  }}
-                  className="p-3 bg-slate-800 hover:bg-amber-950/60 border border-amber-500/40 rounded-2xl flex items-center gap-2.5 text-amber-300 cursor-pointer"
-                >
-                  <PixelMeatIcon className="w-5 h-5" />
-                  <span className="truncate">MEAT CATCH GAME</span>
-                </button>
-
-                <button
-                  onClick={() => {
-                    sound.playButton();
-                    setIsMoreSheetOpen(false);
                     setIsChatOpen(true);
                   }}
                   className="p-3 bg-slate-800 hover:bg-pink-950/60 border border-pink-500/40 rounded-2xl flex items-center gap-2.5 text-pink-300 cursor-pointer"
                 >
                   <MessageSquare className="w-5 h-5 text-pink-400 shrink-0" />
                   <span className="truncate">TAMER LOUNGE</span>
-                </button>
-
-                {!isGalleryHidden && (
-                  <button
-                    onClick={() => {
-                      sound.playButton();
-                      setIsMoreSheetOpen(false);
-                      setIsGalleryOpen(true);
-                    }}
-                    className="p-3 bg-slate-800 hover:bg-cyan-950/60 border border-cyan-500/40 rounded-2xl flex items-center gap-2.5 text-cyan-300 cursor-pointer"
-                  >
-                    <Layers className="w-5 h-5 text-cyan-400 shrink-0" />
-                    <span className="truncate">SPRITE STUDIO</span>
-                  </button>
-                )}
-
-                <button
-                  onClick={() => {
-                    sound.playButton();
-                    setIsMoreSheetOpen(false);
-                    setIsNativePipOpen(true);
-                  }}
-                  className="p-3 bg-slate-800 hover:bg-purple-950/60 border border-purple-500/40 rounded-2xl flex items-center gap-2.5 text-purple-300 cursor-pointer"
-                >
-                  <ExternalLink className="w-5 h-5 text-purple-400 shrink-0" />
-                  <span className="truncate">SYSTEM OVERLAY (PIP)</span>
                 </button>
 
                 <button
@@ -2361,42 +2434,6 @@ export default function App() {
                   {Capacitor.isNativePlatform() && hasUpdateAvailable && (
                     <span className="absolute top-2 right-2 w-2 h-2 rounded-full bg-amber-400 animate-ping" />
                   )}
-                </button>
-
-                <button
-                  onClick={() => {
-                    sound.playButton();
-                    setIsMoreSheetOpen(false);
-                    setIsPwaModalOpen(true);
-                  }}
-                  className="p-3 bg-slate-800 hover:bg-emerald-950/60 border border-emerald-500/40 rounded-2xl flex items-center gap-2.5 text-emerald-300 cursor-pointer"
-                >
-                  <Smartphone className="w-5 h-5 text-emerald-400 shrink-0" />
-                  <span className="truncate">INSTALL APK</span>
-                </button>
-
-                <button
-                  onClick={() => {
-                    sound.playButton();
-                    setIsMoreSheetOpen(false);
-                    setIsGridModalOpen(true);
-                  }}
-                  className="p-3 bg-slate-800 hover:bg-cyan-950/60 border border-cyan-500/40 rounded-2xl flex items-center gap-2.5 text-cyan-300 cursor-pointer relative"
-                >
-                  <SlidersHorizontal className="w-5 h-5 text-cyan-400 shrink-0" />
-                  <span className="truncate text-xs">
-                    GRID LINES{isGridCustom ? ' • CUSTOM' : ''}
-                  </span>
-                </button>
-
-                <button
-                  onClick={() => {
-                    toggleExtraTopPad();
-                  }}
-                  className="p-3 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-2xl flex items-center gap-2.5 text-slate-300 cursor-pointer"
-                >
-                  <span className="text-amber-400 font-pixel text-xs">📐</span>
-                  <span className="truncate text-xs">NOTCH: +{extraTopPad}px</span>
                 </button>
 
                 <button
@@ -2449,23 +2486,8 @@ export default function App() {
             : 'bg-slate-900/95 border-slate-800'
         }`}
       >
-        <div className="max-w-md mx-auto grid grid-cols-7 gap-1 items-center text-center">
-          
-          {/* 1. DIGIVICE */}
-          <button
-            onClick={() => {
-              sound.playButton();
-              triggerHaptic('light');
-              setIsCareSheetOpen(false);
-              setIsMoreSheetOpen(false);
-            }}
-            className="flex flex-col items-center justify-center py-1 rounded-xl hover:bg-slate-800 active:scale-90 transition-transform cursor-pointer text-cyan-400"
-          >
-            <span className="text-lg">📟</span>
-            <span className="font-pixel text-[8px] mt-0.5">DEVICE</span>
-          </button>
-
-          {/* 2. CARE SHEET */}
+        <div className="max-w-md mx-auto grid grid-cols-6 gap-1 items-center text-center">
+          {/* 1. CARE SHEET */}
           <button
             onClick={() => {
               sound.playButton();
@@ -2484,7 +2506,7 @@ export default function App() {
             )}
           </button>
 
-          {/* 3. BATTLE */}
+          {/* 2. BATTLE */}
           <button
             onClick={() => {
               if (!requireAliveAndHatched()) return;
@@ -2498,7 +2520,7 @@ export default function App() {
             <span className="font-pixel text-[8px] mt-0.5">BATTLE</span>
           </button>
 
-          {/* 4. DOJO */}
+          {/* 3. DOJO */}
           <button
             onClick={() => {
               if (!requireAliveAndHatched()) return;
@@ -2512,7 +2534,7 @@ export default function App() {
             <span className="font-pixel text-[8px] mt-0.5">DOJO</span>
           </button>
 
-          {/* 5. ROOM */}
+          {/* 4. ROOM */}
           <button
             onClick={() => {
               sound.playButton();
@@ -2525,7 +2547,7 @@ export default function App() {
             <span className="font-pixel text-[8px] mt-0.5">ROOM</span>
           </button>
 
-          {/* 6. SHOP */}
+          {/* 5. SHOP */}
           <button
             onClick={() => {
               sound.playButton();
@@ -2538,7 +2560,7 @@ export default function App() {
             <span className="font-pixel text-[8px] mt-0.5">SHOP</span>
           </button>
 
-          {/* 7. MORE */}
+          {/* 6. MORE */}
           <button
             onClick={() => {
               sound.playButton();
@@ -2654,6 +2676,18 @@ export default function App() {
         onBuyItem={handleBuyShopItem}
       />
 
+      <InventoryModal
+        isOpen={isInventoryOpen}
+        onClose={() => setIsInventoryOpen(false)}
+        pet={pet}
+        onFeedMeat={handleFeedMeat}
+        onFeedSirloin={handleFeedSirloin}
+        onFeedMushroom={handleFeedMushroom}
+        onFeedBerry={handleFeedBerry}
+        onGiveVitamin={handleGiveVitamin}
+        onSelectEgg={handleSelectNewEgg}
+      />
+
       <PwaInstallModal
         isOpen={isPwaModalOpen}
         onClose={() => setIsPwaModalOpen(false)}
@@ -2750,6 +2784,9 @@ export default function App() {
                 isFrozen: false,
                 frozenAt: undefined,
                 neglectTicks: 0,
+                sirloinStock: 0,
+                mushroomStock: 0,
+                berryStock: 0,
                 ...parsed,
                 stageEnteredAt: parsed.stageEnteredAt || Date.now(),
                 lastHungerDropAt: parsed.lastHungerDropAt || parsed.lastCareCheck || Date.now(),

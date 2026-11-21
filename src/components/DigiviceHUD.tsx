@@ -46,7 +46,7 @@ interface DigiviceHUDProps {
   onResetEgg?: () => void;
   canEvolve: boolean;
   isNightTime?: boolean;
-  externalAction?: { pose: DigimonPose | 'flushing'; nonce: number; eatItem?: 'meat' | 'vitamin' } | null;
+  externalAction?: { pose: DigimonPose | 'flushing'; nonce: number; eatItem?: 'meat' | 'vitamin' | 'sirloin' | 'mushroom' | 'berry' } | null;
 }
 
 // Authentic Bandai 1997 / Digimon Color Toy Shell Colorways (Original Photo & Releases)
@@ -193,7 +193,7 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
   const [monX, setMonX] = useState<number>(50); // percentage 15% to 85%
   const [facing, setFacing] = useState<'left' | 'right'>('right');
   const [internalPose, setInternalPose] = useState<DigimonPose>('standing');
-  const [activeEatItem, setActiveEatItem] = useState<'meat' | 'vitamin'>('meat');
+  const [activeEatItem, setActiveEatItem] = useState<'meat' | 'vitamin' | 'sirloin' | 'mushroom' | 'berry'>('meat');
   const [isFlushing, setIsFlushing] = useState<boolean>(false);
   const [flushKey, setFlushKey] = useState<number>(0);
   const [flushedPoopCount, setFlushedPoopCount] = useState<number>(0);
@@ -380,7 +380,7 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
     }
   };
 
-  const playPoseSequence = (pose: DigimonPose | 'flushing', eatItem: 'meat' | 'vitamin' = 'meat') => {
+  const playPoseSequence = (pose: DigimonPose | 'flushing', eatItem: 'meat' | 'vitamin' | 'sirloin' | 'mushroom' | 'berry' = 'meat') => {
     actionTimersRef.current.forEach((t) => clearTimeout(t));
     actionTimersRef.current = [];
     isActionLockedRef.current = true;

@@ -338,8 +338,9 @@ public class AppUpdatePlugin extends Plugin {
                 conn.setRequestMethod("POST");
                 conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
                 conn.setRequestProperty("Accept", "application/json");
+                conn.setInstanceFollowRedirects(false);
                 conn.setConnectTimeout(15000);
-                conn.setReadTimeout(20000);
+                conn.setReadTimeout(35000);
                 conn.setDoOutput(true);
                 byte[] outBytes = (body != null ? body : "{}").getBytes("UTF-8");
                 conn.setFixedLengthStreamingMode(outBytes.length);
@@ -349,6 +350,19 @@ public class AppUpdatePlugin extends Plugin {
                 }
 
                 int code = conn.getResponseCode();
+                if (code >= 300 && code < 400) {
+                    final String location = conn.getHeaderField("Location");
+                    final String redirectErr = "{\"success\":false,\"error\":\"Auth/redirect blocked by host (" + code + (location != null ? " -> " + location : "") + "). Try the public Shared App URL (ais-pre-...) in Updater Settings.\"}";
+                    new Handler(Looper.getMainLooper()).post(() -> {
+                        JSObject ret = new JSObject();
+                        ret.put("ok", false);
+                        ret.put("status", 401);
+                        ret.put("data", redirectErr);
+                        call.resolve(ret);
+                    });
+                    return;
+                }
+
                 InputStream stream = code >= 400 ? conn.getErrorStream() : conn.getInputStream();
                 StringBuilder sb = new StringBuilder();
                 if (stream != null) {
@@ -359,8 +373,18 @@ public class AppUpdatePlugin extends Plugin {
                     }
                     reader.close();
                 }
-                final int statusCode = code;
-                final String result = sb.toString();
+                final int statusCode;
+                final String result;
+                final boolean isHtml = (conn.getContentType() != null && conn.getContentType().toLowerCase().contains("text/html"))
+                    || sb.toString().trim().startsWith("<");
+                if (isHtml) {
+                    statusCode = 401;
+                    result = "{\"success\":false,\"error\":\"Endpoint returned an HTML login page instead of JSON. Set the public Shared App URL (ais-pre-...) in Updater Settings.\"}";
+                } else {
+                    statusCode = code;
+                    result = sb.toString();
+                }
+
                 new Handler(Looper.getMainLooper()).post(() -> {
                     JSObject ret = new JSObject();
                     ret.put("ok", statusCode >= 200 && statusCode < 300);

@@ -217,6 +217,9 @@ export interface PetState {
   ownedSpecialItems?: SpecialItemId[];
   digiBits: number; // currency
   bigMeatStock: number;
+  sirloinStock?: number;
+  mushroomStock?: number;
+  berryStock?: number;
   vitaminStock: number;
   activeRoomTheme: string;
   placedFurniture: PlacedFurniture[];
@@ -282,7 +285,11 @@ export interface AdventureBattleResult {
   effortGained: number;
   bitsGained: number;
   meatGained: number;
+  sirloinGained?: number;
+  mushroomGained?: number;
+  berryGained?: number;
   vitaminsGained: number;
+  walkFoodFound?: ('mushroom' | 'berry')[];
   unlockedRelicId?: SpecialItemId;
   meatUsed: number;
   vitaminsUsed: number;

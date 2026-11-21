@@ -58,11 +58,13 @@ const DISMISSED_VERSION_KEY = 'digipet_dismissed_update_version_v1';
 export const GITHUB_REPO_KEY = 'digipet_github_repo_v3';
 export const USE_GITHUB_RELEASES_KEY = 'digipet_use_github_releases_v2';
 
-// Official Cloud Run deployment URL for DigiPet
+// Official Cloud Run deployment URLs for DigiPet
 export const DEFAULT_PRODUCTION_URL =
   typeof __APP_DEFAULT_URL__ !== 'undefined' && __APP_DEFAULT_URL__
     ? __APP_DEFAULT_URL__
     : 'https://ais-dev-hwfiiqh77iufzd3mdqoptd-750449911930.asia-northeast1.run.app';
+export const DEFAULT_SHARED_URL =
+  'https://ais-pre-hwfiiqh77iufzd3mdqoptd-750449911930.asia-northeast1.run.app';
 export const DEFAULT_GITHUB_REPO = 'BROG6/Digimon-V-Pet';
 
 // Authoritative version read from android/app/build.gradle at Vite build/dev time
@@ -157,6 +159,41 @@ export function resolveFullUrl(pathOrUrl: string): string {
   const base = resolveServerBaseUrl();
   const cleanPath = pathOrUrl.startsWith('/') ? pathOrUrl : `/${pathOrUrl}`;
   return `${base}${cleanPath}`;
+}
+
+/**
+ * Returns ordered candidate URLs for the `/api/digimon/talk` endpoint.
+ * Web builds use the current origin first; native APKs try custom server URL,
+ * public shared URL, and production Cloud Run host.
+ */
+export function resolveTalkEndpointCandidates(): string[] {
+  const candidates: string[] = [];
+  const pushUnique = (u: string) => {
+    if (u && !candidates.includes(u)) {
+      candidates.push(u);
+    }
+  };
+
+  const custom = getCustomUpdateUrl();
+  if (custom && (custom.startsWith('http://') || custom.startsWith('https://'))) {
+    try {
+      const parsed = new URL(custom);
+      if (!parsed.hostname.includes('localhost') && !parsed.hostname.includes('127.0.0.1')) {
+        pushUnique(`${parsed.origin}/api/digimon/talk`);
+      }
+    } catch {}
+  }
+
+  if (!Capacitor.isNativePlatform()) {
+    pushUnique('/api/digimon/talk');
+    pushUnique(resolveFullUrl('/api/digimon/talk'));
+  } else {
+    pushUnique(`${DEFAULT_SHARED_URL}/api/digimon/talk`);
+    pushUnique(resolveFullUrl('/api/digimon/talk'));
+    pushUnique(`${DEFAULT_PRODUCTION_URL}/api/digimon/talk`);
+  }
+
+  return candidates;
 }
 
 export async function getLocalAppInfo(): Promise<AppInfo> {

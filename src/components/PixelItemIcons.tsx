@@ -492,3 +492,124 @@ export const PixelPunchingBag: React.FC<{
   );
 };
 
+// ============================================================================
+// 6. DIGI-MUSHROOM (Dark charcoal speckled cap + cream stem matching reference)
+// ============================================================================
+const MUSHROOM_PALETTE: Record<string, string> = {
+  K: '#16161a', // Crisp dark outline
+  G: '#71717a', // Cap light speckle
+  L: '#52525b', // Cap mid slate
+  D: '#3f3f46', // Cap dark charcoal
+  S: '#27272a', // Cap underside shadow
+  W: '#fef3c7', // Stem cream highlight
+  T: '#d6d3d1', // Stem warm tan
+  B: '#a8a29e', // Stem shadow
+};
+
+const MUSHROOM_GRID = [
+  '................',
+  '.....KKKKKK.....',
+  '...KKLLGGDLKK...',
+  '..KLLGDDDDGDLK..',
+  '.KLLDDDDGGDDDLK.',
+  '.KDDDDDDDDGDDDK.',
+  '.KSDDDDDDDDDSSK.',
+  '..KKSSSSSSSSKK..',
+  '....KKWWTBKK....',
+  '.....KWWTTK.....',
+  '.....KWWTBK.....',
+  '....KWWWTTBK....',
+  '....KWWTTBBK....',
+  '.....KKTTKK.....',
+  '.......KK.......',
+  '................',
+];
+
+export const PixelMushroomIcon: React.FC<{
+  className?: string;
+  size?: number;
+}> = ({ className = 'w-5 h-5', size }) => (
+  <PixelGridIcon grid={MUSHROOM_GRID} palette={MUSHROOM_PALETTE} className={className} size={size} label="Digi-Mushroom" />
+);
+
+// ============================================================================
+// 7. PRIME SIRLOIN (Marbled dark crimson-brown steak with bone at bottom-left)
+// ============================================================================
+const SIRLOIN_PALETTE: Record<string, string> = {
+  K: '#1b0b09', // Crisp outline
+  H: '#dc6b57', // Warm seared highlight
+  L: '#b9382c', // Rich red meat
+  M: '#8f241c', // Steak body
+  D: '#661712', // Deep sear shadow
+  F: '#fca5a5', // Marbling pink-white
+  W: '#fff4d8', // Bone cream highlight
+  B: '#d6b88d', // Bone tan shadow
+};
+
+const SIRLOIN_GRID = [
+  '.......KKKK.....',
+  '.....KKHHHHKK...',
+  '....KHHLLLLHHK..',
+  '...KHLLFFLLMLLK.',
+  '..KHHLLMMLFFLLMK',
+  '..KLLMMFFMMMMMDK',
+  '..KMFFMMMMMMMDK.',
+  '..KMMMMDDDDDDDK.',
+  '.KKBMMDDDDDDDK..',
+  'KWWWKDDDDDDKK...',
+  'KWBBKDDDDKK.....',
+  'KKBKKKKKK.......',
+  '.KWWK...........',
+  '..KK............',
+  '................',
+  '................',
+];
+
+export const PixelSirloinIcon: React.FC<{
+  className?: string;
+  size?: number;
+}> = ({ className = 'w-5 h-5', size }) => (
+  <PixelGridIcon grid={SIRLOIN_GRID} palette={SIRLOIN_PALETTE} className={className} size={size} label="Prime Sirloin" />
+);
+
+// ============================================================================
+// 8. DIGI-BERRY / STRAWBERRY (Crimson pixel berry with seeds & green crown)
+// ============================================================================
+const BERRY_PALETTE: Record<string, string> = {
+  K: '#23090a', // Crisp outline
+  G: '#22c55e', // Leaf highlight
+  g: '#15803d', // Leaf deep green
+  H: '#f87171', // Berry specular highlight
+  R: '#ef4444', // Bright strawberry red
+  M: '#dc2626', // Mid red body
+  D: '#991b1b', // Deep red underside
+  S: '#450a0a', // Seed dot
+};
+
+const BERRY_GRID = [
+  '......KKKK......',
+  '....KKGgGGKK....',
+  '...KgGGggGGgK...',
+  '..KKRRRRRggRKK..',
+  '.KHRRSRRRRSRRRK.',
+  '.KRRHRRMRRRMRRK.',
+  '.KRRMRSMRMRSMDK.',
+  '.KRMRRRRRMMRDDK.',
+  '..KMRSMRMRSMDK..',
+  '..KMMRMMRDDMDK..',
+  '...KMMSRMMDDK...',
+  '...KMMDDDDDK....',
+  '....KMDDDDK.....',
+  '.....KDDDK......',
+  '......KKK.......',
+  '................',
+];
+
+export const PixelBerryIcon: React.FC<{
+  className?: string;
+  size?: number;
+}> = ({ className = 'w-5 h-5', size }) => (
+  <PixelGridIcon grid={BERRY_GRID} palette={BERRY_PALETTE} className={className} size={size} label="Digi-Berry" />
+);
+
+

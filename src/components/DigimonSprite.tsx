@@ -169,9 +169,9 @@ export const DigimonSprite: React.FC<DigimonSpriteProps> = ({
 
     const initialTimer = window.setTimeout(() => {
       triggerPulse();
-      const repeatMs = currentMood === 'angry' || currentMood === 'sweat' ? 5200 : 7200;
+      const repeatMs = currentMood === 'angry' || currentMood === 'sweat' ? 16000 : 22000;
       intervalId = window.setInterval(triggerPulse, repeatMs);
-    }, 1200);
+    }, 3500);
 
     return () => {
       window.clearTimeout(initialTimer);

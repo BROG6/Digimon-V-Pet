@@ -3,8 +3,8 @@ export type DayNightPreference = 'auto' | 'day' | 'night';
 const DAY_NIGHT_PREF_KEY = 'digipet_day_night_pref_v1';
 const SAVED_DAYTIME_THEME_KEY = 'digipet_daytime_room_theme_v1';
 
-export const EVENING_START_HOUR = 18; // 6:00 PM
-export const MORNING_START_HOUR = 6; // 6:00 AM
+export const EVENING_START_HOUR = 19; // 7:00 PM
+export const MORNING_START_HOUR = 7; // 7:00 AM (night runs 7:00 PM - 6:59 AM)
 export const NIGHT_ROOM_THEME_ID = 'starlit-island';
 
 export const DARK_ROOM_THEME_IDS = new Set([

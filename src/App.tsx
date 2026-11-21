@@ -7,9 +7,17 @@ import {
   FurnitureItem, 
   DigimonStage,
   SpecialItemId,
-  AdventureBattleResult
+  AdventureBattleResult,
+  TrainingStatKey
 } from './types/digimon';
 import { DIGI_EGGS, DIGIMON_DATABASE, FURNITURE_SHOP, ROOM_THEMES, SPECIAL_ITEMS } from './data/digidex';
+import {
+  calculateTrainingOutcome,
+  getEffectiveBattleStats,
+  getEquippedBattleMoves,
+  getLearnedTechniqueIds,
+  MAX_EQUIPPED_ATTACKS,
+} from './data/battleTechniques';
 import { DigiviceHUD } from './components/DigiviceHUD';
 import { PixelMeatIcon, PixelVitaminIcon, PixelPoopIcon } from './components/PixelItemIcons';
 import { EggSelectionModal } from './components/EggSelectionModal';
@@ -491,18 +499,20 @@ export default function App() {
     };
   }, []);
 
-  // Notification Alerts for Hunger & Toilet Needs (In-App Toast + Audio/Haptic + System Notification)
+  // Notification Alerts for Hunger, Toilet, Sleep & Sickness Needs
   const alertTrackerRef = useRef<{
     hungerLevel: 'ok' | 'low' | 'empty';
     poopCount: number;
     isSick: boolean;
     isDead: boolean;
+    isSleepy: boolean;
     stage: DigimonStage;
   }>({
     hungerLevel: pet.hunger === 0 ? 'empty' : pet.hunger <= 25 ? 'low' : 'ok',
     poopCount: pet.poopCount,
     isSick: pet.isSick,
     isDead: Boolean(pet.isDead),
+    isSleepy: Boolean(pet.sleepCallStartedAt) && !pet.lightsOff,
     stage: pet.stage,
   });
 
@@ -510,17 +520,25 @@ export default function App() {
     const tracker = alertTrackerRef.current;
     const hungerLevel: 'ok' | 'low' | 'empty' =
       pet.hunger <= 0 ? 'empty' : pet.hunger <= 25 ? 'low' : 'ok';
+    const isSleepyNow = Boolean(pet.sleepCallStartedAt) && !pet.lightsOff && !pet.isFrozen && !pet.isDead;
 
     if (pet.stage === 'egg' || pet.stage !== tracker.stage) {
       tracker.hungerLevel = hungerLevel;
       tracker.poopCount = pet.poopCount;
       tracker.isSick = pet.isSick;
       tracker.isDead = Boolean(pet.isDead);
+      tracker.isSleepy = isSleepyNow;
       tracker.stage = pet.stage;
       return;
     }
 
     const monName = pet.nickname?.trim() || currentSpecies?.name || 'Your Digimon';
+
+    if (lastStepEventsRef.current?.wokeUpMorning) {
+      lastStepEventsRef.current.wokeUpMorning = false;
+      sound.playButton();
+      showNotification(`☀️ Good morning! ${monName} woke up refreshed at 7:00 AM!`);
+    }
 
     if (pet.isDead && !tracker.isDead) {
       sound.playAlert();
@@ -569,7 +587,23 @@ export default function App() {
         }
       }
 
-      // 2. Toilet Alert (new poop pile added)
+      // 2. Bedtime Call Light Alert
+      if (isSleepyNow && !tracker.isSleepy) {
+        sound.playAlert();
+        triggerHaptic('alert');
+        const msg = `🌙 Bedtime! Turn ${monName}'s lights off within 10 minutes to avoid a Care Mistake.`;
+        showNotification(msg);
+        if (alertsEnabled) {
+          sendCareSystemNotification({
+            id: 2005,
+            title: `🌙 ${monName} is Sleepy!`,
+            body: msg,
+            tag: 'digipet-bedtime',
+          });
+        }
+      }
+
+      // 3. Toilet Alert (new poop pile added — causes sickness at 4, never Care Mistake)
       if (pet.poopCount > tracker.poopCount) {
         sound.playAlert();
         triggerHaptic('alert');
@@ -588,7 +622,7 @@ export default function App() {
         }
       }
 
-      // 3. Sickness / Critical Neglect Alert
+      // 4. Sickness / Critical Neglect Alert
       if (pet.isSick && !tracker.isSick && pet.poopCount < 4) {
         sound.playAlert();
         triggerHaptic('alert');
@@ -612,8 +646,22 @@ export default function App() {
     tracker.poopCount = pet.poopCount;
     tracker.isSick = pet.isSick;
     tracker.isDead = Boolean(pet.isDead);
+    tracker.isSleepy = isSleepyNow;
     tracker.stage = pet.stage;
-  }, [pet.hunger, pet.poopCount, pet.isSick, pet.isDead, pet.stage, pet.nickname, pet.deathReason, currentSpecies?.name, alertsEnabled]);
+  }, [
+    pet.hunger,
+    pet.poopCount,
+    pet.isSick,
+    pet.isDead,
+    pet.stage,
+    pet.sleepCallStartedAt,
+    pet.lightsOff,
+    pet.isFrozen,
+    pet.nickname,
+    pet.deathReason,
+    currentSpecies?.name,
+    alertsEnabled,
+  ]);
 
   // Arm / update future OS background notifications (fires only when app is closed or backgrounded)
   useEffect(() => {
@@ -642,6 +690,7 @@ export default function App() {
     pet.isFrozen,
     pet.isSleeping,
     pet.lightsOff,
+    pet.sleepCallStartedAt,
     pet.stage,
     pet.hunger,
     pet.poopCount,
@@ -742,6 +791,10 @@ export default function App() {
           sickSince: undefined,
           neglectTicks: 0,
           careCallStartedAt: undefined,
+          sleepCallStartedAt: undefined,
+          battleStats: undefined,
+          learnedAttackIds: undefined,
+          equippedAttackIds: undefined,
           lastCareCheck: now,
           lastHungerDropAt: now,
           lastPoopAt: now,
@@ -949,10 +1002,7 @@ export default function App() {
         happiness: Math.min(100, prev.happiness + 10),
         neglectTicks: 0,
         lastHungerDropAt: now,
-        careCallStartedAt:
-          nextHunger > 0 && prev.poopCount < 4 && prev.energy > 0
-            ? undefined
-            : prev.careCallStartedAt,
+        careCallStartedAt: nextHunger > 0 ? undefined : prev.careCallStartedAt,
       };
     });
     showNotification('Fed delicious Big Meat! (+25 Hunger, +2g Weight)');
@@ -978,10 +1028,6 @@ export default function App() {
         energy: nextEnergy,
         strength: prev.strength + 2,
         dpPoints: prev.dpPoints + 5,
-        careCallStartedAt:
-          prev.hunger > 0 && prev.poopCount < 4 && nextEnergy > 0
-            ? undefined
-            : prev.careCallStartedAt,
       };
     });
     showNotification('Gave Vitamin Protein! 💊 (Cured sickness & restored energy!)');
@@ -999,8 +1045,6 @@ export default function App() {
         neglectTicks: 0,
         lastPoopAt: now,
         happiness: Math.min(100, prev.happiness + 5),
-        careCallStartedAt:
-          prev.hunger > 0 && prev.energy > 0 ? undefined : prev.careCallStartedAt,
       };
     });
     showNotification('Flushed and cleaned room spotless! 🧹');
@@ -1010,14 +1054,18 @@ export default function App() {
     if (!requireAliveAndHatched()) return;
     sound.playButton();
     const now = Date.now();
-    setPet((prev) => ({
-      ...prev,
-      lightsOff: !prev.lightsOff,
-      isSleeping: !prev.lightsOff,
-      lastCareCheck: now,
-      lastHungerDropAt: now,
-      lastPoopAt: now,
-    }));
+    setPet((prev) => {
+      const nextLightsOff = !prev.lightsOff;
+      return {
+        ...prev,
+        lightsOff: nextLightsOff,
+        isSleeping: nextLightsOff,
+        sleepCallStartedAt: nextLightsOff ? undefined : prev.sleepCallStartedAt,
+        lastCareCheck: now,
+        lastHungerDropAt: now,
+        lastPoopAt: now,
+      };
+    });
   };
 
   const handleToggleFridge = () => {
@@ -1036,6 +1084,7 @@ export default function App() {
         frozenAt: now,
         lightsOff: false,
         isSleeping: false,
+        sleepCallStartedAt: undefined,
         lastCareCheck: now,
         lastHungerDropAt: now,
         lastPoopAt: now,
@@ -1052,6 +1101,7 @@ export default function App() {
           birthTimestamp: (prev.birthTimestamp || now) + pausedMs,
           sickSince: prev.sickSince ? prev.sickSince + pausedMs : undefined,
           careCallStartedAt: prev.careCallStartedAt ? prev.careCallStartedAt + pausedMs : undefined,
+          sleepCallStartedAt: prev.sleepCallStartedAt ? prev.sleepCallStartedAt + pausedMs : undefined,
           evoGoalMetAt: prev.evoGoalMetAt ? prev.evoGoalMetAt + pausedMs : undefined,
           lastCareCheck: now,
           lastHungerDropAt: now,
@@ -1090,30 +1140,86 @@ export default function App() {
   };
 
   // MINI-GAMES & BATTLE REWARDS
-  const handleTrainingComplete = (success: boolean) => {
-    if (success) {
-      setPet((prev) => ({
+  const handleTrainingComplete = (
+    success: boolean,
+    statKey: TrainingStatKey = 'offense',
+    hits: number = success ? 2 : 1
+  ) => {
+    const speciesObj = DIGIMON_DATABASE[pet.currentSpeciesId];
+    const outcome = calculateTrainingOutcome(statKey, pet, speciesObj, hits);
+
+    setPet((prev) => {
+      const prevSpecies = DIGIMON_DATABASE[prev.currentSpeciesId];
+      const existingLearned = getLearnedTechniqueIds(prev, prevSpecies);
+      const nextLearned = Array.from(
+        new Set([...existingLearned, ...outcome.newlyLearnedMoves.map((m) => m.id)])
+      );
+      const existingEquipped = getEquippedBattleMoves(prev, prevSpecies).map((m) => m.id);
+      const nextEquipped = [...existingEquipped];
+      for (const m of outcome.newlyLearnedMoves) {
+        if (nextEquipped.length < MAX_EQUIPPED_ATTACKS && !nextEquipped.includes(m.id)) {
+          nextEquipped.push(m.id);
+        }
+      }
+
+      return {
         ...prev,
         trainingCount: prev.trainingCount + 1,
         stageTrainingCount: (prev.stageTrainingCount ?? 0) + 1,
-        effort: Math.min(10, (prev.effort ?? 0) + 2),
-        strength: prev.strength + 10,
-        dpPoints: prev.dpPoints + 15,
-        weight: Math.max(10, prev.weight - 2),
-        happiness: Math.min(100, prev.happiness + 15),
-        digiBits: prev.digiBits + 25,
-      }));
-      showNotification('Dojo Workout Complete! 🥊 (+2 Effort, +15 DP, -2g, +25 Bits)');
+        effort: Math.min(10, (prev.effort ?? 0) + (success ? 2 : 1)),
+        strength: prev.strength + (success ? 10 : 4),
+        dpPoints: prev.dpPoints + (success ? 15 : 5),
+        weight: Math.max(10, prev.weight - (success ? 2 : 1)),
+        happiness: Math.min(100, prev.happiness + (success ? 15 : 6)),
+        digiBits: prev.digiBits + (success ? 25 : 10),
+        battleStats: outcome.nextStats,
+        learnedAttackIds: nextLearned,
+        equippedAttackIds: nextEquipped.slice(0, MAX_EQUIPPED_ATTACKS),
+      };
+    });
+
+    const statGainSummary = [
+      outcome.deltas.maxHp ? `+${outcome.deltas.maxHp} HP` : '',
+      outcome.deltas.maxMp ? `+${outcome.deltas.maxMp} MP` : '',
+      outcome.deltas.offense ? `+${outcome.deltas.offense} OFF` : '',
+      outcome.deltas.defense ? `+${outcome.deltas.defense} DEF` : '',
+      outcome.deltas.speed ? `+${outcome.deltas.speed} SPD` : '',
+      outcome.deltas.brains ? `+${outcome.deltas.brains} BRN` : '',
+    ]
+      .filter(Boolean)
+      .join(', ');
+
+    if (outcome.newlyLearnedMoves.length > 0) {
+      const learnedNames = outcome.newlyLearnedMoves.map((m) => m.name).join(', ');
+      showNotification(`💡 Learned ${learnedNames}! (${statGainSummary})`);
     } else {
-      setPet((prev) => ({
-        ...prev,
-        trainingCount: prev.trainingCount + 1,
-        stageTrainingCount: (prev.stageTrainingCount ?? 0) + 1,
-        effort: Math.min(10, (prev.effort ?? 0) + 1),
-        weight: Math.max(10, prev.weight - 1),
-      }));
-      showNotification('Training round finished! (+1 Effort) Keep practicing!');
+      showNotification(`Gym Session Complete: ${statGainSummary} (+${success ? 2 : 1} Effort)`);
     }
+  };
+
+  const handleToggleEquipAttack = (moveId: string) => {
+    setPet((prev) => {
+      const prevSpecies = DIGIMON_DATABASE[prev.currentSpeciesId];
+      const learned = getLearnedTechniqueIds(prev, prevSpecies);
+      if (!learned.includes(moveId)) return prev;
+
+      const currentEquipped = getEquippedBattleMoves(prev, prevSpecies).map((m) => m.id);
+      if (currentEquipped.includes(moveId)) {
+        return {
+          ...prev,
+          learnedAttackIds: learned,
+          equippedAttackIds: currentEquipped.filter((id) => id !== moveId),
+        };
+      }
+      if (currentEquipped.length >= MAX_EQUIPPED_ATTACKS) {
+        return prev;
+      }
+      return {
+        ...prev,
+        learnedAttackIds: learned,
+        equippedAttackIds: [...currentEquipped, moveId],
+      };
+    });
   };
 
   const handleFoodGameComplete = (_score: number, meatEarned: number, vitaminsEarned: number, coinsEarned: number) => {
@@ -1413,6 +1519,10 @@ export default function App() {
       lastHungerDropAt: now,
       lastPoopAt: now,
       careCallStartedAt: undefined,
+      sleepCallStartedAt: undefined,
+      battleStats: undefined,
+      learnedAttackIds: undefined,
+      equippedAttackIds: undefined,
       adventureClearedWave: prev.adventureClearedWave || {},
       battleExp: prev.battleExp ?? 0,
       unlockedSpeciesIds: loadUnlockedSpeciesIds(prev.unlockedSpeciesIds || []),
@@ -1741,80 +1851,110 @@ export default function App() {
           </div>
         )}
 
-        {/* Active Hunger & Toilet Notification Alerts */}
-        {!pet.isDead && !pet.isFrozen && pet.stage !== 'egg' && (careNeeds.isHungry || careNeeds.needsToilet) && (
-          <div className="w-full px-2.5 sm:px-4 flex flex-col gap-1.5 mb-2.5">
-            {careNeeds.isHungry && (
-              <div
-                className={`w-full py-2 px-3 rounded-2xl border flex items-center justify-between gap-2 shadow-md ${
-                  careNeeds.isStarving
-                    ? 'bg-rose-950/85 border-rose-500/80 text-rose-100'
-                    : 'bg-amber-950/75 border-amber-500/60 text-amber-100'
-                }`}
-              >
-                <div className="flex items-center gap-2 min-w-0">
-                  <PixelMeatIcon className="w-5 h-5 shrink-0" />
-                  <div className="min-w-0">
-                    <div className="font-pixel text-[9px] truncate">
-                      {careNeeds.isStarving
-                        ? `🚨 STARVING ALERT! (${pet.hunger}%)`
-                        : `🍖 HUNGER ALERT! (${pet.hunger}%)`}
-                    </div>
-                    <div className="text-[10px] font-chakra opacity-90 truncate tabular-nums">
-                      {careNeeds.isStarving && careNeeds.graceRemainingMs > 0
-                        ? `Feed within ${formatDurationMs(careNeeds.graceRemainingMs)} to avoid Care Mistake!`
-                        : `${pet.nickname?.trim() || currentSpecies?.name || 'Digimon'} wants Big Meat.`}
+        {/* Active Hunger, Bedtime & Toilet Notification Alerts */}
+        {!pet.isDead &&
+          !pet.isFrozen &&
+          pet.stage !== 'egg' &&
+          (careNeeds.isHungry || careNeeds.needsToilet || careNeeds.isSleepy) && (
+            <div className="w-full px-2.5 sm:px-4 flex flex-col gap-1.5 mb-2.5">
+              {careNeeds.isSleepy && (
+                <div className="w-full py-2 px-3 rounded-2xl border bg-indigo-950/85 border-indigo-400/70 text-indigo-100 flex items-center justify-between gap-2 shadow-md">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="text-lg shrink-0">🌙</span>
+                    <div className="min-w-0">
+                      <div className="font-pixel text-[9px] truncate">
+                        BEDTIME CALL! LIGHTS NEEDED
+                      </div>
+                      <div className="text-[10px] font-chakra opacity-90 truncate tabular-nums">
+                        {careNeeds.graceRemainingMs > 0
+                          ? `Turn lights off within ${formatDurationMs(careNeeds.graceRemainingMs)} to avoid Care Mistake!`
+                          : `${pet.nickname?.trim() || currentSpecies?.name || 'Digimon'} is sleepy — turn lights off!`}
+                      </div>
                     </div>
                   </div>
+                  <button
+                    onClick={() => {
+                      handleToggleLights();
+                      triggerHaptic('medium');
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-indigo-400 hover:bg-indigo-300 text-slate-950 font-pixel text-[9px] font-bold shrink-0 cursor-pointer active:scale-95"
+                  >
+                    LIGHTS OFF
+                  </button>
                 </div>
-                <button
-                  onClick={() => {
-                    handleFeedMeat();
-                    triggerHaptic('heavy');
-                  }}
-                  className="px-3 py-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-pixel text-[9px] font-bold shrink-0 cursor-pointer active:scale-95"
-                >
-                  FEED
-                </button>
-              </div>
-            )}
+              )}
 
-            {careNeeds.needsToilet && (
-              <div
-                className={`w-full py-2 px-3 rounded-2xl border flex items-center justify-between gap-2 shadow-md ${
-                  careNeeds.toiletUrgent
-                    ? 'bg-rose-950/85 border-rose-500/80 text-rose-100'
-                    : 'bg-amber-950/75 border-amber-500/60 text-amber-100'
-                }`}
-              >
-                <div className="flex items-center gap-2 min-w-0">
-                  <PixelPoopIcon className="w-5 h-5 shrink-0" />
-                  <div className="min-w-0">
-                    <div className="font-pixel text-[9px] truncate tabular-nums">
-                      💩 TOILET ALERT! ({pet.poopCount}/4 PILE{pet.poopCount === 1 ? '' : 'S'})
-                    </div>
-                    <div className="text-[10px] font-chakra opacity-90 truncate">
-                      {pet.poopCount >= 4
-                        ? '4 piles reached — flush & cure sickness now!'
-                        : pet.poopCount >= 3
-                        ? 'Urgent! Sickness triggers at 4 piles!'
-                        : `${pet.nickname?.trim() || currentSpecies?.name || 'Digimon'} needs a toilet flush.`}
+              {careNeeds.isHungry && (
+                <div
+                  className={`w-full py-2 px-3 rounded-2xl border flex items-center justify-between gap-2 shadow-md ${
+                    careNeeds.isStarving
+                      ? 'bg-rose-950/85 border-rose-500/80 text-rose-100'
+                      : 'bg-amber-950/75 border-amber-500/60 text-amber-100'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <PixelMeatIcon className="w-5 h-5 shrink-0" />
+                    <div className="min-w-0">
+                      <div className="font-pixel text-[9px] truncate">
+                        {careNeeds.isStarving
+                          ? `🚨 STARVING ALERT! (${pet.hunger}%)`
+                          : `🍖 HUNGER ALERT! (${pet.hunger}%)`}
+                      </div>
+                      <div className="text-[10px] font-chakra opacity-90 truncate tabular-nums">
+                        {careNeeds.isStarving && careNeeds.graceRemainingMs > 0
+                          ? `Feed within ${formatDurationMs(careNeeds.graceRemainingMs)} to avoid Care Mistake!`
+                          : `${pet.nickname?.trim() || currentSpecies?.name || 'Digimon'} wants Big Meat.`}
+                      </div>
                     </div>
                   </div>
+                  <button
+                    onClick={() => {
+                      handleFeedMeat();
+                      triggerHaptic('heavy');
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-pixel text-[9px] font-bold shrink-0 cursor-pointer active:scale-95"
+                  >
+                    FEED
+                  </button>
                 </div>
-                <button
-                  onClick={() => {
-                    handleCleanPoop();
-                    triggerHaptic('medium');
-                  }}
-                  className="px-3 py-1.5 rounded-xl bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-pixel text-[9px] font-bold shrink-0 cursor-pointer active:scale-95"
+              )}
+
+              {careNeeds.needsToilet && (
+                <div
+                  className={`w-full py-2 px-3 rounded-2xl border flex items-center justify-between gap-2 shadow-md ${
+                    careNeeds.toiletUrgent
+                      ? 'bg-rose-950/85 border-rose-500/80 text-rose-100'
+                      : 'bg-amber-950/75 border-amber-500/60 text-amber-100'
+                  }`}
                 >
-                  FLUSH
-                </button>
-              </div>
-            )}
-          </div>
-        )}
+                  <div className="flex items-center gap-2 min-w-0">
+                    <PixelPoopIcon className="w-5 h-5 shrink-0" />
+                    <div className="min-w-0">
+                      <div className="font-pixel text-[9px] truncate tabular-nums">
+                        💩 TOILET ALERT! ({pet.poopCount}/4 PILE{pet.poopCount === 1 ? '' : 'S'})
+                      </div>
+                      <div className="text-[10px] font-chakra opacity-90 truncate">
+                        {pet.poopCount >= 4
+                          ? '4 piles reached — flush & cure sickness now!'
+                          : pet.poopCount >= 3
+                          ? 'Urgent! Sickness triggers at 4 piles (0 CM).'
+                          : `${pet.nickname?.trim() || currentSpecies?.name || 'Digimon'} needs a toilet flush.`}
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => {
+                      handleCleanPoop();
+                      triggerHaptic('medium');
+                    }}
+                    className="px-3 py-1.5 rounded-xl bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-pixel text-[9px] font-bold shrink-0 cursor-pointer active:scale-95"
+                  >
+                    FLUSH
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
 
         {/* Mobile Vitals Dashboard Bar */}
         <div className="w-full px-2.5 sm:px-4 grid grid-cols-4 gap-1.5 mb-2.5 text-[9px] font-pixel">
@@ -2431,6 +2571,7 @@ export default function App() {
         isOpen={isTrainingOpen}
         onClose={() => setIsTrainingOpen(false)}
         onTrainingComplete={handleTrainingComplete}
+        onToggleEquipAttack={handleToggleEquipAttack}
         onOpenFoodGame={() => setIsFoodGameOpen(true)}
       />
 
@@ -2501,6 +2642,7 @@ export default function App() {
         }}
         onOpenDigidex={() => setIsDigidexOpen(true)}
         onEquipSpecialItem={handleEquipSpecialItem}
+        onToggleEquipAttack={handleToggleEquipAttack}
         onUpdatePlayerName={handleUpdatePlayerName}
         onUpdateNickname={handleUpdateNickname}
       />

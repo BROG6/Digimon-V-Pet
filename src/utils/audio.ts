@@ -6,6 +6,7 @@ class SoundEngine {
   private ctx: AudioContext | null = null;
   private isMuted: boolean = false;
   private activeNodes: Set<{ source: AudioScheduledSourceNode; gain?: GainNode }> = new Set();
+  private alertAudio: HTMLAudioElement | null = null;
 
   constructor() {
     if (typeof document !== 'undefined') {
@@ -119,8 +120,29 @@ class SoundEngine {
     osc.stop(now + 0.06);
   }
 
-  // Digivice Attention Call (3 high-pitched beeps)
+  // Digivice Attention Call (custom Digivice Beep Clean OGG with synth fallback)
   public playAlert() {
+    if (this.isMuted) return;
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+
+    if (typeof Audio !== 'undefined') {
+      try {
+        if (!this.alertAudio) {
+          this.alertAudio = new Audio('/assets/audio/digivice_beep_clean.ogg');
+          this.alertAudio.volume = 0.85;
+        }
+        this.alertAudio.currentTime = 0;
+        const p = this.alertAudio.play();
+        if (p && typeof p.catch === 'function') {
+          p.catch(() => this.playSynthAlert());
+        }
+        return;
+      } catch {}
+    }
+    this.playSynthAlert();
+  }
+
+  private playSynthAlert() {
     const ctx = this.getContext();
     if (!ctx) return;
     const now = ctx.currentTime;

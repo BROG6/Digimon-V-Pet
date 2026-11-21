@@ -13,6 +13,12 @@ import { getPersonalityProfile, personalizeQuoteForPlayer } from './digimonPerso
 import { getGridRowRatios, GridLayoutPresetId, isFlyingSpecies } from './petOverlayEngine';
 import { OverlayLaunchParams } from './nativeOverlay';
 import { getStageHungerHeartMs } from './carePacing';
+import {
+  getBaseBattleStatsForSpecies,
+  getEffectiveBattleStats,
+  getLearnedTechniqueIds,
+  MAX_EQUIPPED_ATTACKS,
+} from '../data/battleTechniques';
 import type { EggStageBranches } from '../data/eggsAndMatrix';
 
 export interface EvolutionEligibility {
@@ -587,6 +593,44 @@ export function applyEvolutionToPetState(
   const wasArmor = prev.equippedSpecialItem &&
     Object.values(SPECIAL_ITEMS).some((item) => item.armorSpeciesId === target.id && item.id === prev.equippedSpecialItem);
 
+  const prevSpecies = DIGIMON_DATABASE[prev.currentSpeciesId];
+  const prevEffective = getEffectiveBattleStats(prev, prevSpecies);
+  const prevBase = getBaseBattleStatsForSpecies(prevSpecies);
+  const targetBase = getBaseBattleStatsForSpecies(target);
+
+  const trainedBonus = {
+    maxHp: Math.max(0, prevEffective.maxHp - prevBase.maxHp),
+    maxMp: Math.max(0, prevEffective.maxMp - prevBase.maxMp),
+    offense: Math.max(0, prevEffective.offense - prevBase.offense),
+    defense: Math.max(0, prevEffective.defense - prevBase.defense),
+    speed: Math.max(0, prevEffective.speed - prevBase.speed),
+    brains: Math.max(0, prevEffective.brains - prevBase.brains),
+  };
+
+  const nextBattleStats = {
+    maxHp: targetBase.maxHp + trainedBonus.maxHp,
+    maxMp: targetBase.maxMp + trainedBonus.maxMp,
+    offense: targetBase.offense + trainedBonus.offense,
+    defense: targetBase.defense + trainedBonus.defense,
+    speed: targetBase.speed + trainedBonus.speed,
+    brains: targetBase.brains + trainedBonus.brains,
+  };
+
+  const draftPet: PetState = {
+    ...prev,
+    currentSpeciesId: target.id,
+    stage: target.stage,
+    battleStats: nextBattleStats,
+  };
+  const nextLearned = getLearnedTechniqueIds(draftPet, target);
+  const existingEquipped = Array.isArray(prev.equippedAttackIds)
+    ? prev.equippedAttackIds.filter((id) => nextLearned.includes(id))
+    : [];
+  const nextEquipped = Array.from(new Set([...existingEquipped, ...nextLearned])).slice(
+    0,
+    MAX_EQUIPPED_ATTACKS
+  );
+
   return {
     ...prev,
     currentSpeciesId: target.id,
@@ -607,8 +651,12 @@ export function applyEvolutionToPetState(
     lastPoopAt: nowMs,
     lastCareCheck: nowMs,
     careCallStartedAt: undefined,
+    sleepCallStartedAt: undefined,
     isFrozen: false,
     frozenAt: undefined,
+    battleStats: nextBattleStats,
+    learnedAttackIds: nextLearned,
+    equippedAttackIds: nextEquipped,
     unlockedSpeciesIds: recordUnlockedSpeciesId(target.id, prev.unlockedSpeciesIds || []),
   };
 }

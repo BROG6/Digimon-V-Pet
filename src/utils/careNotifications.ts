@@ -138,7 +138,8 @@ export async function syncBackgroundCareAlarms(params: {
     (schedule.hungryAtMs > 0 ||
       schedule.starvingAtMs > 0 ||
       schedule.nextPoopAtMs > 0 ||
-      schedule.poopFullAtMs > 0);
+      schedule.poopFullAtMs > 0 ||
+      schedule.bedtimeAtMs > 0);
 
   if (Capacitor.isNativePlatform()) {
     try {
@@ -152,6 +153,7 @@ export async function syncBackgroundCareAlarms(params: {
           nextPoopAtMs: String(schedule.nextPoopAtMs || 0),
           nextPoopCount: schedule.nextPoopCount || 1,
           poopFullAtMs: String(schedule.poopFullAtMs || 0),
+          bedtimeAtMs: String(schedule.bedtimeAtMs || 0),
         });
       }
     } catch {}
@@ -200,5 +202,12 @@ export async function syncBackgroundCareAlarms(params: {
         ? `${petName} has 4 toilet piles and got sick! Flush & cure now.`
         : `${petName} needs the toilet! (${schedule.nextPoopCount}/4 piles)`,
     tag: 'digipet-toilet',
+  });
+
+  queueWebAlarm(schedule.bedtimeAtMs, {
+    id: 2005,
+    title: `🌙 Bedtime Alert: ${petName}`,
+    body: `${petName} is sleepy! Turn the lights off within 10 minutes to avoid a Care Mistake.`,
+    tag: 'digipet-bedtime',
   });
 }

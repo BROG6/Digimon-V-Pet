@@ -23,6 +23,19 @@ import java.net.URL;
 
 @CapacitorPlugin(name = "AppUpdatePlugin")
 public class AppUpdatePlugin extends Plugin {
+    private static final String DEFAULT_HOST = "https://ais-dev-hwfiiqh77iufzd3mdqoptd-750449911930.asia-northeast1.run.app";
+
+    private static String rewriteLocalhost(String rawUrl) {
+        if (rawUrl == null) return DEFAULT_HOST;
+        if (rawUrl.contains("localhost") || rawUrl.contains("127.0.0.1")) {
+            return rawUrl
+                .replace("https://localhost", DEFAULT_HOST)
+                .replace("http://localhost", DEFAULT_HOST)
+                .replace("https://127.0.0.1", DEFAULT_HOST)
+                .replace("http://127.0.0.1", DEFAULT_HOST);
+        }
+        return rawUrl;
+    }
 
     @PluginMethod
     public void getAppInfo(PluginCall call) {
@@ -92,12 +105,9 @@ public class AppUpdatePlugin extends Plugin {
     public void fetchManifest(PluginCall call) {
         String manifestUrl = call.getString("url");
         if (manifestUrl == null || manifestUrl.isEmpty()) {
-            manifestUrl = "https://ais-pre-hwfiiqh77iufzd3mdqoptd-750449911930.asia-northeast1.run.app/api/app-version";
+            manifestUrl = DEFAULT_HOST + "/api/app-version";
         }
-        if (manifestUrl.contains("localhost") || manifestUrl.contains("127.0.0.1")) {
-            manifestUrl = manifestUrl.replace("https://localhost", "https://ais-pre-hwfiiqh77iufzd3mdqoptd-750449911930.asia-northeast1.run.app")
-                                     .replace("http://localhost", "https://ais-pre-hwfiiqh77iufzd3mdqoptd-750449911930.asia-northeast1.run.app");
-        }
+        manifestUrl = rewriteLocalhost(manifestUrl);
 
         final String targetUrl = manifestUrl;
         new Thread(() -> {
@@ -168,12 +178,7 @@ public class AppUpdatePlugin extends Plugin {
         }
 
         // Failsafe: if apkUrl points to localhost/127.0.0.1, rewrite to official Cloud Run host
-        if (apkUrl.contains("localhost") || apkUrl.contains("127.0.0.1")) {
-            apkUrl = apkUrl.replace("https://localhost", "https://ais-pre-hwfiiqh77iufzd3mdqoptd-750449911930.asia-northeast1.run.app")
-                           .replace("http://localhost", "https://ais-pre-hwfiiqh77iufzd3mdqoptd-750449911930.asia-northeast1.run.app")
-                           .replace("https://127.0.0.1", "https://ais-pre-hwfiiqh77iufzd3mdqoptd-750449911930.asia-northeast1.run.app")
-                           .replace("http://127.0.0.1", "https://ais-pre-hwfiiqh77iufzd3mdqoptd-750449911930.asia-northeast1.run.app");
-        }
+        apkUrl = rewriteLocalhost(apkUrl);
 
         final String finalApkUrl = apkUrl;
 
@@ -297,12 +302,7 @@ public class AppUpdatePlugin extends Plugin {
             return;
         }
 
-        if (urlString.contains("localhost") || urlString.contains("127.0.0.1")) {
-            urlString = urlString.replace("https://localhost", "https://ais-pre-hwfiiqh77iufzd3mdqoptd-750449911930.asia-northeast1.run.app")
-                                 .replace("http://localhost", "https://ais-pre-hwfiiqh77iufzd3mdqoptd-750449911930.asia-northeast1.run.app")
-                                 .replace("https://127.0.0.1", "https://ais-pre-hwfiiqh77iufzd3mdqoptd-750449911930.asia-northeast1.run.app")
-                                 .replace("http://127.0.0.1", "https://ais-pre-hwfiiqh77iufzd3mdqoptd-750449911930.asia-northeast1.run.app");
-        }
+        urlString = rewriteLocalhost(urlString);
 
         try {
             Intent browserIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(urlString));
@@ -319,6 +319,65 @@ public class AppUpdatePlugin extends Plugin {
         } catch (Exception e) {
             call.reject("Failed to open URL: " + e.getMessage());
         }
+    }
+
+    @PluginMethod
+    public void httpPost(PluginCall call) {
+        String rawUrl = call.getString("url");
+        String body = call.getString("body", "{}");
+        if (rawUrl == null || rawUrl.isEmpty()) {
+            call.reject("URL is required");
+            return;
+        }
+        final String targetUrl = rewriteLocalhost(rawUrl);
+        new Thread(() -> {
+            HttpURLConnection conn = null;
+            try {
+                URL url = new URL(targetUrl);
+                conn = (HttpURLConnection) url.openConnection();
+                conn.setRequestMethod("POST");
+                conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
+                conn.setRequestProperty("Accept", "application/json");
+                conn.setConnectTimeout(15000);
+                conn.setReadTimeout(20000);
+                conn.setDoOutput(true);
+                byte[] outBytes = (body != null ? body : "{}").getBytes("UTF-8");
+                conn.setFixedLengthStreamingMode(outBytes.length);
+                try (java.io.OutputStream os = conn.getOutputStream()) {
+                    os.write(outBytes);
+                    os.flush();
+                }
+
+                int code = conn.getResponseCode();
+                InputStream stream = code >= 400 ? conn.getErrorStream() : conn.getInputStream();
+                StringBuilder sb = new StringBuilder();
+                if (stream != null) {
+                    java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.InputStreamReader(stream, "UTF-8"));
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        sb.append(line);
+                    }
+                    reader.close();
+                }
+                final int statusCode = code;
+                final String result = sb.toString();
+                new Handler(Looper.getMainLooper()).post(() -> {
+                    JSObject ret = new JSObject();
+                    ret.put("ok", statusCode >= 200 && statusCode < 300);
+                    ret.put("status", statusCode);
+                    ret.put("data", result);
+                    call.resolve(ret);
+                });
+            } catch (Exception e) {
+                new Handler(Looper.getMainLooper()).post(() -> {
+                    call.reject("Native POST error: " + e.getMessage());
+                });
+            } finally {
+                if (conn != null) {
+                    conn.disconnect();
+                }
+            }
+        }).start();
     }
 
     @PluginMethod

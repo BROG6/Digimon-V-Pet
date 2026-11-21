@@ -9,6 +9,7 @@ import android.app.PictureInPictureParams;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.media.AudioAttributes;
 import android.net.Uri;
 import android.os.Build;
 import android.provider.Settings;
@@ -402,14 +403,21 @@ public class OverlayPlugin extends Plugin {
             return;
         }
 
+        Uri soundUri = Uri.parse("android.resource://" + ctx.getPackageName() + "/" + R.raw.digivice_beep_clean);
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel channel = new NotificationChannel(
                 channelId,
-                "Digimon Hunger & Toilet Alerts",
+                "Digimon Care Alerts",
                 NotificationManager.IMPORTANCE_HIGH
             );
-            channel.setDescription("Alerts when your Digimon is hungry or needs the toilet.");
+            channel.setDescription("Digivice alerts when your Digimon is hungry, sleepy, or needs the toilet.");
             channel.enableVibration(true);
+            AudioAttributes audioAttrs = new AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_NOTIFICATION)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .build();
+            channel.setSound(soundUri, audioAttrs);
             nm.createNotificationChannel(channel);
         }
 
@@ -426,6 +434,7 @@ public class OverlayPlugin extends Plugin {
             .setContentText(body)
             .setStyle(new NotificationCompat.BigTextStyle().bigText(body))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setSound(soundUri)
             .setAutoCancel(true)
             .setContentIntent(pendingIntent);
 
@@ -514,6 +523,7 @@ public class OverlayPlugin extends Plugin {
         long starvingAtMs = readLongOption(call, "starvingAtMs", 0L);
         long nextPoopAtMs = readLongOption(call, "nextPoopAtMs", 0L);
         long poopFullAtMs = readLongOption(call, "poopFullAtMs", 0L);
+        long bedtimeAtMs = readLongOption(call, "bedtimeAtMs", 0L);
         int nextPoopCount = Math.max(1, Math.min(4, readIntOption(call, "nextPoopCount", 1)));
 
         scheduleOrCancelAlarm(
@@ -554,6 +564,15 @@ public class OverlayPlugin extends Plugin {
             "🚨 Toilet Full Alert: " + petName,
             petName + " hit 4 toilet piles and got sick! Flush & give medicine right away."
         );
+        scheduleOrCancelAlarm(
+            ctx,
+            am,
+            3005,
+            2005,
+            bedtimeAtMs,
+            "🌙 Bedtime Alert: " + petName,
+            petName + " is sleepy! Turn the lights off within 10 minutes to avoid a Care Mistake."
+        );
 
         JSObject ret = new JSObject();
         ret.put("success", true);
@@ -573,6 +592,7 @@ public class OverlayPlugin extends Plugin {
             am.cancel(createCareAlarmPendingIntent(ctx, 3002, 2001, "", ""));
             am.cancel(createCareAlarmPendingIntent(ctx, 3003, 2002, "", ""));
             am.cancel(createCareAlarmPendingIntent(ctx, 3004, 2002, "", ""));
+            am.cancel(createCareAlarmPendingIntent(ctx, 3005, 2005, "", ""));
         }
         JSObject ret = new JSObject();
         ret.put("success", true);

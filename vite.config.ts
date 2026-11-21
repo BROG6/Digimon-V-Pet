@@ -26,6 +26,9 @@ export default defineConfig(() => {
     define: {
       __GRADLE_VERSION_NAME__: JSON.stringify(gradleVersion.versionName),
       __GRADLE_VERSION_CODE__: JSON.stringify(gradleVersion.versionCode),
+      __APP_DEFAULT_URL__: JSON.stringify(
+        process.env.APP_URL || 'https://ais-dev-hwfiiqh77iufzd3mdqoptd-750449911930.asia-northeast1.run.app'
+      ),
     },
     plugins: [
       react(), 

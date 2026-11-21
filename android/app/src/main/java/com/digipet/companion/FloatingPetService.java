@@ -1184,6 +1184,12 @@ public class FloatingPetService extends Service {
             hudVitLabel.setText(petVitaminStock > 0 ? ("VIT " + petVitaminStock) : "VIT 0");
             hudVitLabel.setTextColor(petVitaminStock > 0 ? 0xFF7DD3FC : 0xFF94A3B8);
         }
+        if (webView != null) {
+            webView.evaluateJavascript(
+                "window.setPetMood && window.setPetMood(" + petHunger + "," + petHappiness + "," + (isPetSleeping ? "true" : "false") + ");",
+                null
+            );
+        }
     }
 
     private void toggleCareHud() {
@@ -1206,12 +1212,18 @@ public class FloatingPetService extends Service {
             if (bubbleVisible) {
                 updateBubblePosition();
             }
+            if (webView != null) {
+                webView.evaluateJavascript("window.setPetMoodSuppressed && window.setPetMoodSuppressed(true);", null);
+            }
             resetHudAutoHide();
         } else {
             hudStatsContainer.setVisibility(View.GONE);
             hudButtonsContainer.setVisibility(View.GONE);
             if (bubbleVisible) {
                 updateBubblePosition();
+            }
+            if (webView != null) {
+                webView.evaluateJavascript("window.setPetMoodSuppressed && window.setPetMoodSuppressed(false);", null);
             }
         }
     }
@@ -2414,6 +2426,10 @@ public class FloatingPetService extends Service {
             "@keyframes zzzFloat { 0% { transform:translate(0px, 2px) scale(0.85); opacity:0; } 35% { opacity:1; } 100% { transform:translate(8px, -14px) scale(1.1); opacity:0; } }" +
             "#carryBadge { display:none; position:absolute; top:-12px; right:-4px; z-index:20; background:#1e1b4b; border:1.5px solid #fbbf24; border-radius:8px; padding:2px; box-shadow:0 2px 6px rgba(0,0,0,0.5); }" +
             "#carryBadge.show { display:block; }" +
+            "#moodBadge { display:none; position:absolute; top:-16px; left:50%; transform:translateX(-50%); z-index:24; pointer-events:none; filter:drop-shadow(0 1px 3px rgba(0,0,0,0.85)); }" +
+            "#moodBadge.show { display:block; animation:moodPop 2.2s ease-out forwards; }" +
+            "#moodInner { display:inline-block; font-size:12px; line-height:1; }" +
+            "@keyframes moodPop { 0% { opacity:0; transform:translateX(-50%) translateY(4px) scale(0.7); } 20% { opacity:1; transform:translateX(-50%) translateY(-2px) scale(1.1); } 80% { opacity:0.95; transform:translateX(-50%) translateY(-7px) scale(1); } 100% { opacity:0; transform:translateX(-50%) translateY(-11px) scale(0.85); } }" +
             "#spriteBox { position:relative; overflow:visible; z-index:10; }" +
             "#frameClip { position:relative; overflow:hidden; }" +
             "#innerBox { position:absolute; top:50%; left:50%; transform-origin:center center; overflow:hidden; }" +
@@ -2438,6 +2454,7 @@ public class FloatingPetService extends Service {
             "      </svg>" +
             "    </div>" +
             "    <div id='spriteBox'>" +
+            "      <div id='moodBadge'><span id='moodInner'></span></div>" +
             "      <div id='frameClip'>" +
             "        <div id='innerBox'>" +
             "          <img id='sheetImg' src='" + relSpriteUrl + "' onerror=\"if(this.getAttribute('data-tried')!=='1'){this.setAttribute('data-tried','1');this.src='" + absSpriteUrl + "';}\" />" +
@@ -2476,6 +2493,11 @@ public class FloatingPetService extends Service {
             "var sheetImg = document.getElementById('sheetImg');" +
             "var bubble = document.getElementById('bubble');" +
             "var carryBadge = document.getElementById('carryBadge');" +
+            "var moodBadge = document.getElementById('moodBadge');" +
+            "var moodInner = document.getElementById('moodInner');" +
+            "var moodHunger = " + petHunger + ";" +
+            "var moodHappiness = " + petHappiness + ";" +
+            "var moodSuppressed = " + (hudVisible ? "true" : "false") + ";" +
 
             "var maxSpriteW = Math.max(stageBoxW || 0, fallbackFrame.w || 48);" +
             "var maxSpriteH = Math.max(stageBoxH || 0, fallbackFrame.h || 48);" +
@@ -2593,8 +2615,10 @@ public class FloatingPetService extends Service {
             "  facingRight = !!right;" +
             "  isSleeping = (mode === 'sleep');" +
             "  isWalking = !isSleeping && (mode === 'walk');" +
+            "  if (moodInner) moodInner.style.transform = facingRight ? 'scaleX(1)' : 'scaleX(-1)';" +
             "  if (isSleeping) {" +
             "    petWrap.classList.add('sleeping');" +
+            "    if (moodBadge) moodBadge.classList.remove('show');" +
             "    if (!wasSleeping) sleepFrameIdx = 0;" +
             "  } else {" +
             "    petWrap.classList.remove('sleeping');" +
@@ -2603,6 +2627,50 @@ public class FloatingPetService extends Service {
             "  if (speech) showSpeech(speech);" +
             "  if (isSleeping) renderFrame(sleepingFrames[Math.min(sleepFrameIdx, sleepingFrames.length - 1)]);" +
             "  else renderFrame(isWalking ? walkingFrames[walkFrameIdx] : standingFrames[standFrameIdx]);" +
+            "};" +
+
+            "var moodPulseTimer = null;" +
+            "var moodHideTimer = null;" +
+            "function computeOverlayMoodIcon() {" +
+            "  if (isSleeping || moodSuppressed) return null;" +
+            "  if (moodHappiness <= 30) return { icon: '💢', intervalMs: 16000 };" +
+            "  if (moodHunger <= 35) return { icon: '💧', intervalMs: 16000 };" +
+            "  if (moodHunger <= 60 && moodHappiness <= 60) return { icon: '❓', intervalMs: 22000 };" +
+            "  if (moodHappiness >= 75 && moodHunger >= 60) return { icon: '❤️', intervalMs: 22000 };" +
+            "  return null;" +
+            "}" +
+            "function triggerMoodPulse() {" +
+            "  if (moodPulseTimer) { clearTimeout(moodPulseTimer); moodPulseTimer = null; }" +
+            "  if (moodHideTimer) { clearTimeout(moodHideTimer); moodHideTimer = null; }" +
+            "  var spec = computeOverlayMoodIcon();" +
+            "  if (!spec || !moodBadge || !moodInner) {" +
+            "    if (moodBadge) moodBadge.classList.remove('show');" +
+            "    return;" +
+            "  }" +
+            "  moodInner.textContent = spec.icon;" +
+            "  moodInner.style.transform = facingRight ? 'scaleX(1)' : 'scaleX(-1)';" +
+            "  moodBadge.classList.remove('show');" +
+            "  void moodBadge.offsetWidth;" +
+            "  moodBadge.classList.add('show');" +
+            "  moodHideTimer = setTimeout(function() { if (moodBadge) moodBadge.classList.remove('show'); }, 2200);" +
+            "  moodPulseTimer = setTimeout(triggerMoodPulse, spec.intervalMs);" +
+            "}" +
+            "function scheduleMoodLoop() {" +
+            "  if (moodPulseTimer) { clearTimeout(moodPulseTimer); moodPulseTimer = null; }" +
+            "  var spec = computeOverlayMoodIcon();" +
+            "  if (!spec) { if (moodBadge) moodBadge.classList.remove('show'); return; }" +
+            "  moodPulseTimer = setTimeout(triggerMoodPulse, 3500);" +
+            "}" +
+            "window.setPetMood = function(h, hap, slp) {" +
+            "  if (typeof h === 'number') moodHunger = h;" +
+            "  if (typeof hap === 'number') moodHappiness = hap;" +
+            "  if (typeof slp === 'boolean') isSleeping = slp;" +
+            "  scheduleMoodLoop();" +
+            "};" +
+            "window.setPetMoodSuppressed = function(sup) {" +
+            "  moodSuppressed = !!sup;" +
+            "  if (moodSuppressed && moodBadge) moodBadge.classList.remove('show');" +
+            "  scheduleMoodLoop();" +
             "};" +
 
             "setInterval(function() {" +
@@ -2624,6 +2692,7 @@ public class FloatingPetService extends Service {
             "} else {" +
             "  renderFrame(standingFrames[0]);" +
             "}" +
+            "scheduleMoodLoop();" +
             "if (initialEvoMsg) {" +
             "  setTimeout(function() { playEvolutionEffect(initialEvoMsg); }, 120);" +
             "} else if (!isSleeping) {" +

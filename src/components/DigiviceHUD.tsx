@@ -5,6 +5,8 @@ import { DigimonSprite, DigimonPose } from './DigimonSprite';
 import { PixelMeatIcon, PixelVitaminIcon, PixelPoopIcon } from './PixelItemIcons';
 import { sound } from '../utils/audio';
 import { checkEvolutionEligibility, formatDurationMs } from '../utils/evolutionEngine';
+import { isWithinSleepWindow } from '../utils/carePacing';
+import { getEffectiveBattleStats } from '../data/battleTechniques';
 import { 
   Heart, 
   Scale, 
@@ -182,8 +184,9 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
   const ageHours = Math.floor(ageMs / (1000 * 60 * 60));
   const ageDays = Math.floor(ageHours / 24);
   const winRate = pet.battlesTotal > 0 ? Math.round((pet.battlesWon / pet.battlesTotal) * 100) : 0;
-  const trainingAtkBonus = Math.floor(pet.trainingCount * 2);
-  const totalAtk = (species?.baseAtk || 20) + trainingAtkBonus;
+  const rpgStats = getEffectiveBattleStats(pet, species);
+  const totalAtk = rpgStats.offense;
+  const isBedtime = !pet.lightsOff && isWithinSleepWindow(pet.stage);
   const evoElig = checkEvolutionEligibility(pet, species);
 
   // AUTONOMOUS MOVEMENT ENGINE INSIDE LCD SCREEN
@@ -757,11 +760,11 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
                     </div>
                   )}
 
-                  {/* Attention / Hunger / Toilet / Sickness alert blinking icon */}
+                  {/* Attention / Hunger / Toilet / Sickness / Bedtime alert blinking icon */}
                   {!pet.isDead &&
                     !pet.isFrozen &&
                     pet.stage !== 'egg' &&
-                    (pet.isSick || pet.hunger <= 25 || pet.poopCount > 0 || pet.careMistakes >= 6) && (
+                    (pet.isSick || pet.hunger <= 25 || pet.poopCount > 0 || pet.careMistakes >= 6 || isBedtime) && (
                       <div className="absolute top-4 right-1 text-[8px] font-pixel px-1.5 py-0.5 rounded animate-pulse font-bold bg-[#dc2626] text-white border border-rose-300 shadow z-30">
                         {pet.careMistakes >= 6
                           ? '[DANGER!]'
@@ -771,6 +774,8 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
                           ? '[STARVING!]'
                           : pet.hunger <= 25
                           ? '[HUNGRY!]'
+                          : isBedtime
+                          ? '[BEDTIME!]'
                           : pet.poopCount > 0
                           ? `[POOP ${pet.poopCount}/4]`
                           : '[SICK!]'}
@@ -959,16 +964,16 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
                   {statsPage === 1 && (
                     <div className="space-y-0.5 text-[8px]">
                       <div className="flex justify-between">
-                        <span>HP:</span>
-                        <span className="font-bold text-emerald-400">{species?.baseHp || 100} HP</span>
+                        <span>HP / MP:</span>
+                        <span className="font-bold text-emerald-400">{rpgStats.maxHp} / {rpgStats.maxMp}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span>ATK:</span>
-                        <span className="font-bold text-amber-300">{totalAtk}</span>
+                        <span>OFF / DEF:</span>
+                        <span className="font-bold text-amber-300">{rpgStats.offense} / {rpgStats.defense}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span>DEF / SPD:</span>
-                        <span className="font-bold text-white">{species?.baseDef || 15} / {species?.baseSpd || 15}</span>
+                        <span>SPD / BRN:</span>
+                        <span className="font-bold text-cyan-300">{rpgStats.speed} / {rpgStats.brains}</span>
                       </div>
                       <div className="flex justify-between">
                         <span>SIGNATURE:</span>

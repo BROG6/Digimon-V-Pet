@@ -67,8 +67,14 @@ function readGradleVersion(): { versionName: string; versionCode: number } {
         const content = fs.readFileSync(versionFile, 'utf-8');
         const parsed = JSON.parse(content);
         const resolvedVersionName = String(parsed.versionName || parsed.version || gradleVer.versionName).trim();
+        const activeOrigin = process.env.APP_URL || 'https://ais-dev-hwfiiqh77iufzd3mdqoptd-750449911930.asia-northeast1.run.app';
+        const resolvedApkUrl =
+          typeof parsed.apkDownloadUrl === 'string' && parsed.apkDownloadUrl.includes('ais-pre-')
+            ? `${activeOrigin.replace(/\/+$/, '')}/api/download-apk`
+            : parsed.apkDownloadUrl;
         return res.json({
           ...parsed,
+          apkDownloadUrl: resolvedApkUrl,
           versionName: resolvedVersionName,
           version: resolvedVersionName,
           versionCode: Number(parsed.versionCode) || gradleVer.versionCode,
@@ -337,22 +343,27 @@ VOICE & ROLEPLAY GUIDELINES:
         : `${playerContextPrefix}${userPrompt}`;
 
       let lastErr: any = null;
-      const modelsToTry = ['gemini-4-hydrogen', 'gemini-4-hydrogen', 'gemini-3.1-flash-lite'];
+      const modelsToTry = ['gemini-4-hydrogen', 'gemini-3.1-flash-lite'];
       for (let attempt = 0; attempt < modelsToTry.length; attempt++) {
         const modelName = modelsToTry[attempt];
         try {
-          const response = await ai.models.generateContent({
-            model: modelName,
-            contents,
-            config: {
-              systemInstruction,
-              thinkingConfig: {
-                thinkingLevel: modelName === 'gemini-3.1-flash-lite'
-                  ? ThinkingLevel.MINIMAL
-                  : ThinkingLevel.LOW,
+          const response = await Promise.race([
+            ai.models.generateContent({
+              model: modelName,
+              contents,
+              config: {
+                systemInstruction,
+                thinkingConfig: {
+                  thinkingLevel: modelName === 'gemini-3.1-flash-lite'
+                    ? ThinkingLevel.MINIMAL
+                    : ThinkingLevel.LOW,
+                },
               },
-            },
-          });
+            }),
+            new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error(`Gemini API request timed out after 15s (${modelName})`)), 15000)
+            ),
+          ]);
 
           const generatedText = response.text
             ? response.text.trim().replace(/^["']|["']$/g, '')
@@ -370,9 +381,16 @@ VOICE & ROLEPLAY GUIDELINES:
           lastErr = err;
           const status = err?.status || err?.code;
           const msg = String(err?.message || '');
-          const isTransient = status === 429 || status === 503 || msg.includes('503') || msg.includes('UNAVAILABLE') || msg.includes('429');
+          const isTransient =
+            status === 429 ||
+            status === 503 ||
+            status === 500 ||
+            msg.includes('503') ||
+            msg.includes('UNAVAILABLE') ||
+            msg.includes('429') ||
+            msg.includes('timed out');
           if (attempt < modelsToTry.length - 1 && isTransient) {
-            await new Promise((r) => setTimeout(r, 500));
+            await new Promise((r) => setTimeout(r, 250));
             continue;
           }
           break;

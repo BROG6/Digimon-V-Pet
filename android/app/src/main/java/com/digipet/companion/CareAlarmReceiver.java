@@ -8,12 +8,14 @@ import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.media.AudioAttributes;
+import android.net.Uri;
 import android.os.Build;
 import androidx.core.app.NotificationCompat;
 import androidx.core.content.ContextCompat;
 
 public class CareAlarmReceiver extends BroadcastReceiver {
-    public static final String CHANNEL_ID = "digipet_care_alerts";
+    public static final String CHANNEL_ID = "digipet_care_alerts_v2";
 
     @Override
     public void onReceive(Context context, Intent intent) {
@@ -38,14 +40,21 @@ public class CareAlarmReceiver extends BroadcastReceiver {
             return;
         }
 
+        Uri soundUri = Uri.parse("android.resource://" + context.getPackageName() + "/" + R.raw.digivice_beep_clean);
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel channel = new NotificationChannel(
                 CHANNEL_ID,
-                "Digimon Hunger & Toilet Alerts",
+                "Digimon Care Alerts",
                 NotificationManager.IMPORTANCE_HIGH
             );
-            channel.setDescription("Alerts when your Digimon is hungry or needs the toilet.");
+            channel.setDescription("Digivice alerts when your Digimon is hungry, sleepy, or needs the toilet.");
             channel.enableVibration(true);
+            AudioAttributes audioAttrs = new AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_NOTIFICATION)
+                .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                .build();
+            channel.setSound(soundUri, audioAttrs);
             nm.createNotificationChannel(channel);
         }
 
@@ -76,6 +85,7 @@ public class CareAlarmReceiver extends BroadcastReceiver {
             .setContentText(body)
             .setStyle(new NotificationCompat.BigTextStyle().bigText(body))
             .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setSound(soundUri)
             .setAutoCancel(true)
             .setContentIntent(pendingIntent);
 

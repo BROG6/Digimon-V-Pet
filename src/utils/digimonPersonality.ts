@@ -4,7 +4,8 @@
  * Integrates with server-side Gemini AI with species-aware offline quotes.
  */
 
-import { resolveFullUrl } from './appUpdater';
+import { Capacitor } from '@capacitor/core';
+import { AppUpdatePlugin, resolveFullUrl } from './appUpdater';
 import { DIGIMON_DATABASE } from '../data/digidex';
 
 export interface DigimonPersonalityProfile {
@@ -486,7 +487,22 @@ export async function fetchDigimonAiDialogue(params: DigimonTalkParams): Promise
     try {
       controller.abort();
     } catch {}
-  }, 12000);
+  }, 35000);
+
+  const handleParsedResponse = (ok: boolean, status: number, data: any): DigimonTalkResult => {
+    if (ok && data && typeof data.text === 'string' && data.text.trim()) {
+      return {
+        text: data.text.trim(),
+        source: 'ai',
+      };
+    }
+    const errMsg = data?.error || `Server returned ${status}`;
+    return {
+      text: `(${params.speciesName} couldn't connect right now: ${errMsg})`,
+      source: 'offline',
+      error: errMsg,
+    };
+  };
 
   try {
     const res = await fetch(targetUrl, {
@@ -501,21 +517,21 @@ export async function fetchDigimonAiDialogue(params: DigimonTalkParams): Promise
     clearTimeout(timeoutId);
 
     const data = await res.json().catch(() => null);
-
-    if (res.ok && data && typeof data.text === 'string' && data.text.trim()) {
-      return {
-        text: data.text.trim(),
-        source: 'ai',
-      };
+    return handleParsedResponse(res.ok, res.status, data);
+  } catch (err: any) {
+    if (Capacitor.isNativePlatform()) {
+      try {
+        const nativeRes = await AppUpdatePlugin.httpPost({
+          url: targetUrl,
+          body: JSON.stringify(payload),
+        });
+        const data = nativeRes?.data ? JSON.parse(nativeRes.data) : null;
+        return handleParsedResponse(Boolean(nativeRes?.ok), Number(nativeRes?.status || 502), data);
+      } catch (nativeErr: any) {
+        console.warn('Native httpPost fallback failed:', nativeErr);
+      }
     }
 
-    const errMsg = data?.error || `Server returned ${res.status}`;
-    return {
-      text: `(${params.speciesName} couldn't connect right now: ${errMsg})`,
-      source: 'offline',
-      error: errMsg,
-    };
-  } catch (err: any) {
     console.warn('Gemini AI talk request failed or timed out:', err);
     if (!params.userMessage) {
       return {

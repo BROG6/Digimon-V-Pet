@@ -51,6 +51,55 @@ export const STAGE_ENERGY_HEART_MS: Record<DigimonStage, number> = {
   mega: 120 * 60_000,
 };
 
+export const STAGE_BEDTIME_HOUR: Record<DigimonStage, number | null> = {
+  egg: null,
+  fresh: null,
+  'in-training': 21, // 9:00 PM - 7:00 AM
+  rookie: 21, // 9:00 PM - 7:00 AM
+  champion: 22, // 10:00 PM - 7:00 AM
+  ultimate: 23, // 11:00 PM - 7:00 AM
+  mega: 0, // 12:00 AM - 7:00 AM
+};
+
+export const WAKE_UP_HOUR = 7; // 7:00 AM
+
+export function getStageBedtimeHour(stage: DigimonStage): number | null {
+  return STAGE_BEDTIME_HOUR[stage] ?? null;
+}
+
+export function formatBedtimeLabel(stage: DigimonStage): string {
+  const hr = getStageBedtimeHour(stage);
+  if (hr === null) return 'N/A (No Fixed Bedtime)';
+  if (hr === 0) return '12:00 AM – 7:00 AM';
+  const h12 = hr > 12 ? hr - 12 : hr;
+  return `${h12}:00 PM – 7:00 AM`;
+}
+
+export function isWithinSleepWindow(stage: DigimonStage, date: Date = new Date()): boolean {
+  const bedtime = getStageBedtimeHour(stage);
+  if (bedtime === null) return false;
+  const hour = date.getHours();
+  if (bedtime === 0) {
+    return hour >= 0 && hour < WAKE_UP_HOUR;
+  }
+  return hour >= bedtime || hour < WAKE_UP_HOUR;
+}
+
+export function getNextBedtimeTimestampMs(stage: DigimonStage, nowMs: number = Date.now()): number {
+  const bedtime = getStageBedtimeHour(stage);
+  if (bedtime === null) return 0;
+  const d = new Date(nowMs);
+  if (isWithinSleepWindow(stage, d)) {
+    return nowMs + 5_000;
+  }
+  const target = new Date(d);
+  target.setHours(bedtime, 0, 0, 0);
+  if (target.getTime() <= nowMs) {
+    target.setDate(target.getDate() + 1);
+  }
+  return target.getTime();
+}
+
 export interface CareStepEvents {
   hungerBecameLow: boolean;
   hungerBecameEmpty: boolean;
@@ -58,6 +107,8 @@ export interface CareStepEvents {
   poopHitFour: boolean;
   careMistakeAdded: boolean;
   sickTriggered: boolean;
+  bedtimeCallStarted: boolean;
+  wokeUpMorning: boolean;
   criticalWarning: string | null;
   deathNotice: string | null;
 }
@@ -73,6 +124,7 @@ export interface CareNeedStatus {
   needsToilet: boolean;
   toiletUrgent: boolean;
   toiletFull: boolean;
+  isSleepy: boolean;
   hasAnyNeed: boolean;
   graceRemainingMs: number;
 }
@@ -93,6 +145,7 @@ export function evaluateCareNeeds(pet: PetState, nowMs: number = Date.now()): Ca
       needsToilet: false,
       toiletUrgent: false,
       toiletFull: false,
+      isSleepy: false,
       hasAnyNeed: false,
       graceRemainingMs: 0,
     };
@@ -103,10 +156,20 @@ export function evaluateCareNeeds(pet: PetState, nowMs: number = Date.now()): Ca
   const needsToilet = pet.poopCount > 0;
   const toiletUrgent = pet.poopCount >= 3;
   const toiletFull = pet.poopCount >= 4;
-  const graceRemainingMs =
-    pet.careCallStartedAt && (isStarving || toiletFull || pet.energy <= 0)
+  const isSleepy = !pet.lightsOff && isWithinSleepWindow(pet.stage, new Date(nowMs));
+
+  const hungerGrace =
+    pet.careCallStartedAt && isStarving
       ? Math.max(0, pet.careCallStartedAt + CARE_MISTAKE_GRACE_MS - nowMs)
       : 0;
+  const sleepGrace =
+    pet.sleepCallStartedAt && isSleepy
+      ? Math.max(0, pet.sleepCallStartedAt + CARE_MISTAKE_GRACE_MS - nowMs)
+      : 0;
+  const graceRemainingMs =
+    hungerGrace > 0 && sleepGrace > 0
+      ? Math.min(hungerGrace, sleepGrace)
+      : hungerGrace || sleepGrace;
 
   return {
     isHungry,
@@ -114,14 +177,18 @@ export function evaluateCareNeeds(pet: PetState, nowMs: number = Date.now()): Ca
     needsToilet,
     toiletUrgent,
     toiletFull,
-    hasAnyNeed: isHungry || needsToilet || pet.isSick,
+    isSleepy,
+    hasAnyNeed: isHungry || needsToilet || pet.isSick || isSleepy,
     graceRemainingMs,
   };
 }
 
 /**
- * Advances V-Pet hunger, energy, toilet (poop), sickness, and care mistake timers
- * using stage-calibrated timestamps so pacing matches Digital Monster Ver. 20th.
+ * Advances V-Pet hunger, energy, toilet (poop), sleep schedule, sickness, and care mistake timers
+ * using stage-calibrated Pendulum Ver. 20th rules:
+ * - Poop timer pauses while asleep; leaving poop NEVER causes Care Mistakes (4 piles triggers sickness only).
+ * - Care Mistakes trigger only from ignoring Call Light past 10m grace on Empty Hunger or Bedtime.
+ * - Sleeping Digimon auto-wake cleanly at 7:00 AM.
  */
 export function advanceCareState(prev: PetState, now: number = Date.now()): CareStepResult {
   const emptyEvents: CareStepEvents = {
@@ -131,6 +198,8 @@ export function advanceCareState(prev: PetState, now: number = Date.now()): Care
     poopHitFour: false,
     careMistakeAdded: false,
     sickTriggered: false,
+    bedtimeCallStarted: false,
+    wokeUpMorning: false,
     criticalWarning: null,
     deathNotice: null,
   };
@@ -139,7 +208,7 @@ export function advanceCareState(prev: PetState, now: number = Date.now()): Care
     return { nextPet: prev, events: emptyEvents };
   }
 
-  // In Fridge / Cold Mode: completely pause hunger, energy, toilet, care mistakes, and sickness
+  // In Fridge / Cold Mode: completely pause hunger, energy, toilet, sleep calls, care mistakes, and sickness
   if (prev.isFrozen) {
     return {
       nextPet: {
@@ -147,12 +216,41 @@ export function advanceCareState(prev: PetState, now: number = Date.now()): Care
         lastHungerDropAt: now,
         lastPoopAt: now,
         lastCareCheck: now,
+        sleepCallStartedAt: undefined,
       },
       events: emptyEvents,
     };
   }
 
-  // While sleeping, hunger & poop timers pause and energy recovers gradually
+  const nowDate = new Date(now);
+  const inSleepWindow = isWithinSleepWindow(prev.stage, nowDate);
+  const hasFixedBedtime = getStageBedtimeHour(prev.stage) !== null;
+
+  // Auto-wake at 7:00 AM when morning arrives for stage-scheduled sleep
+  if (prev.lightsOff && hasFixedBedtime && !inSleepWindow) {
+    const sleepAnchor = prev.lastCareCheck || now;
+    const sleepElapsed = Math.max(0, Math.min(now - sleepAnchor, 10 * 3_600_000));
+    const energyGain = Math.floor((sleepElapsed / 60_000) * 4);
+    const nextEnergy = Math.min(100, prev.energy + Math.max(10, energyGain));
+    return {
+      nextPet: {
+        ...prev,
+        lightsOff: false,
+        isSleeping: false,
+        energy: nextEnergy,
+        sleepCallStartedAt: undefined,
+        lastHungerDropAt: now,
+        lastPoopAt: now,
+        lastCareCheck: now,
+      },
+      events: {
+        ...emptyEvents,
+        wokeUpMorning: true,
+      },
+    };
+  }
+
+  // While sleeping (lightsOff), hunger & poop timers pause and energy recovers gradually
   if (prev.lightsOff) {
     const sleepAnchor = prev.lastCareCheck || now;
     const sleepElapsed = Math.max(0, Math.min(now - sleepAnchor, 4 * 3_600_000));
@@ -162,6 +260,7 @@ export function advanceCareState(prev: PetState, now: number = Date.now()): Care
       nextPet: {
         ...prev,
         energy: nextEnergy,
+        sleepCallStartedAt: undefined,
         lastHungerDropAt: now,
         lastPoopAt: now,
         lastCareCheck: now,
@@ -202,7 +301,7 @@ export function advanceCareState(prev: PetState, now: number = Date.now()): Care
   const energyDrop = Math.floor(energyElapsed / msPerEnergyPoint);
   const energy = energyDrop > 0 ? Math.max(0, prev.energy - energyDrop) : prev.energy;
 
-  // 3. Toilet / Poop Pacing (stops at 4 piles; 4 piles triggers sickness/injury)
+  // 3. Toilet / Poop Pacing (stops at 4 piles; 4 piles triggers sickness/injury ONLY — zero Care Mistakes!)
   const poopIntervalMs = getStagePoopIntervalMs(prev.stage);
   let poopCount = prev.poopCount;
   let lastPoopAt = prev.lastPoopAt ?? prev.lastCareCheck ?? now;
@@ -228,7 +327,7 @@ export function advanceCareState(prev: PetState, now: number = Date.now()): Care
     }
   }
 
-  // Digital Monster Ver. 20th rule: accumulating 4 poop piles causes injury/sickness
+  // Digital Monster Ver. 20th rule: accumulating 4 poop piles causes sickness/injury (never Care Mistake)
   if (poopCount >= 4 && !isSick) {
     isSick = true;
     sickSince = sickSince ?? now;
@@ -239,12 +338,10 @@ export function advanceCareState(prev: PetState, now: number = Date.now()): Care
     sickSince = now;
   }
 
-  // 4. 10-Minute Grace Window before recording Care Mistake when empty/full-poop
+  // 4. 10-Minute Grace Window for Empty Hunger Call Light (poop NEVER triggers Care Mistake)
   let careMistakes = prev.careMistakes;
   let careCallStartedAt = prev.careCallStartedAt;
-  const inCareCall = hunger === 0 || poopCount >= 4 || energy === 0;
-
-  if (inCareCall) {
+  if (hunger === 0) {
     if (!careCallStartedAt) {
       careCallStartedAt = now;
     } else if (now - careCallStartedAt >= CARE_MISTAKE_GRACE_MS) {
@@ -257,9 +354,24 @@ export function advanceCareState(prev: PetState, now: number = Date.now()): Care
     careCallStartedAt = undefined;
   }
 
+  // 5. 10-Minute Grace Window for Bedtime Call Light when awake inside stage sleep window
+  let sleepCallStartedAt = prev.sleepCallStartedAt;
+  if (inSleepWindow) {
+    if (!sleepCallStartedAt) {
+      sleepCallStartedAt = now;
+      events.bedtimeCallStarted = true;
+    } else if (now - sleepCallStartedAt >= CARE_MISTAKE_GRACE_MS) {
+      careMistakes += 1;
+      sleepCallStartedAt = now;
+      events.careMistakeAdded = true;
+    }
+  } else {
+    sleepCallStartedAt = undefined;
+  }
+
   const sickElapsedMs = isSick && sickSince ? now - sickSince : 0;
 
-  // 5. Death checks from severe / prolonged neglect
+  // 6. Death checks from severe / prolonged neglect
   if (careMistakes >= 8) {
     events.deathNotice = 'Your Digimon passed away from severe neglect (8+ Care Mistakes).';
     return {
@@ -272,6 +384,7 @@ export function advanceCareState(prev: PetState, now: number = Date.now()): Care
         sickSince,
         careMistakes,
         careCallStartedAt,
+        sleepCallStartedAt,
         lastHungerDropAt,
         lastPoopAt,
         isDead: true,
@@ -285,8 +398,8 @@ export function advanceCareState(prev: PetState, now: number = Date.now()): Care
     };
   }
 
-  if (isSick && sickElapsedMs >= 20 * 60_000 && (hunger === 0 || poopCount >= 4)) {
-    events.deathNotice = 'Your Digimon passed away from untreated sickness and neglect.';
+  if (isSick && sickElapsedMs >= 20 * 60_000 && hunger === 0) {
+    events.deathNotice = 'Your Digimon passed away from untreated sickness and starvation.';
     return {
       nextPet: {
         ...prev,
@@ -297,6 +410,7 @@ export function advanceCareState(prev: PetState, now: number = Date.now()): Care
         sickSince,
         careMistakes,
         careCallStartedAt,
+        sleepCallStartedAt,
         lastHungerDropAt,
         lastPoopAt,
         isDead: true,
@@ -311,7 +425,7 @@ export function advanceCareState(prev: PetState, now: number = Date.now()): Care
   }
 
   if (careMistakes >= 6 || (isSick && sickElapsedMs >= 10 * 60_000)) {
-    events.criticalWarning = '🚨 CRITICAL NEGLECT! Feed, flush & cure sickness right away!';
+    events.criticalWarning = '🚨 CRITICAL! Feed, cure sickness & check lights right away!';
   }
 
   return {
@@ -324,6 +438,7 @@ export function advanceCareState(prev: PetState, now: number = Date.now()): Care
       sickSince,
       careMistakes,
       careCallStartedAt,
+      sleepCallStartedAt,
       lastHungerDropAt,
       lastPoopAt,
       lastCareCheck: now,
@@ -338,11 +453,12 @@ export interface FutureCareAlertSchedule {
   nextPoopAtMs: number;
   nextPoopCount: number;
   poopFullAtMs: number;
+  bedtimeAtMs: number;
 }
 
 /**
  * Computes exact future wall-clock timestamps when Hunger <= 25%, Hunger == 0%,
- * next Poop pile, and 4/4 Poop Sickness will occur so background alarms fire on time.
+ * next Poop pile, 4/4 Poop Sickness, and stage Bedtime will occur.
  */
 export function computeFutureCareAlertSchedule(
   pet: PetState,
@@ -355,6 +471,7 @@ export function computeFutureCareAlertSchedule(
       nextPoopAtMs: 0,
       nextPoopCount: pet.poopCount,
       poopFullAtMs: 0,
+      bedtimeAtMs: 0,
     };
   }
 
@@ -386,12 +503,16 @@ export function computeFutureCareAlertSchedule(
       ? Math.max(nowMs + 5_000, Math.round(poopAnchor + (4 - pet.poopCount) * poopIntervalMs))
       : 0;
 
+  const bedtimeAtMs =
+    !pet.sleepCallStartedAt ? getNextBedtimeTimestampMs(pet.stage, nowMs) : 0;
+
   return {
     hungryAtMs,
     starvingAtMs,
     nextPoopAtMs,
     nextPoopCount,
     poopFullAtMs,
+    bedtimeAtMs,
   };
 }
 

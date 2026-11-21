@@ -36,6 +36,7 @@ export interface AppUpdatePluginInterface {
   checkInstallPermission(): Promise<{ granted: boolean }>;
   requestInstallPermission(): Promise<{ success: boolean; prompted?: boolean }>;
   fetchManifest(options: { url?: string }): Promise<{ data: string }>;
+  httpPost(options: { url: string; body: string }): Promise<{ ok: boolean; status: number; data: string }>;
   downloadAndInstallApk(options: { apkUrl: string; fileName?: string }): Promise<{
     success: boolean;
     installed?: boolean;
@@ -58,7 +59,10 @@ export const GITHUB_REPO_KEY = 'digipet_github_repo_v3';
 export const USE_GITHUB_RELEASES_KEY = 'digipet_use_github_releases_v2';
 
 // Official Cloud Run deployment URL for DigiPet
-export const DEFAULT_PRODUCTION_URL = 'https://ais-pre-hwfiiqh77iufzd3mdqoptd-750449911930.asia-northeast1.run.app';
+export const DEFAULT_PRODUCTION_URL =
+  typeof __APP_DEFAULT_URL__ !== 'undefined' && __APP_DEFAULT_URL__
+    ? __APP_DEFAULT_URL__
+    : 'https://ais-dev-hwfiiqh77iufzd3mdqoptd-750449911930.asia-northeast1.run.app';
 export const DEFAULT_GITHUB_REPO = 'BROG6/Digimon-V-Pet';
 
 // Authoritative version read from android/app/build.gradle at Vite build/dev time

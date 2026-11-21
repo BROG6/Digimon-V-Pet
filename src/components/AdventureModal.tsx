@@ -5,11 +5,20 @@ import {
   AdventureZone,
   BattleFighter,
   BattleLogEntry,
+  BattleMove,
   DigimonSpecies,
   PetState,
 } from '../types/digimon';
 import { ADVENTURE_ZONES } from '../data/adventureZones';
 import { DIGIMON_DATABASE, SPECIAL_ITEMS } from '../data/digidex';
+import {
+  ATTACK_ELEMENT_META,
+  getEffectiveBattleStats,
+  getElementDamageMultiplier,
+  getEquippedBattleMoves,
+  getSpeciesElementType,
+  mapMoveTypeToElement,
+} from '../data/battleTechniques';
 import { DigimonSprite } from './DigimonSprite';
 import { PixelMeatIcon, PixelVitaminIcon } from './PixelItemIcons';
 import { sound, triggerHaptic } from '../utils/audio';
@@ -154,9 +163,9 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
     sound.playButton();
     triggerHaptic('medium');
 
-    const baseHp = species.baseHp + Math.floor(pet.strength * 1.6) + pet.dpPoints * 2;
-    const atk = species.baseAtk + Math.floor(pet.strength * 0.85) + pet.trainingCount * 2;
-    const def = species.baseDef + Math.floor(pet.weight * 0.3) + Math.floor(pet.strength * 0.25);
+    const stats = getEffectiveBattleStats(pet, species);
+    const equippedMoves = getEquippedBattleMoves(pet, species);
+    const playerEl = getSpeciesElementType(species);
 
     const player: BattleFighter = {
       id: 'adv-player',
@@ -164,25 +173,34 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
       speciesId: species.id,
       stage: pet.stage,
       crest: species.crest || 'courage',
-      currentHp: baseHp,
-      maxHp: baseHp,
+      element: playerEl,
+      currentHp: stats.maxHp,
+      maxHp: stats.maxHp,
+      mp: stats.maxMp,
+      maxMp: stats.maxMp,
       sp: 35,
-      atk,
-      def,
-      spd: species.baseSpd,
+      atk: stats.offense,
+      def: stats.defense,
+      spd: stats.speed,
+      brains: stats.brains,
       signatureMove: species.signatureMove,
+      equippedMoves,
       isPlayer: true,
     };
 
     const { oppSpecies, hp, atk: oppAtk, def: oppDef, spd } = estimateOpponentStats(wave);
+    const oppEl = getSpeciesElementType(oppSpecies);
     const opponent: BattleFighter = {
       id: `adv-opp-${wave.waveNumber}`,
       name: oppSpecies.name,
       speciesId: oppSpecies.id,
       stage: oppSpecies.stage,
       crest: oppSpecies.crest,
+      element: oppEl,
       currentHp: hp,
       maxHp: hp,
+      mp: 60,
+      maxMp: 60,
       sp: wave.waveNumber >= 4 ? 30 : 15,
       atk: oppAtk,
       def: oppDef,
@@ -223,8 +241,9 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
 
     const timer = setTimeout(() => {
       const canUseSpecial = opponentFighter.sp >= 50;
-      const specialChance = activeWave.waveNumber >= 5 ? 0.72 : 0.52;
+      const specialChance = activeWave.waveNumber >= 5 ? 0.65 : 0.48;
       const shouldUseSpecial = canUseSpecial && Math.random() < specialChance;
+      const oppSpecies = DIGIMON_DATABASE[opponentFighter.speciesId];
 
       if (shouldUseSpecial) {
         sound.playBlast();
@@ -232,10 +251,12 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
         setOpponentActionAnim('attack');
         setOpponentEffect('lunge');
 
-        const movePower = Math.round(opponentFighter.signatureMove.power * (0.68 + activeWave.statMultiplier * 0.2));
+        const moveEl = mapMoveTypeToElement(opponentFighter.signatureMove, oppSpecies);
+        const typeMult = getElementDamageMultiplier(moveEl, playerFighter.element || 'neutral');
+        const movePower = Math.round(opponentFighter.signatureMove.power * (0.64 + activeWave.statMultiplier * 0.18));
         const rawDamage = Math.max(
-          8,
-          Math.floor(movePower - (isDefending ? playerFighter.def * 0.8 : playerFighter.def * 0.38))
+          7,
+          Math.floor((movePower - (isDefending ? playerFighter.def * 0.8 : playerFighter.def * 0.36)) * typeMult)
         );
         const finalDamage = isDefending ? Math.max(3, Math.floor(rawDamage * 0.4)) : rawDamage;
 
@@ -245,7 +266,11 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
           setPlayerEffect('hit');
           triggerScreenFlash('special');
           triggerArenaShake();
-          showDamagePopup('player', `-${finalDamage}!`, isDefending ? 'text-cyan-300' : 'text-rose-400 font-extrabold');
+          showDamagePopup(
+            'player',
+            `${typeMult > 1 ? '1.5x ' : ''}-${finalDamage}!`,
+            isDefending ? 'text-cyan-300' : 'text-rose-400 font-extrabold'
+          );
           setPlayerFighter((prev) =>
             prev ? { ...prev, currentHp: Math.max(0, prev.currentHp - finalDamage) } : null
           );
@@ -254,7 +279,7 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
         setBattleLogs((logs) => [
           {
             id: `opp-${Date.now()}`,
-            text: `${opponentFighter.name} fired ${opponentFighter.signatureMove.name} for ${finalDamage} damage!`,
+            text: `${opponentFighter.name} fired ${opponentFighter.signatureMove.name} (${ATTACK_ELEMENT_META[moveEl].label}) for ${finalDamage} damage${typeMult > 1 ? ' [1.5x ADV!]' : ''}!`,
             type: 'special',
           },
           ...logs,
@@ -265,9 +290,11 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
         setOpponentActionAnim('attack');
         setOpponentEffect('lunge');
 
+        const oppEl = opponentFighter.element || 'neutral';
+        const typeMult = getElementDamageMultiplier(oppEl, playerFighter.element || 'neutral');
         const rawDamage = Math.max(
           5,
-          Math.floor(opponentFighter.atk * 0.68 - (isDefending ? playerFighter.def * 0.7 : playerFighter.def * 0.32))
+          Math.floor((opponentFighter.atk * 0.64 - (isDefending ? playerFighter.def * 0.7 : playerFighter.def * 0.32)) * typeMult)
         );
         const finalDamage = isDefending ? Math.max(2, Math.floor(rawDamage * 0.4)) : rawDamage;
 
@@ -277,7 +304,11 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
           setPlayerEffect('hit');
           triggerScreenFlash('red');
           triggerArenaShake();
-          showDamagePopup('player', `-${finalDamage}`, isDefending ? 'text-cyan-300' : 'text-rose-400 font-bold');
+          showDamagePopup(
+            'player',
+            `${typeMult > 1 ? '1.5x ' : ''}-${finalDamage}`,
+            isDefending ? 'text-cyan-300' : 'text-rose-400 font-bold'
+          );
           setPlayerFighter((prev) =>
             prev ? { ...prev, currentHp: Math.max(0, prev.currentHp - finalDamage) } : null
           );
@@ -286,7 +317,7 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
         setBattleLogs((logs) => [
           {
             id: `opp-${Date.now()}`,
-            text: `${opponentFighter.name} attacked for ${finalDamage} damage.`,
+            text: `${opponentFighter.name} attacked for ${finalDamage} damage${typeMult > 1 ? ' [1.5x ADV]' : ''}.`,
             type: 'damage',
           },
           ...logs,
@@ -395,17 +426,36 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
     setPlayerActionAnim('attack');
     setPlayerEffect('lunge');
 
-    const mult = isCharged ? 1.6 : 1.0;
-    const damage = Math.max(14, Math.floor(playerFighter.atk * 0.96 * mult - opponentFighter.def * 0.28));
+    const chargeMult = isCharged ? 1.6 : 1.0;
+    const typeMult = getElementDamageMultiplier(
+      playerFighter.element || 'neutral',
+      opponentFighter.element || 'neutral'
+    );
+    const damage = Math.max(
+      14,
+      Math.floor((playerFighter.atk * 0.96 * chargeMult - opponentFighter.def * 0.26) * typeMult)
+    );
 
-    setPlayerFighter((prev) => (prev ? { ...prev, sp: Math.min(100, prev.sp + 20) } : null));
+    setPlayerFighter((prev) =>
+      prev
+        ? {
+            ...prev,
+            sp: Math.min(100, prev.sp + 20),
+            mp: Math.min(prev.maxMp || 100, (prev.mp || 0) + 8),
+          }
+        : null
+    );
     setIsCharged(false);
 
     setTimeout(() => {
       setOpponentEffect('hit');
       triggerScreenFlash('white');
       triggerArenaShake();
-      showDamagePopup('opponent', `-${damage}`, 'text-amber-300 font-bold');
+      showDamagePopup(
+        'opponent',
+        `${typeMult > 1 ? '1.5x ADV! ' : ''}-${damage}`,
+        typeMult > 1 ? 'text-emerald-300 font-extrabold' : 'text-amber-300 font-bold'
+      );
       setOpponentFighter((prev) =>
         prev ? { ...prev, currentHp: Math.max(0, prev.currentHp - damage) } : null
       );
@@ -414,7 +464,7 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
     setBattleLogs((logs) => [
       {
         id: `pl-${Date.now()}`,
-        text: `${playerFighter.name} struck ${opponentFighter.name} for ${damage} damage!`,
+        text: `${playerFighter.name} struck ${opponentFighter.name} for ${damage} damage (+8 MP)${typeMult > 1 ? ' [1.5x ADV!]' : ''}!`,
         type: 'damage',
       },
       ...logs,
@@ -435,10 +485,13 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
     setPlayerActionAnim('attack');
     setPlayerEffect('lunge');
 
+    const moveEl = mapMoveTypeToElement(playerFighter.signatureMove, species);
+    const typeMult = getElementDamageMultiplier(moveEl, opponentFighter.element || 'neutral');
     const mult = isCharged ? 1.65 : 1.25;
+    const brainsBonus = Math.floor((playerFighter.brains || 20) * 0.14);
     const damage = Math.max(
       26,
-      Math.floor(playerFighter.signatureMove.power * mult + playerFighter.atk * 0.35 - opponentFighter.def * 0.4)
+      Math.floor((playerFighter.signatureMove.power * mult + playerFighter.atk * 0.35 + brainsBonus - opponentFighter.def * 0.35) * typeMult)
     );
 
     setPlayerFighter((prev) => (prev ? { ...prev, sp: prev.sp - 50 } : null));
@@ -448,7 +501,11 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
       setOpponentEffect('hit');
       triggerScreenFlash('special');
       triggerArenaShake();
-      showDamagePopup('opponent', `-${damage}!`, 'text-orange-400 font-extrabold');
+      showDamagePopup(
+        'opponent',
+        `${typeMult > 1 ? '1.5x ADV! ' : ''}-${damage}!`,
+        typeMult > 1 ? 'text-emerald-300 font-extrabold' : 'text-orange-400 font-extrabold'
+      );
       setOpponentFighter((prev) =>
         prev ? { ...prev, currentHp: Math.max(0, prev.currentHp - damage) } : null
       );
@@ -457,7 +514,7 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
     setBattleLogs((logs) => [
       {
         id: `pl-${Date.now()}`,
-        text: `${playerFighter.name} unleashed ${playerFighter.signatureMove.name} for ${damage} damage!`,
+        text: `${playerFighter.name} unleashed ${playerFighter.signatureMove.name} (${ATTACK_ELEMENT_META[moveEl].label}) for ${damage} damage${typeMult > 1 ? ' [1.5x ADV!]' : ''}!`,
         type: 'special',
       },
       ...logs,
@@ -470,6 +527,67 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
     }, 760);
   };
 
+  const handleUseLearnedTechnique = (move: BattleMove) => {
+    if (!isPlayerTurn || !playerFighter || !opponentFighter) return;
+    const currentMp = playerFighter.mp ?? 0;
+    if (currentMp < move.mpCost) return;
+
+    setIsPlayerTurn(false);
+    if (move.soundType === 'punch') sound.playPunch();
+    else sound.playBlast();
+    triggerHaptic('heavy');
+    setPlayerActionAnim('attack');
+    setPlayerEffect('lunge');
+
+    const typeMult = getElementDamageMultiplier(move.element, opponentFighter.element || 'neutral');
+    const chargeMult = isCharged ? 1.55 : 1.0;
+    const brainsBonus = Math.floor((playerFighter.brains || 20) * 0.16);
+    const damage = Math.max(
+      18,
+      Math.floor((move.power * 1.15 * chargeMult + playerFighter.atk * 0.42 + brainsBonus - opponentFighter.def * 0.25) * typeMult)
+    );
+
+    setPlayerFighter((prev) =>
+      prev
+        ? {
+            ...prev,
+            mp: Math.max(0, (prev.mp ?? 0) - move.mpCost),
+            sp: Math.min(100, prev.sp + 15),
+          }
+        : null
+    );
+    setIsCharged(false);
+
+    setTimeout(() => {
+      setOpponentEffect('hit');
+      triggerScreenFlash(typeMult > 1 ? 'special' : 'white');
+      triggerArenaShake();
+      showDamagePopup(
+        'opponent',
+        `${typeMult > 1 ? '1.5x ADV! ' : ''}-${damage}!`,
+        typeMult > 1 ? 'text-emerald-300 font-extrabold' : 'text-cyan-300 font-bold'
+      );
+      setOpponentFighter((prev) =>
+        prev ? { ...prev, currentHp: Math.max(0, prev.currentHp - damage) } : null
+      );
+    }, 170);
+
+    setBattleLogs((logs) => [
+      {
+        id: `pl-tech-${Date.now()}`,
+        text: `${playerFighter.name} cast ${move.name} (${ATTACK_ELEMENT_META[move.element].label}, -${move.mpCost} MP) for ${damage} damage${typeMult > 1 ? ' [1.5x ADV!]' : ''}!`,
+        type: typeMult > 1 ? 'special' : 'damage',
+      },
+      ...logs,
+    ]);
+
+    setTimeout(() => {
+      setPlayerActionAnim('idle');
+      setPlayerEffect('none');
+      setOpponentEffect('none');
+    }, 720);
+  };
+
   const handlePlayerDefend = () => {
     if (!isPlayerTurn || !playerFighter) return;
     setIsPlayerTurn(false);
@@ -479,12 +597,20 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
     setPlayerEffect('shield');
     showDamagePopup('player', 'SHIELD', 'text-cyan-300 font-bold');
 
-    setPlayerFighter((prev) => (prev ? { ...prev, sp: Math.min(100, prev.sp + 15) } : null));
+    setPlayerFighter((prev) =>
+      prev
+        ? {
+            ...prev,
+            sp: Math.min(100, prev.sp + 15),
+            mp: Math.min(prev.maxMp || 100, (prev.mp || 0) + 12),
+          }
+        : null
+    );
 
     setBattleLogs((logs) => [
       {
         id: `pl-${Date.now()}`,
-        text: `${playerFighter.name} braced with Digi-Shield (-60% incoming damage).`,
+        text: `${playerFighter.name} braced with Digi-Shield (-60% incoming damage, +12 MP).`,
         type: 'action',
       },
       ...logs,
@@ -502,12 +628,20 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
     setPlayerEffect('charge');
     showDamagePopup('player', 'CHARGED', 'text-amber-300 font-bold');
 
-    setPlayerFighter((prev) => (prev ? { ...prev, sp: Math.min(100, prev.sp + 35) } : null));
+    setPlayerFighter((prev) =>
+      prev
+        ? {
+            ...prev,
+            sp: Math.min(100, prev.sp + 35),
+            mp: Math.min(prev.maxMp || 100, (prev.mp || 0) + 18),
+          }
+        : null
+    );
 
     setBattleLogs((logs) => [
       {
         id: `pl-${Date.now()}`,
-        text: `${playerFighter.name} focused battle energy (+35 SP & boosted next strike).`,
+        text: `${playerFighter.name} focused battle energy (+35 SP, +18 MP & boosted next strike).`,
         type: 'action',
       },
       ...logs,
@@ -552,14 +686,16 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
     triggerHaptic('medium');
     setVitaminsUsed((v) => v + 1);
     const healAmount = Math.max(18, Math.round(playerFighter.maxHp * 0.3));
+    const mpRecover = Math.max(15, Math.round((playerFighter.maxMp || 60) * 0.35));
     setPlayerActionAnim('happy');
-    showDamagePopup('player', `+${healAmount} HP · +30 SP`, 'text-purple-300 font-extrabold');
+    showDamagePopup('player', `+${healAmount} HP · +${mpRecover} MP`, 'text-purple-300 font-extrabold');
 
     setPlayerFighter((prev) =>
       prev
         ? {
             ...prev,
             currentHp: Math.min(prev.maxHp, prev.currentHp + healAmount),
+            mp: Math.min(prev.maxMp || 100, (prev.mp || 0) + mpRecover),
             sp: Math.min(100, prev.sp + 30),
           }
         : null
@@ -568,7 +704,7 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
     setBattleLogs((logs) => [
       {
         id: `pl-vit-${Date.now()}`,
-        text: `${playerFighter.name} took a Vitamin (+${healAmount} HP & +30 SP)!`,
+        text: `${playerFighter.name} took a Vitamin (+${healAmount} HP, +${mpRecover} MP & +30 SP)!`,
         type: 'action',
       },
       ...logs,
@@ -877,11 +1013,15 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
                 {/* Player Fighter */}
                 <div className="flex flex-col items-center z-10 relative">
                   <div className="w-32 sm:w-40 bg-slate-950/90 border border-cyan-500/40 rounded-xl p-2 mb-2 text-xs font-chakra tabular-nums">
-                    <div className="flex justify-between text-cyan-200 font-bold mb-1 gap-1">
+                    <div className="flex justify-between text-cyan-200 font-bold mb-0.5 gap-1">
                       <span className="truncate">{playerFighter.name}</span>
-                      <span className="shrink-0">
-                        {playerFighter.currentHp}/{playerFighter.maxHp}
+                      <span className="text-[10px] text-slate-300 shrink-0">
+                        {ATTACK_ELEMENT_META[playerFighter.element || 'neutral'].shortLabel}
                       </span>
+                    </div>
+                    <div className="flex justify-between text-[10px] text-slate-300 mb-0.5">
+                      <span>HP {playerFighter.currentHp}/{playerFighter.maxHp}</span>
+                      <span className="text-cyan-300">MP {playerFighter.mp ?? 0}/{playerFighter.maxMp ?? 60}</span>
                     </div>
                     <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
                       <div
@@ -889,9 +1029,14 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
                         style={{ width: `${(playerFighter.currentHp / playerFighter.maxHp) * 100}%` }}
                       />
                     </div>
-                    <div className="flex items-center gap-1.5 mt-1">
-                      <span className="text-[10px] text-amber-300">SP {playerFighter.sp}</span>
-                      <div className="flex-1 h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                    <div className="grid grid-cols-2 gap-1 mt-1">
+                      <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-cyan-400 transition-all duration-300"
+                          style={{ width: `${((playerFighter.mp ?? 0) / (playerFighter.maxMp || 1)) * 100}%` }}
+                        />
+                      </div>
+                      <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
                         <div
                           className="h-full bg-amber-400 transition-all duration-300"
                           style={{ width: `${playerFighter.sp}%` }}
@@ -950,11 +1095,15 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
                 {/* Opponent Fighter */}
                 <div className="flex flex-col items-center z-10 relative">
                   <div className="w-32 sm:w-40 bg-slate-950/90 border border-rose-500/40 rounded-xl p-2 mb-2 text-xs font-chakra tabular-nums">
-                    <div className="flex justify-between text-rose-200 font-bold mb-1 gap-1">
+                    <div className="flex justify-between text-rose-200 font-bold mb-0.5 gap-1">
                       <span className="truncate">{opponentFighter.name}</span>
-                      <span className="shrink-0">
-                        {opponentFighter.currentHp}/{opponentFighter.maxHp}
+                      <span className="text-[10px] text-slate-300 shrink-0">
+                        {ATTACK_ELEMENT_META[opponentFighter.element || 'neutral'].shortLabel}
                       </span>
+                    </div>
+                    <div className="flex justify-between text-[10px] text-slate-300 mb-0.5">
+                      <span>HP {opponentFighter.currentHp}/{opponentFighter.maxHp}</span>
+                      <span className="text-amber-300">SP {opponentFighter.sp}</span>
                     </div>
                     <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
                       <div
@@ -962,14 +1111,11 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
                         style={{ width: `${(opponentFighter.currentHp / opponentFighter.maxHp) * 100}%` }}
                       />
                     </div>
-                    <div className="flex items-center gap-1.5 mt-1">
-                      <span className="text-[10px] text-amber-300">SP {opponentFighter.sp}</span>
-                      <div className="flex-1 h-1.5 bg-slate-800 rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-amber-400 transition-all duration-300"
-                          style={{ width: `${opponentFighter.sp}%` }}
-                        />
-                      </div>
+                    <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden mt-1">
+                      <div
+                        className="h-full bg-amber-400 transition-all duration-300"
+                        style={{ width: `${opponentFighter.sp}%` }}
+                      />
                     </div>
                   </div>
 
@@ -1003,6 +1149,47 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
                 </div>
               </div>
 
+              {/* Equipped Techniques (Max 4 MP Attacks) */}
+              {playerFighter.equippedMoves && playerFighter.equippedMoves.length > 0 && (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {playerFighter.equippedMoves.map((move) => {
+                    const hasMp = (playerFighter.mp ?? 0) >= move.mpCost;
+                    const mult = getElementDamageMultiplier(
+                      move.element,
+                      opponentFighter.element || 'neutral'
+                    );
+                    const elMeta = ATTACK_ELEMENT_META[move.element];
+                    return (
+                      <button
+                        key={move.id}
+                        disabled={!isPlayerTurn || !hasMp}
+                        onClick={() => handleUseLearnedTechnique(move)}
+                        className={`min-h-[50px] px-2.5 py-2 rounded-xl border text-left flex flex-col justify-between transition-all cursor-pointer active:scale-95 disabled:opacity-40 ${
+                          mult > 1
+                            ? 'bg-emerald-950/60 hover:bg-emerald-900/60 border-emerald-400/70'
+                            : 'bg-slate-800/90 hover:bg-slate-700 border-slate-600/80'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-1 w-full">
+                          <span className="font-chakra font-bold text-xs text-white truncate">
+                            {move.name}
+                          </span>
+                          {mult > 1 && (
+                            <span className="text-[10px] font-chakra font-bold text-emerald-300 shrink-0">
+                              1.5x
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center justify-between text-[10px] font-chakra text-slate-300 w-full mt-0.5">
+                          <span>{elMeta.shortLabel} · {move.power}P</span>
+                          <span className="text-cyan-300 font-semibold">{move.mpCost} MP</span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
               {/* Combat Action Buttons */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 <button
@@ -1013,7 +1200,7 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
                   <span className="flex items-center gap-1.5">
                     <Swords className="w-4 h-4 text-slate-200" /> Attack
                   </span>
-                  <span className="text-[11px] font-normal text-slate-400">+20 SP</span>
+                  <span className="text-[11px] font-normal text-slate-400">+20 SP · +8 MP</span>
                 </button>
 
                 <button
@@ -1036,7 +1223,7 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
                   <span className="flex items-center gap-1.5">
                     <Shield className="w-4 h-4 text-cyan-400" /> Shield
                   </span>
-                  <span className="text-[11px] font-normal text-slate-400">-60% DMG</span>
+                  <span className="text-[11px] font-normal text-slate-400">-60% DMG · +12 MP</span>
                 </button>
 
                 <button
@@ -1047,7 +1234,7 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
                   <span className="flex items-center gap-1.5">
                     <Zap className="w-4 h-4 text-amber-400" /> Charge
                   </span>
-                  <span className="text-[11px] font-normal text-slate-400">+35 SP & Boost</span>
+                  <span className="text-[11px] font-normal text-slate-400">+35 SP · +18 MP</span>
                 </button>
               </div>
 

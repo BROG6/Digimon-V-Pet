@@ -1,17 +1,28 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion } from 'motion/react';
-import { DigimonSpecies, PetState } from '../types/digimon';
+import { DigimonSpecies, PetState, TrainingStatKey } from '../types/digimon';
+import {
+  ATTACK_ELEMENT_META,
+  BATTLE_TECHNIQUE_CATALOG,
+  GYM_STATIONS,
+  MAX_EQUIPPED_ATTACKS,
+  getEffectiveBattleStats,
+  getEquippedBattleMoves,
+  getLearnedTechniqueIds,
+  getStationPreferenceMultiplier,
+} from '../data/battleTechniques';
 import { DigimonSprite } from './DigimonSprite';
 import { PixelMeatIcon, PixelPunchingBag } from './PixelItemIcons';
 import { sound } from '../utils/audio';
-import { Dumbbell, X, Zap, Trophy, Flame, Utensils } from 'lucide-react';
+import { Dumbbell, X, Flame, BookOpen, Check, Lock, Swords } from 'lucide-react';
 
 interface TrainingArenaProps {
   pet: PetState;
   species?: DigimonSpecies;
   isOpen: boolean;
   onClose: () => void;
-  onTrainingComplete: (success: boolean) => void;
+  onTrainingComplete: (success: boolean, statKey: TrainingStatKey, hits: number) => void;
+  onToggleEquipAttack?: (moveId: string) => void;
   onOpenFoodGame: () => void;
 }
 
@@ -21,10 +32,11 @@ export const TrainingArena: React.FC<TrainingArenaProps> = ({
   isOpen,
   onClose,
   onTrainingComplete,
+  onToggleEquipAttack,
   onOpenFoodGame,
 }) => {
-  // Target Punch Game State
-  const [activeTab, setActiveTab] = useState<'punch' | 'menu'>('menu');
+  const [activeTab, setActiveTab] = useState<'menu' | 'punch' | 'moves'>('menu');
+  const [selectedStat, setSelectedStat] = useState<TrainingStatKey>('offense');
   const [meterVal, setMeterVal] = useState<number>(0);
   const [round, setRound] = useState<number>(1);
   const [hits, setHits] = useState<number>(0);
@@ -47,7 +59,13 @@ export const TrainingArena: React.FC<TrainingArenaProps> = ({
     return () => clearTrainingTimers();
   }, []);
 
-  // Meter oscillation with delta-time normalization (brisk timing across 60Hz/90Hz/120Hz displays)
+  useEffect(() => {
+    if (isOpen) {
+      setActiveTab('menu');
+    }
+  }, [isOpen]);
+
+  // Meter oscillation with delta-time normalization
   useEffect(() => {
     if (activeTab !== 'punch' || isPunching || round > 3) return;
 
@@ -78,9 +96,10 @@ export const TrainingArena: React.FC<TrainingArenaProps> = ({
     };
   }, [activeTab, isPunching, round]);
 
-  const handleStartPunchTraining = () => {
+  const handleStartStationTraining = (statKey: TrainingStatKey) => {
     clearTrainingTimers();
     sound.playButton();
+    setSelectedStat(statKey);
     setRound(1);
     setHits(0);
     setMeterVal(0);
@@ -99,22 +118,21 @@ export const TrainingArena: React.FC<TrainingArenaProps> = ({
     sound.playPunch();
     setActionSprite('attack');
 
-    // Sweet spot is between 75 and 100
     const isSuccess = meterVal >= 75;
+    const nextHits = hits + (isSuccess ? 1 : 0);
     if (isSuccess) {
       sound.playBlast();
-      setHits((h) => h + 1);
-      setRoundResult({ text: 'CRITICAL HIT! +1', isCrit: true });
+      setHits(nextHits);
+      setRoundResult({ text: 'GREAT TIMING! +1', isCrit: true });
       setBagDented(true);
       setBagHitState('critical');
     } else {
-      setRoundResult({ text: 'MISS! Too weak!', isCrit: false });
+      setRoundResult({ text: 'GLANCING HIT', isCrit: false });
       setBagDented(false);
       setBagHitState('weak');
     }
     setBagHitNonce((n) => n + 1);
 
-    // Un-dent the bag after peak strike compression while pendulum keeps swinging
     const tDent = window.setTimeout(() => {
       setBagDented(false);
     }, 180);
@@ -128,141 +146,278 @@ export const TrainingArena: React.FC<TrainingArenaProps> = ({
         setIsPunching(false);
         setRoundResult(null);
       } else {
-        // Complete training
-        const totalSuccess = hits + (isSuccess ? 1 : 0) >= 2;
+        const totalSuccess = nextHits >= 2;
         if (totalSuccess) {
           sound.playVictory();
           setActionSprite('happy');
         }
         const tDone = window.setTimeout(() => {
-          onTrainingComplete(totalSuccess);
+          onTrainingComplete(totalSuccess, selectedStat, nextHits);
           setActiveTab('menu');
-        }, 700);
+        }, 650);
         timersRef.current.push(tDone);
       }
-    }, 650);
+    }, 600);
     timersRef.current.push(tRound);
   };
 
   if (!isOpen) return null;
 
+  const stats = getEffectiveBattleStats(pet, species);
+  const learnedIds = getLearnedTechniqueIds(pet, species);
+  const equippedMoves = getEquippedBattleMoves(pet, species);
+  const equippedIds = new Set(equippedMoves.map((m) => m.id));
+  const activeStation = GYM_STATIONS.find((s) => s.id === selectedStat) || GYM_STATIONS[2];
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/85 backdrop-blur-md android-safe-modal">
-      <div className="relative w-full max-w-lg bg-slate-900 border-2 border-cyan-500/50 rounded-3xl p-5 shadow-2xl flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/88 backdrop-blur-md android-safe-modal">
+      <div className="relative w-full max-w-xl bg-slate-900 border border-cyan-500/45 rounded-3xl p-4 sm:p-5 shadow-2xl flex flex-col max-h-[92vh] overflow-y-auto">
         {/* Header */}
-        <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-          <div className="flex items-center gap-2">
-            <Dumbbell className="w-5 h-5 text-cyan-400" />
-            <div>
-              <h3 className="font-chakra font-bold text-white text-lg">
-                DIGI-TRAINING DOJO
+        <div className="flex items-center justify-between pb-3 border-b border-slate-800 shrink-0">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-9 h-9 rounded-xl bg-cyan-500/15 border border-cyan-500/35 flex items-center justify-center shrink-0">
+              <Dumbbell className="w-5 h-5 text-cyan-300" />
+            </div>
+            <div className="min-w-0">
+              <h3 className="font-chakra font-bold text-white text-lg truncate">
+                Digi-Training Gym
               </h3>
-              <p className="text-slate-400 text-xs">Build Power, Burn Weight & Prepare for Evolution</p>
+              <p className="text-slate-400 text-xs truncate">
+                6 Core Stats · Brains Unlocks Techniques (Max {MAX_EQUIPPED_ATTACKS} Equipped)
+              </p>
             </div>
           </div>
           <button
-            onClick={onClose}
-            className="p-1.5 rounded-full hover:bg-slate-800 text-slate-400 hover:text-white"
+            onClick={() => {
+              clearTrainingTimers();
+              onClose();
+            }}
+            className="min-h-[44px] min-w-[44px] rounded-xl hover:bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center cursor-pointer shrink-0"
+            aria-label="Close Training Gym"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Current Stats Mini Summary */}
-        <div className="grid grid-cols-3 gap-2 my-3 p-3 bg-slate-950/80 rounded-2xl border border-slate-800 text-center font-pixel text-[10px]">
+        {/* 6 Core Stat Strip */}
+        <div className="grid grid-cols-3 sm:grid-cols-6 gap-1.5 my-3 p-2.5 bg-slate-950/85 rounded-2xl border border-slate-800 text-center tabular-nums">
           <div>
-            <div className="text-slate-400">DP POWER</div>
-            <div className="text-cyan-400 font-bold text-xs mt-0.5">{pet.dpPoints} DP</div>
+            <div className="text-[10px] text-slate-400 font-chakra">HP</div>
+            <div className="text-emerald-300 font-chakra font-bold text-sm">{stats.maxHp}</div>
           </div>
           <div>
-            <div className="text-slate-400">WEIGHT</div>
-            <div className="text-amber-400 font-bold text-xs mt-0.5">{pet.weight}g</div>
+            <div className="text-[10px] text-slate-400 font-chakra">MP</div>
+            <div className="text-cyan-300 font-chakra font-bold text-sm">{stats.maxMp}</div>
           </div>
           <div>
-            <div className="text-slate-400">TRAINED</div>
-            <div className="text-emerald-400 font-bold text-xs mt-0.5">{pet.trainingCount}x</div>
+            <div className="text-[10px] text-slate-400 font-chakra">Offense</div>
+            <div className="text-rose-300 font-chakra font-bold text-sm">{stats.offense}</div>
+          </div>
+          <div>
+            <div className="text-[10px] text-slate-400 font-chakra">Defense</div>
+            <div className="text-sky-300 font-chakra font-bold text-sm">{stats.defense}</div>
+          </div>
+          <div>
+            <div className="text-[10px] text-slate-400 font-chakra">Speed</div>
+            <div className="text-amber-300 font-chakra font-bold text-sm">{stats.speed}</div>
+          </div>
+          <div>
+            <div className="text-[10px] text-slate-400 font-chakra">Brains</div>
+            <div className="text-violet-300 font-chakra font-bold text-sm">{stats.brains}</div>
           </div>
         </div>
 
-        {/* Dojo Content */}
-        {activeTab === 'menu' && (
-          <div className="space-y-3 my-2">
-            {/* Option 1: Classic V-Pet Punch Timing */}
-            <div
-              onClick={handleStartPunchTraining}
-              className="p-4 bg-gradient-to-r from-slate-800/90 to-slate-800/50 hover:from-cyan-950/60 hover:to-slate-800 border border-slate-700 hover:border-cyan-500 rounded-2xl cursor-pointer transition-all flex items-center justify-between group"
+        {/* Sub-navigation Tabs (Stations vs Technique Loadout) */}
+        {activeTab !== 'punch' && (
+          <div className="flex items-center gap-1.5 p-1 bg-slate-950/90 border border-slate-800 rounded-xl mb-3">
+            <button
+              onClick={() => {
+                sound.playButton();
+                setActiveTab('menu');
+              }}
+              className={`flex-1 min-h-[40px] rounded-lg font-chakra text-xs font-bold transition-colors cursor-pointer whitespace-nowrap ${
+                activeTab === 'menu'
+                  ? 'bg-cyan-400 text-slate-950'
+                  : 'text-slate-300 hover:bg-slate-800'
+              }`}
             >
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-2xl group-hover:scale-110 transition-transform">
-                  🥊
-                </div>
-                <div>
-                  <h4 className="font-chakra font-bold text-white text-base">
-                    TARGET PUNCH WORKOUT
-                  </h4>
-                  <p className="text-slate-400 text-xs mt-0.5">
-                    Classic Digivice timing game. Hit the sweet spot for 3 rounds!
-                  </p>
-                  <div className="flex items-center gap-2 mt-1 text-[10px] font-pixel text-cyan-300">
-                    <span>+15 DP</span>
-                    <span>•</span>
-                    <span>-2g WEIGHT</span>
-                    <span>•</span>
-                    <span>+25 BITS</span>
-                  </div>
-                </div>
-              </div>
-              <button className="bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-pixel text-[10px] px-3 py-2 rounded-xl font-bold">
-                TRAIN
-              </button>
+              6 Gym Stations
+            </button>
+            <button
+              onClick={() => {
+                sound.playButton();
+                setActiveTab('moves');
+              }}
+              className={`flex-1 min-h-[40px] rounded-lg font-chakra text-xs font-bold transition-colors cursor-pointer whitespace-nowrap flex items-center justify-center gap-1.5 ${
+                activeTab === 'moves'
+                  ? 'bg-amber-400 text-slate-950'
+                  : 'text-slate-300 hover:bg-slate-800'
+              }`}
+            >
+              <Swords className="w-3.5 h-3.5" />
+              <span>Attack Loadout ({equippedMoves.length}/{MAX_EQUIPPED_ATTACKS})</span>
+            </button>
+          </div>
+        )}
+
+        {/* VIEW 1: 6 GYM STATIONS + MEAT CATCH */}
+        {activeTab === 'menu' && (
+          <div className="space-y-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              {GYM_STATIONS.map((station) => {
+                const pref = getStationPreferenceMultiplier(station.id, species);
+                return (
+                  <button
+                    key={station.id}
+                    onClick={() => handleStartStationTraining(station.id)}
+                    className={`text-left p-3 rounded-2xl border transition-all cursor-pointer hover:brightness-110 active:scale-[0.98] flex flex-col justify-between min-h-[106px] ${station.accentColor}`}
+                  >
+                    <div>
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-chakra font-bold text-white text-sm">
+                          {station.statLabel} · {station.stationName}
+                        </span>
+                        {pref.multiplier !== 1.0 && (
+                          <span className="text-[11px] font-chakra font-semibold opacity-90 whitespace-nowrap">
+                            {pref.label}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[11px] text-slate-300/90 mt-1 leading-snug">
+                        {station.description}
+                      </p>
+                    </div>
+                    <div className="mt-2 pt-1.5 border-t border-white/10 flex items-center justify-between text-[11px] font-chakra text-slate-200">
+                      <span>+{station.primaryLabel} / +{station.secondaryLabel}</span>
+                      <span className="font-bold text-white whitespace-nowrap">Train »</span>
+                    </div>
+                  </button>
+                );
+              })}
             </div>
 
-            {/* Option 2: Hellopet "I'm Hungry!" Mini-Game */}
-            <div
+            {/* Meat Catch Shortcut */}
+            <button
               onClick={() => {
+                sound.playButton();
                 onClose();
                 onOpenFoodGame();
               }}
-              className="p-4 bg-gradient-to-r from-slate-800/90 to-slate-800/50 hover:from-amber-950/60 hover:to-slate-800 border border-slate-700 hover:border-amber-500 rounded-2xl cursor-pointer transition-all flex items-center justify-between group"
+              className="w-full p-3.5 bg-slate-800/80 hover:bg-amber-950/40 border border-slate-700 hover:border-amber-500/60 rounded-2xl cursor-pointer transition-all flex items-center justify-between gap-3 text-left"
             >
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center group-hover:scale-110 transition-transform">
-                  <PixelMeatIcon className="w-8 h-8" />
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-xl bg-amber-500/15 border border-amber-500/35 flex items-center justify-center shrink-0">
+                  <PixelMeatIcon className="w-6 h-6" />
                 </div>
-                <div>
-                  <h4 className="font-chakra font-bold text-white text-base">
-                    "I'M HUNGRY!" MEAT CATCH
+                <div className="min-w-0">
+                  <h4 className="font-chakra font-bold text-white text-sm truncate">
+                    "I'm Hungry!" Meat Catch
                   </h4>
-                  <p className="text-slate-400 text-xs mt-0.5">
-                    Catch falling Meat and Pills to build stock while dodging Bad Meat!
+                  <p className="text-slate-400 text-xs truncate">
+                    Catch Big Meat & Vitamins while boosting Effort (+2 EF)
                   </p>
-                  <div className="flex items-center gap-2 mt-1 text-[10px] font-pixel text-amber-300">
-                    <span>+MEAT</span>
-                    <span>•</span>
-                    <span>+VITAMINS</span>
-                    <span>•</span>
-                    <span>+COINS</span>
-                  </div>
                 </div>
               </div>
-              <button className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-pixel text-[10px] px-3 py-2 rounded-xl font-bold">
-                PLAY
-              </button>
+              <span className="bg-amber-400 text-slate-950 font-chakra text-xs px-3 py-1.5 rounded-xl font-bold shrink-0 whitespace-nowrap">
+                Play
+              </span>
+            </button>
+          </div>
+        )}
+
+        {/* VIEW 2: LEARNABLE ATTACK LOADOUT (MAX 4) */}
+        {activeTab === 'moves' && (
+          <div className="space-y-2.5">
+            <div className="flex items-center justify-between text-xs font-chakra text-slate-300 px-1">
+              <span>
+                Train <strong className="text-violet-300">Blackboard (Brains)</strong> to unlock new attacks.
+              </span>
+              <span className="font-bold text-amber-300 tabular-nums">
+                Equipped {equippedMoves.length}/{MAX_EQUIPPED_ATTACKS}
+              </span>
+            </div>
+
+            <div className="space-y-2 max-h-[48vh] overflow-y-auto pr-1">
+              {BATTLE_TECHNIQUE_CATALOG.map((tech) => {
+                const isLearned = learnedIds.includes(tech.id);
+                const isEquipped = equippedIds.has(tech.id);
+                const elMeta = ATTACK_ELEMENT_META[tech.element];
+                const canEquipMore = equippedMoves.length < MAX_EQUIPPED_ATTACKS;
+
+                return (
+                  <div
+                    key={tech.id}
+                    className={`p-3 rounded-2xl border flex items-center justify-between gap-3 ${
+                      isEquipped
+                        ? 'bg-amber-950/35 border-amber-400/60'
+                        : isLearned
+                        ? 'bg-slate-950/80 border-slate-700/80'
+                        : 'bg-slate-950/45 border-slate-800/70 opacity-65'
+                    }`}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-chakra font-bold text-white text-sm">
+                          {tech.name}
+                        </span>
+                        <span className="text-[11px] font-chakra font-semibold text-slate-300">
+                          {elMeta.label} · PWR {tech.power} · {tech.mpCost} MP
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-400 mt-0.5 leading-snug">
+                        {tech.description}
+                        {elMeta.beatsLabel !== 'None (Balanced)' && (
+                          <span className="text-emerald-300/90"> (1.5x vs {elMeta.beatsLabel})</span>
+                        )}
+                      </p>
+                    </div>
+
+                    <div className="shrink-0">
+                      {!isLearned ? (
+                        <div className="inline-flex items-center gap-1 text-xs font-chakra text-slate-400 whitespace-nowrap">
+                          <Lock className="w-3.5 h-3.5" />
+                          <span>Brains {tech.brainsThreshold}</span>
+                        </div>
+                      ) : onToggleEquipAttack ? (
+                        <button
+                          disabled={!isEquipped && !canEquipMore}
+                          onClick={() => {
+                            sound.playButton();
+                            onToggleEquipAttack(tech.id);
+                          }}
+                          className={`min-h-[40px] px-3.5 py-1.5 rounded-xl font-chakra font-bold text-xs flex items-center gap-1.5 whitespace-nowrap cursor-pointer transition-colors ${
+                            isEquipped
+                              ? 'bg-amber-400 hover:bg-amber-300 text-slate-950'
+                              : canEquipMore
+                              ? 'bg-slate-800 hover:bg-slate-700 text-white border border-slate-600'
+                              : 'bg-slate-800/60 text-slate-500 border border-slate-800 cursor-not-allowed'
+                          }`}
+                        >
+                          {isEquipped && <Check className="w-3.5 h-3.5" />}
+                          <span>{isEquipped ? 'Equipped' : canEquipMore ? 'Equip' : 'Slots Full'}</span>
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
 
-        {/* Punch Timing Game View */}
+        {/* VIEW 3: PUNCH TIMING DRILL FOR SELECTED STATION */}
         {activeTab === 'punch' && (
-          <div className="flex flex-col items-center py-2">
-            <div className="flex items-center justify-between w-full px-2 mb-2 font-pixel text-xs text-slate-300">
-              <span>ROUND {round} / 3</span>
-              <span>HITS: {hits}</span>
+          <div className="flex flex-col items-center py-1">
+            <div className="flex items-center justify-between w-full px-1 mb-2 text-xs font-chakra text-slate-300">
+              <span className="font-bold text-cyan-300">
+                {activeStation.stationName} ({activeStation.primaryLabel} / +{activeStation.secondaryLabel})
+              </span>
+              <span className="tabular-nums">
+                Round {round}/3 · Hits {hits}
+              </span>
             </div>
 
-            {/* Pixel Dojo Arena: Digimon vs Hanging Punching Bag */}
-            <div className="relative w-full h-48 bg-[#2d3640] border-2 border-slate-700 rounded-2xl overflow-hidden shadow-inner">
-              {/* Staggered Pixel Dojo Wall Blocks (matching classic Digimon gym stage) */}
+            <div className="relative w-full h-44 bg-[#2d3640] border-2 border-slate-700 rounded-2xl overflow-hidden shadow-inner">
               <svg
                 viewBox="0 0 160 80"
                 preserveAspectRatio="none"
@@ -282,13 +437,12 @@ export const TrainingArena: React.FC<TrainingArenaProps> = ({
                 <rect x="0" y="66" width="160" height="14" fill="#1b2229" />
               </svg>
 
-              {/* Compact Non-Blocking Critical Hit / Miss Badge (Top-Left, never hides Digimon or Bag) */}
               {roundResult && (
                 <motion.div
                   key={`res-${round}-${bagHitNonce}`}
                   initial={{ y: 6, opacity: 0, scale: 0.85 }}
                   animate={{ y: 0, opacity: 1, scale: 1 }}
-                  className={`absolute top-2.5 left-3 z-30 pointer-events-none font-pixel text-[10px] px-2.5 py-1 rounded-lg font-bold shadow-lg border ${
+                  className={`absolute top-2.5 left-3 z-30 pointer-events-none font-chakra text-xs px-2.5 py-1 rounded-lg font-bold shadow-lg border ${
                     roundResult.isCrit
                       ? 'bg-amber-400 text-slate-950 border-amber-200'
                       : 'bg-slate-800/95 text-rose-300 border-rose-500/60'
@@ -298,9 +452,7 @@ export const TrainingArena: React.FC<TrainingArenaProps> = ({
                 </motion.div>
               )}
 
-              {/* Fighting Stage Content */}
               <div className="relative z-10 w-full h-full flex items-end justify-center gap-4 pb-3 px-6">
-                {/* Attacking Digimon on Left facing Bag */}
                 <motion.div
                   animate={
                     isPunching
@@ -313,7 +465,6 @@ export const TrainingArena: React.FC<TrainingArenaProps> = ({
                   <DigimonSprite species={species} action={actionSprite} facing="right" scale={0.95} />
                 </motion.div>
 
-                {/* Hanging Leather Punching Bag from Ceiling Pulley */}
                 <div className="self-start">
                   <PixelPunchingBag
                     dented={bagDented}
@@ -325,18 +476,15 @@ export const TrainingArena: React.FC<TrainingArenaProps> = ({
               </div>
             </div>
 
-            {/* Power Meter Gauge */}
-            <div className="w-full mt-4">
-              <div className="flex justify-between text-[10px] font-pixel text-slate-400 mb-1">
-                <span>POWER GAUGE</span>
-                <span className="text-amber-400">TARGET: 75% - 100%</span>
+            <div className="w-full mt-3.5">
+              <div className="flex justify-between text-xs font-chakra text-slate-400 mb-1">
+                <span>Timing Gauge</span>
+                <span className="text-amber-300 font-semibold">Sweet Spot: 75% – 100%</span>
               </div>
               <div className="relative w-full h-7 bg-slate-800 border-2 border-slate-600 rounded-full overflow-hidden">
-                {/* Target Zone Highlight */}
-                <div className="absolute right-0 top-0 bottom-0 w-[25%] bg-amber-400/40 border-l-2 border-amber-300 flex items-center justify-center font-pixel text-[8px] text-amber-200">
-                  SWEET SPOT
+                <div className="absolute right-0 top-0 bottom-0 w-[25%] bg-amber-400/40 border-l-2 border-amber-300 flex items-center justify-center font-chakra text-[10px] font-bold text-amber-200">
+                  TARGET
                 </div>
-                {/* Active Moving Meter */}
                 <div
                   className="h-full bg-gradient-to-r from-cyan-500 via-sky-400 to-amber-400 transition-none"
                   style={{ width: `${meterVal}%` }}
@@ -344,17 +492,28 @@ export const TrainingArena: React.FC<TrainingArenaProps> = ({
               </div>
             </div>
 
-            {/* Tap Button */}
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              disabled={isPunching}
-              onClick={handleExecutePunch}
-              className="mt-5 w-full bg-gradient-to-r from-red-500 to-amber-500 hover:from-red-400 hover:to-amber-400 text-slate-950 font-pixel text-sm py-4 rounded-2xl font-bold tracking-wider shadow-lg shadow-orange-500/30 flex items-center justify-center gap-2 disabled:opacity-50"
-            >
-              <Flame className="w-5 h-5 fill-slate-950" />
-              <span>STRIKE PUNCH!</span>
-            </motion.button>
+            <div className="w-full flex gap-2 mt-4">
+              <button
+                type="button"
+                disabled={isPunching}
+                onClick={() => {
+                  clearTrainingTimers();
+                  setActiveTab('menu');
+                }}
+                className="min-h-[48px] px-4 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-300 font-chakra text-sm font-semibold cursor-pointer disabled:opacity-40"
+              >
+                Back
+              </button>
+              <motion.button
+                whileTap={{ scale: 0.96 }}
+                disabled={isPunching}
+                onClick={handleExecutePunch}
+                className="flex-1 min-h-[48px] bg-gradient-to-r from-red-500 to-amber-500 hover:from-red-400 hover:to-amber-400 text-slate-950 font-chakra text-base py-3 rounded-2xl font-bold shadow-lg shadow-orange-500/25 flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
+              >
+                <Flame className="w-5 h-5 fill-slate-950" />
+                <span>Strike {activeStation.statLabel} Drill</span>
+              </motion.button>
+            </div>
           </div>
         )}
       </div>

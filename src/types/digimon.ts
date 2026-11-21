@@ -90,9 +90,46 @@ export interface DigiEggInfo {
     | 'moon';
 }
 
+export type AttackElement =
+  | 'fire'
+  | 'nature'
+  | 'air'
+  | 'ice'
+  | 'holy'
+  | 'dark'
+  | 'hand'
+  | 'weapon'
+  | 'filth'
+  | 'neutral';
+
+export type TrainingStatKey = 'hp' | 'mp' | 'offense' | 'defense' | 'speed' | 'brains';
+
+export interface BattleStats {
+  maxHp: number;
+  maxMp: number;
+  offense: number;
+  defense: number;
+  speed: number;
+  brains: number;
+}
+
+export interface BattleMove {
+  id: string;
+  name: string;
+  element: AttackElement;
+  power: number;
+  mpCost: number;
+  description: string;
+  soundType: 'blast' | 'punch' | 'laser' | 'howl';
+  minStage?: DigimonStage;
+  learnHint?: string;
+}
+
 export interface AttackMove {
   name: string;
   type: 'physical' | 'fire' | 'ice' | 'nature' | 'holy' | 'electric' | 'water' | 'dark';
+  element?: AttackElement;
+  mpCost?: number;
   power: number;
   description: string;
   soundType: 'blast' | 'punch' | 'laser' | 'howl';
@@ -195,11 +232,15 @@ export interface PetState {
   lastHungerDropAt?: number;
   lastPoopAt?: number;
   careCallStartedAt?: number;
+  sleepCallStartedAt?: number;
   isFrozen?: boolean;
   frozenAt?: number;
   adventureClearedWave?: Record<string, number>;
   battleExp?: number;
   unlockedSpeciesIds?: string[];
+  battleStats?: BattleStats;
+  learnedAttackIds?: string[];
+  equippedAttackIds?: string[];
 }
 
 export interface AdventureWave {
@@ -254,13 +295,18 @@ export interface BattleFighter {
   speciesId: string;
   stage: DigimonStage;
   crest: CrestType;
+  element?: AttackElement;
   currentHp: number;
   maxHp: number;
+  mp?: number;
+  maxMp?: number;
   sp: number; // 0 to 100 for signature move
   atk: number;
   def: number;
   spd: number;
+  brains?: number;
   signatureMove: AttackMove;
+  equippedMoves?: BattleMove[];
   isPlayer: boolean;
 }
 

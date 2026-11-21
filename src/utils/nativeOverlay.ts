@@ -57,6 +57,7 @@ export interface OverlayPluginInterface {
     nextPoopAtMs: string;
     nextPoopCount: number;
     poopFullAtMs: string;
+    bedtimeAtMs?: string;
   }): Promise<{ success: boolean }>;
   cancelCareNotifications(): Promise<{ success: boolean }>;
 }

@@ -1,23 +1,27 @@
 import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
-import { PetState, DigimonSpecies, BattleFighter, BattleLogEntry } from '../types/digimon';
+import { motion } from 'motion/react';
+import { PetState, DigimonSpecies, BattleFighter, BattleLogEntry, BattleMove } from '../types/digimon';
 import { DIGIMON_DATABASE } from '../data/digidex';
+import {
+  ATTACK_ELEMENT_META,
+  getEffectiveBattleStats,
+  getElementDamageMultiplier,
+  getEquippedBattleMoves,
+  getSpeciesElementType,
+  mapMoveTypeToElement,
+} from '../data/battleTechniques';
 import { DigimonSprite } from './DigimonSprite';
 import { sound, triggerHaptic } from '../utils/audio';
 import confetti from 'canvas-confetti';
-import { 
-  Swords, 
-  Shield, 
-  Zap, 
-  Flame, 
-  X, 
-  Trophy, 
-  Users, 
-  Globe, 
-  Wifi, 
-  RefreshCw,
-  Sparkles,
-  Compass
+import {
+  Swords,
+  Shield,
+  Zap,
+  Flame,
+  X,
+  Trophy,
+  Globe,
+  Compass,
 } from 'lucide-react';
 
 interface ColosseumBattleProps {
@@ -39,7 +43,6 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
 }) => {
   const [matchState, setMatchState] = useState<'lobby' | 'matching' | 'battling' | 'victory' | 'defeat'>('lobby');
   const [roomCode, setRoomCode] = useState<string>('');
-  const [inputCode, setInputCode] = useState<string>('');
   const [playerFighter, setPlayerFighter] = useState<BattleFighter | null>(null);
   const [opponentFighter, setOpponentFighter] = useState<BattleFighter | null>(null);
   const [battleLogs, setBattleLogs] = useState<BattleLogEntry[]>([]);
@@ -49,7 +52,6 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
   const [isDefending, setIsDefending] = useState<boolean>(false);
   const [isCharged, setIsCharged] = useState<boolean>(false);
 
-  // CSS-based Attack & Hit Animation States
   const [playerEffect, setPlayerEffect] = useState<'none' | 'lunge' | 'hit' | 'shield' | 'charge'>('none');
   const [opponentEffect, setOpponentEffect] = useState<'none' | 'lunge' | 'hit'>('none');
   const [arenaShake, setArenaShake] = useState<boolean>(false);
@@ -61,7 +63,7 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
     setDamagePopups((prev) => [...prev, { id, target, text, color }]);
     setTimeout(() => {
       setDamagePopups((prev) => prev.filter((p) => p.id !== id));
-    }, 1000);
+    }, 1050);
   };
 
   const triggerScreenFlash = (type: 'white' | 'red' | 'special') => {
@@ -74,7 +76,6 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
     setTimeout(() => setArenaShake(false), 450);
   };
 
-  // Always reset battle state to lobby whenever modal opens or closes
   useEffect(() => {
     if (isOpen) {
       setMatchState('lobby');
@@ -94,13 +95,12 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
     }
   }, [isOpen]);
 
-  // Initialize Player fighter
   const setupFighters = (oppSpeciesId?: string) => {
     if (!species) return;
 
-    const baseHp = species.baseHp + Math.floor(pet.strength * 1.5) + (pet.dpPoints * 2);
-    const atk = species.baseAtk + Math.floor(pet.strength * 0.8) + (pet.trainingCount * 2);
-    const def = species.baseDef + Math.floor(pet.weight * 0.3);
+    const stats = getEffectiveBattleStats(pet, species);
+    const equippedMoves = getEquippedBattleMoves(pet, species);
+    const playerEl = getSpeciesElementType(species);
 
     const player: BattleFighter = {
       id: 'player-fighter',
@@ -108,29 +108,38 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
       speciesId: species.id,
       stage: pet.stage,
       crest: species.crest || 'courage',
-      currentHp: baseHp,
-      maxHp: baseHp,
-      sp: 20,
-      atk,
-      def,
-      spd: species.baseSpd,
+      element: playerEl,
+      currentHp: stats.maxHp,
+      maxHp: stats.maxHp,
+      mp: stats.maxMp,
+      maxMp: stats.maxMp,
+      sp: 25,
+      atk: stats.offense,
+      def: stats.defense,
+      spd: stats.speed,
+      brains: stats.brains,
       signatureMove: species.signatureMove,
+      equippedMoves,
       isPlayer: true,
     };
 
-    // Pair against an evenly matched rival scaled slightly below player power for brisk 3-4 turn matches
+    // Match evenly against same-stage rival with approachable difficulty scaling
     const opponentKeys = Object.keys(DIGIMON_DATABASE).filter(
       (k) => DIGIMON_DATABASE[k].stage === pet.stage && k !== species.id
     );
-    const oppId = oppSpeciesId || (opponentKeys.length > 0 ? opponentKeys[Math.floor(Math.random() * opponentKeys.length)] : 'greymon');
+    const oppId =
+      oppSpeciesId ||
+      (opponentKeys.length > 0 ? opponentKeys[Math.floor(Math.random() * opponentKeys.length)] : 'agumon');
     const oppSpecies = DIGIMON_DATABASE[oppId] || DIGIMON_DATABASE['agumon'];
+    const oppEl = getSpeciesElementType(oppSpecies);
 
-    const hpVariance = 0.8 + Math.random() * 0.1;
-    const oppHp = Math.max(Math.round(oppSpecies.baseHp * 0.85), Math.round(baseHp * hpVariance));
-    const oppAtk = Math.round(Math.max(oppSpecies.baseAtk * 0.72, atk * 0.62));
-    const oppDef = Math.round(Math.max(oppSpecies.baseDef * 0.65, def * 0.6));
+    const stageEasyFactor = pet.stage === 'fresh' || pet.stage === 'in-training' ? 0.72 : 0.82;
+    const hpVariance = stageEasyFactor + Math.random() * 0.08;
+    const oppHp = Math.max(Math.round(oppSpecies.baseHp * 0.75), Math.round(stats.maxHp * hpVariance));
+    const oppAtk = Math.round(Math.max(oppSpecies.baseAtk * 0.65, stats.offense * 0.58));
+    const oppDef = Math.round(Math.max(oppSpecies.baseDef * 0.6, stats.defense * 0.56));
     const scaledSigPower = Math.round(
-      Math.max(oppSpecies.signatureMove.power * 0.68, species.signatureMove.power * 0.64)
+      Math.max(oppSpecies.signatureMove.power * 0.62, species.signatureMove.power * 0.58)
     );
 
     const opponent: BattleFighter = {
@@ -139,12 +148,15 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
       speciesId: oppSpecies.id,
       stage: oppSpecies.stage,
       crest: oppSpecies.crest,
+      element: oppEl,
       currentHp: oppHp,
       maxHp: oppHp,
+      mp: 60,
+      maxMp: 60,
       sp: 15,
       atk: oppAtk,
       def: oppDef,
-      spd: Math.max(oppSpecies.baseSpd, species.baseSpd),
+      spd: Math.max(oppSpecies.baseSpd, Math.round(stats.speed * 0.9)),
       signatureMove: {
         ...oppSpecies.signatureMove,
         power: scaledSigPower,
@@ -157,13 +169,12 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
     setBattleLogs([
       {
         id: 'start-1',
-        text: `⚔️ Online Colosseum Match Started! ${player.name} VS Challenger ${opponent.name}!`,
+        text: `Colosseum Match Started: ${player.name} (${ATTACK_ELEMENT_META[playerEl].label}) vs ${opponent.name} (${ATTACK_ELEMENT_META[oppEl].label})`,
         type: 'action',
       },
     ]);
   };
 
-  // Quick matchmaking
   const handleStartQuickMatch = () => {
     sound.playButton();
     setMatchState('matching');
@@ -171,10 +182,9 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
       setupFighters();
       setMatchState('battling');
       setIsPlayerTurn(true);
-    }, 1500);
+    }, 1200);
   };
 
-  // Host room
   const handleHostRoom = () => {
     sound.playButton();
     const code = Math.floor(1000 + Math.random() * 9000).toString();
@@ -184,7 +194,7 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
       setupFighters();
       setMatchState('battling');
       setIsPlayerTurn(true);
-    }, 2000);
+    }, 1600);
   };
 
   // Opponent AI Turn
@@ -192,82 +202,84 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
     if (matchState !== 'battling' || isPlayerTurn || !opponentFighter || !playerFighter) return;
 
     const timer = setTimeout(() => {
-      // Opponent chooses move
       const canUseSpecial = opponentFighter.sp >= 50;
-      const shouldUseSpecial = canUseSpecial && Math.random() < 0.45;
+      const shouldUseSpecial = canUseSpecial && Math.random() < 0.42;
+      const oppSpecies = DIGIMON_DATABASE[opponentFighter.speciesId];
+      const defFactor = isDefending ? playerFighter.def * 0.68 : playerFighter.def * 0.3;
 
       if (shouldUseSpecial) {
-        // Special move
         sound.playBlast();
         triggerHaptic('heavy');
         setOpponentActionAnim('attack');
         setOpponentEffect('lunge');
+
+        const moveEl = mapMoveTypeToElement(opponentFighter.signatureMove, oppSpecies);
+        const typeMult = getElementDamageMultiplier(moveEl, playerFighter.element || 'neutral');
         const rawDamage = Math.max(
-          8,
-          Math.floor(
-            opponentFighter.signatureMove.power * 0.65 +
-              opponentFighter.atk * 0.1 -
-              (isDefending ? playerFighter.def * 0.65 : playerFighter.def * 0.3)
-          )
+          7,
+          Math.floor((opponentFighter.signatureMove.power * 0.6 + opponentFighter.atk * 0.1 - defFactor) * typeMult)
         );
         const finalDamage = isDefending ? Math.max(3, Math.floor(rawDamage * 0.4)) : rawDamage;
 
-        setOpponentFighter((prev) => prev ? { ...prev, sp: prev.sp - 50 } : null);
+        setOpponentFighter((prev) => (prev ? { ...prev, sp: prev.sp - 50 } : null));
 
-        // Impact timing: shake player and flash screen
         setTimeout(() => {
           setPlayerEffect('hit');
           triggerScreenFlash('special');
           triggerArenaShake();
-          showDamagePopup('player', `💥 -${finalDamage}!`, isDefending ? 'text-cyan-300' : 'text-rose-400 font-extrabold');
+          showDamagePopup(
+            'player',
+            `${typeMult > 1 ? '1.5x ' : ''}-${finalDamage}!`,
+            isDefending ? 'text-cyan-300' : 'text-rose-400 font-extrabold'
+          );
 
-          setPlayerFighter((prev) => {
-            if (!prev) return null;
-            const nextHp = Math.max(0, prev.currentHp - finalDamage);
-            return { ...prev, currentHp: nextHp };
-          });
+          setPlayerFighter((prev) =>
+            prev ? { ...prev, currentHp: Math.max(0, prev.currentHp - finalDamage) } : null
+          );
         }, 180);
 
         setBattleLogs((logs) => [
           {
             id: `opp-${Date.now()}`,
-            text: `💥 ${opponentFighter.name} unleashed ${opponentFighter.signatureMove.name} for ${finalDamage} damage!`,
+            text: `${opponentFighter.name} unleashed ${opponentFighter.signatureMove.name} (${ATTACK_ELEMENT_META[moveEl].label}) for ${finalDamage} damage${typeMult > 1 ? ' [1.5x ADV!]' : ''}!`,
             type: 'special',
           },
           ...logs,
         ]);
       } else {
-        // Standard attack
         sound.playPunch();
         triggerHaptic('medium');
         setOpponentActionAnim('attack');
         setOpponentEffect('lunge');
+        const oppEl = opponentFighter.element || 'neutral';
+        const typeMult = getElementDamageMultiplier(oppEl, playerFighter.element || 'neutral');
         const rawDamage = Math.max(
           5,
-          Math.floor(opponentFighter.atk * 0.6 - (isDefending ? playerFighter.def * 0.6 : playerFighter.def * 0.28))
+          Math.floor((opponentFighter.atk * 0.56 - defFactor) * typeMult)
         );
         const finalDamage = isDefending ? Math.max(2, Math.floor(rawDamage * 0.4)) : rawDamage;
 
-        setOpponentFighter((prev) => prev ? { ...prev, sp: Math.min(100, prev.sp + 20) } : null);
+        setOpponentFighter((prev) => (prev ? { ...prev, sp: Math.min(100, prev.sp + 20) } : null));
 
-        // Impact timing: shake player and flash screen
         setTimeout(() => {
           setPlayerEffect('hit');
           triggerScreenFlash('red');
           triggerArenaShake();
-          showDamagePopup('player', `-${finalDamage}`, isDefending ? 'text-cyan-300' : 'text-rose-400 font-bold');
+          showDamagePopup(
+            'player',
+            `${typeMult > 1 ? '1.5x ' : ''}-${finalDamage}`,
+            isDefending ? 'text-cyan-300' : 'text-rose-400 font-bold'
+          );
 
-          setPlayerFighter((prev) => {
-            if (!prev) return null;
-            const nextHp = Math.max(0, prev.currentHp - finalDamage);
-            return { ...prev, currentHp: nextHp };
-          });
+          setPlayerFighter((prev) =>
+            prev ? { ...prev, currentHp: Math.max(0, prev.currentHp - finalDamage) } : null
+          );
         }, 160);
 
         setBattleLogs((logs) => [
           {
             id: `opp-${Date.now()}`,
-            text: `⚡ ${opponentFighter.name} struck with a physical attack for ${finalDamage} damage!`,
+            text: `${opponentFighter.name} attacked for ${finalDamage} damage${typeMult > 1 ? ' [1.5x ADV]' : ''}.`,
             type: 'damage',
           },
           ...logs,
@@ -280,13 +292,12 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
         setOpponentEffect('none');
         setPlayerEffect('none');
         setIsPlayerTurn(true);
-      }, 750);
-    }, 1200);
+      }, 720);
+    }, 1050);
 
     return () => clearTimeout(timer);
   }, [isPlayerTurn, matchState, opponentFighter, playerFighter, isDefending]);
 
-  // Check victory / defeat conditions
   useEffect(() => {
     if (matchState !== 'battling' || !playerFighter || !opponentFighter) return;
 
@@ -295,13 +306,12 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
       setMatchState('victory');
       try {
         confetti({ particleCount: 100, spread: 80, origin: { y: 0.6 } });
-      } catch (e) {}
+      } catch {}
     } else if (playerFighter.currentHp <= 0) {
       setMatchState('defeat');
     }
   }, [playerFighter?.currentHp, opponentFighter?.currentHp, matchState]);
 
-  // Player Moves
   const handlePlayerAttack = () => {
     if (!isPlayerTurn || !playerFighter || !opponentFighter) return;
     setIsPlayerTurn(false);
@@ -310,30 +320,46 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
     setPlayerActionAnim('attack');
     setPlayerEffect('lunge');
 
-    const mult = isCharged ? 1.6 : 1.0;
-    const damage = Math.max(12, Math.floor((playerFighter.atk * 0.88 * mult) - (opponentFighter.def * 0.25)));
+    const chargeMult = isCharged ? 1.6 : 1.0;
+    const typeMult = getElementDamageMultiplier(
+      playerFighter.element || 'neutral',
+      opponentFighter.element || 'neutral'
+    );
+    const damage = Math.max(
+      12,
+      Math.floor((playerFighter.atk * 0.92 * chargeMult - opponentFighter.def * 0.24) * typeMult)
+    );
 
-    setPlayerFighter((prev) => prev ? { ...prev, sp: Math.min(100, prev.sp + 20) } : null);
+    setPlayerFighter((prev) =>
+      prev
+        ? {
+            ...prev,
+            sp: Math.min(100, prev.sp + 20),
+            mp: Math.min(prev.maxMp || 100, (prev.mp || 0) + 8),
+          }
+        : null
+    );
     setIsCharged(false);
 
-    // Impact timing on opponent
     setTimeout(() => {
       setOpponentEffect('hit');
       triggerScreenFlash('white');
       triggerArenaShake();
-      showDamagePopup('opponent', `-${damage}`, 'text-amber-300 font-bold');
+      showDamagePopup(
+        'opponent',
+        `${typeMult > 1 ? '1.5x ADV! ' : ''}-${damage}`,
+        typeMult > 1 ? 'text-emerald-300 font-extrabold' : 'text-amber-300 font-bold'
+      );
 
-      setOpponentFighter((prev) => {
-        if (!prev) return null;
-        const nextHp = Math.max(0, prev.currentHp - damage);
-        return { ...prev, currentHp: nextHp };
-      });
+      setOpponentFighter((prev) =>
+        prev ? { ...prev, currentHp: Math.max(0, prev.currentHp - damage) } : null
+      );
     }, 160);
 
     setBattleLogs((logs) => [
       {
         id: `pl-${Date.now()}`,
-        text: `⚔️ ${playerFighter.name} lands an attack dealing ${damage} damage!`,
+        text: `${playerFighter.name} struck for ${damage} damage (+8 MP)${typeMult > 1 ? ' [1.5x Type Advantage!]' : ''}!`,
         type: 'damage',
       },
       ...logs,
@@ -343,7 +369,7 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
       setPlayerActionAnim('idle');
       setPlayerEffect('none');
       setOpponentEffect('none');
-    }, 700);
+    }, 680);
   };
 
   const handlePlayerSpecial = () => {
@@ -354,33 +380,40 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
     setPlayerActionAnim('attack');
     setPlayerEffect('lunge');
 
-    const mult = isCharged ? 1.75 : 1.3;
+    const moveEl = mapMoveTypeToElement(playerFighter.signatureMove, species);
+    const typeMult = getElementDamageMultiplier(moveEl, opponentFighter.element || 'neutral');
+    const chargeMult = isCharged ? 1.75 : 1.3;
+    const brainsBonus = Math.floor((playerFighter.brains || 20) * 0.12);
     const damage = Math.max(
-      24,
-      Math.floor((playerFighter.signatureMove.power * mult) + (playerFighter.atk * 0.28) - (opponentFighter.def * 0.25))
+      26,
+      Math.floor(
+        (playerFighter.signatureMove.power * chargeMult + playerFighter.atk * 0.3 + brainsBonus - opponentFighter.def * 0.24) *
+          typeMult
+      )
     );
 
-    setPlayerFighter((prev) => prev ? { ...prev, sp: prev.sp - 50 } : null);
+    setPlayerFighter((prev) => (prev ? { ...prev, sp: prev.sp - 50 } : null));
     setIsCharged(false);
 
-    // Impact timing on opponent
     setTimeout(() => {
       setOpponentEffect('hit');
       triggerScreenFlash('special');
       triggerArenaShake();
-      showDamagePopup('opponent', `🔥 -${damage}!`, 'text-orange-400 font-extrabold text-sm');
+      showDamagePopup(
+        'opponent',
+        `${typeMult > 1 ? '1.5x ADV! ' : ''}-${damage}!`,
+        typeMult > 1 ? 'text-emerald-300 font-extrabold text-sm' : 'text-orange-400 font-extrabold text-sm'
+      );
 
-      setOpponentFighter((prev) => {
-        if (!prev) return null;
-        const nextHp = Math.max(0, prev.currentHp - damage);
-        return { ...prev, currentHp: nextHp };
-      });
+      setOpponentFighter((prev) =>
+        prev ? { ...prev, currentHp: Math.max(0, prev.currentHp - damage) } : null
+      );
     }, 180);
 
     setBattleLogs((logs) => [
       {
         id: `pl-${Date.now()}`,
-        text: `🔥 SIGNATURE MOVE! ${playerFighter.name} unleashed ${playerFighter.signatureMove.name} for ${damage} massive damage!`,
+        text: `SIGNATURE: ${playerFighter.name} fired ${playerFighter.signatureMove.name} (${ATTACK_ELEMENT_META[moveEl].label}) for ${damage} damage${typeMult > 1 ? ' [1.5x ADV!]' : ''}!`,
         type: 'special',
       },
       ...logs,
@@ -390,7 +423,69 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
       setPlayerActionAnim('idle');
       setPlayerEffect('none');
       setOpponentEffect('none');
-    }, 800);
+    }, 760);
+  };
+
+  const handleUseLearnedTechnique = (move: BattleMove) => {
+    if (!isPlayerTurn || !playerFighter || !opponentFighter) return;
+    const currentMp = playerFighter.mp ?? 0;
+    if (currentMp < move.mpCost) return;
+
+    setIsPlayerTurn(false);
+    if (move.soundType === 'punch') sound.playPunch();
+    else sound.playBlast();
+    triggerHaptic('heavy');
+    setPlayerActionAnim('attack');
+    setPlayerEffect('lunge');
+
+    const typeMult = getElementDamageMultiplier(move.element, opponentFighter.element || 'neutral');
+    const chargeMult = isCharged ? 1.55 : 1.0;
+    const brainsBonus = Math.floor((playerFighter.brains || 20) * 0.16);
+    const damage = Math.max(
+      18,
+      Math.floor((move.power * 1.15 * chargeMult + playerFighter.atk * 0.4 + brainsBonus - opponentFighter.def * 0.22) * typeMult)
+    );
+
+    setPlayerFighter((prev) =>
+      prev
+        ? {
+            ...prev,
+            mp: Math.max(0, (prev.mp ?? 0) - move.mpCost),
+            sp: Math.min(100, prev.sp + 15),
+          }
+        : null
+    );
+    setIsCharged(false);
+
+    setTimeout(() => {
+      setOpponentEffect('hit');
+      triggerScreenFlash(typeMult > 1 ? 'special' : 'white');
+      triggerArenaShake();
+      showDamagePopup(
+        'opponent',
+        `${typeMult > 1 ? '1.5x ADV! ' : ''}-${damage}!`,
+        typeMult > 1 ? 'text-emerald-300 font-extrabold text-sm' : 'text-cyan-300 font-bold'
+      );
+
+      setOpponentFighter((prev) =>
+        prev ? { ...prev, currentHp: Math.max(0, prev.currentHp - damage) } : null
+      );
+    }, 170);
+
+    setBattleLogs((logs) => [
+      {
+        id: `pl-tech-${Date.now()}`,
+        text: `${playerFighter.name} cast ${move.name} (${ATTACK_ELEMENT_META[move.element].label}, -${move.mpCost} MP) for ${damage} damage${typeMult > 1 ? ' [1.5x ADV!]' : ''}!`,
+        type: typeMult > 1 ? 'special' : 'damage',
+      },
+      ...logs,
+    ]);
+
+    setTimeout(() => {
+      setPlayerActionAnim('idle');
+      setPlayerEffect('none');
+      setOpponentEffect('none');
+    }, 720);
   };
 
   const handlePlayerDefend = () => {
@@ -400,22 +495,28 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
     triggerHaptic('light');
     setIsDefending(true);
     setPlayerEffect('shield');
-    showDamagePopup('player', '🛡️ SHIELD UP!', 'text-cyan-300 font-bold');
+    showDamagePopup('player', 'SHIELD UP', 'text-cyan-300 font-bold');
 
-    setPlayerFighter((prev) => prev ? { ...prev, sp: Math.min(100, prev.sp + 10) } : null);
+    setPlayerFighter((prev) =>
+      prev
+        ? {
+            ...prev,
+            sp: Math.min(100, prev.sp + 10),
+            mp: Math.min(prev.maxMp || 100, (prev.mp || 0) + 12),
+          }
+        : null
+    );
 
     setBattleLogs((logs) => [
       {
         id: `pl-${Date.now()}`,
-        text: `🛡️ ${playerFighter.name} raised a Digi-Shield! Incoming damage drastically reduced!`,
+        text: `${playerFighter.name} raised Digi-Shield (-60% incoming DMG, +12 MP).`,
         type: 'action',
       },
       ...logs,
     ]);
 
-    setTimeout(() => {
-      setPlayerEffect('none');
-    }, 1000);
+    setTimeout(() => setPlayerEffect('none'), 900);
   };
 
   const handlePlayerCharge = () => {
@@ -425,22 +526,28 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
     triggerHaptic('medium');
     setIsCharged(true);
     setPlayerEffect('charge');
-    showDamagePopup('player', '⚡ CHARGED!', 'text-amber-300 font-bold');
+    showDamagePopup('player', 'CHARGED!', 'text-amber-300 font-bold');
 
-    setPlayerFighter((prev) => prev ? { ...prev, sp: Math.min(100, prev.sp + 35) } : null);
+    setPlayerFighter((prev) =>
+      prev
+        ? {
+            ...prev,
+            sp: Math.min(100, prev.sp + 35),
+            mp: Math.min(prev.maxMp || 100, (prev.mp || 0) + 18),
+          }
+        : null
+    );
 
     setBattleLogs((logs) => [
       {
         id: `pl-${Date.now()}`,
-        text: `⚡ ${playerFighter.name} gathered Digital Soul energy! Attack power amplified!`,
+        text: `${playerFighter.name} gathered Digital Soul (+35 SP, +18 MP & amplified next strike).`,
         type: 'action',
       },
       ...logs,
     ]);
 
-    setTimeout(() => {
-      setPlayerEffect('none');
-    }, 1000);
+    setTimeout(() => setPlayerEffect('none'), 900);
   };
 
   const handleClaimVictory = () => {
@@ -474,21 +581,24 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-slate-950/90 backdrop-blur-md android-safe-modal">
-      <div className="relative w-full max-w-2xl bg-slate-900 border-2 border-indigo-500/50 rounded-3xl p-5 shadow-2xl flex flex-col max-h-[95vh] overflow-y-auto">
+      <div className="relative w-full max-w-2xl bg-slate-900 border border-indigo-500/45 rounded-3xl p-4 sm:p-5 shadow-2xl flex flex-col max-h-[95vh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-          <div className="flex items-center gap-2">
-            <Swords className="w-5 h-5 text-indigo-400" />
-            <div>
-              <h3 className="font-chakra font-bold text-white text-lg">
-                ONLINE DIGITAL COLOSSEUM
+          <div className="flex items-center gap-2.5 min-w-0">
+            <Swords className="w-5 h-5 text-indigo-400 shrink-0" />
+            <div className="min-w-0">
+              <h3 className="font-chakra font-bold text-white text-lg truncate">
+                Digital Colosseum
               </h3>
-              <p className="text-slate-400 text-xs">Battle Real-Time Tamers Across the Digital World</p>
+              <p className="text-slate-400 text-xs truncate">
+                Elemental Matchups (1.5x) & Equipped Technique Combat
+              </p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-full hover:bg-slate-800 text-slate-400 hover:text-white"
+            className="min-h-[44px] min-w-[44px] rounded-xl hover:bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center cursor-pointer shrink-0"
+            aria-label="Close Colosseum"
           >
             <X className="w-5 h-5" />
           </button>
@@ -496,51 +606,42 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
 
         {/* LOBBY STATE */}
         {matchState === 'lobby' && (
-          <div className="py-6 space-y-4">
+          <div className="py-5 space-y-4">
             <div className="text-center">
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 font-pixel text-[10px] border border-emerald-500/30 mb-2">
-                <Globe className="w-3.5 h-3.5" />
-                <span>SERVER STATUS: ONLINE (1,429 TAMERS READY)</span>
+              <div className="text-xs text-emerald-300 font-chakra font-semibold mb-1">
+                Arena Online · Elemental Cycle: Fire &gt; Nature &gt; Air &gt; Ice &gt; Fire · Holy ↔ Dark · Hand ↔ Weapon
               </div>
-              <h4 className="font-chakra font-bold text-white text-xl">CHOOSE YOUR BATTLE FORMAT</h4>
+              <h4 className="font-chakra font-bold text-white text-xl">Choose Your Battle Format</h4>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {/* Quick Ranked Match */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <div
                 onClick={handleStartQuickMatch}
-                className="p-5 bg-gradient-to-br from-indigo-950/80 to-slate-900 border-2 border-indigo-500/40 hover:border-indigo-400 rounded-2xl cursor-pointer transition-all hover:scale-[1.02] flex flex-col justify-between"
+                className="p-4 sm:p-5 bg-gradient-to-br from-indigo-950/80 to-slate-900 border border-indigo-500/40 hover:border-indigo-400 rounded-2xl cursor-pointer transition-all flex flex-col justify-between"
               >
                 <div>
-                  <div className="w-12 h-12 rounded-xl bg-indigo-500/20 border border-indigo-500/40 flex items-center justify-center text-2xl mb-3">
-                    ⚔️
-                  </div>
-                  <h5 className="font-chakra font-bold text-white text-lg">QUICK MATCH</h5>
+                  <h5 className="font-chakra font-bold text-white text-lg">Quick Match</h5>
                   <p className="text-slate-400 text-xs mt-1">
-                    Instantly pair against an evenly matched rival DigiDestined at your current evolution stage.
+                    Pair against a stage-matched rival Digimon. Exploit elemental advantages for 1.5x damage!
                   </p>
                 </div>
-                <button className="mt-4 w-full bg-indigo-500 hover:bg-indigo-400 text-slate-950 font-pixel text-xs py-2.5 rounded-xl font-bold">
-                  FIND OPPONENT
+                <button className="mt-4 w-full min-h-[44px] bg-indigo-500 hover:bg-indigo-400 text-slate-950 font-chakra text-sm py-2.5 rounded-xl font-bold cursor-pointer">
+                  Find Opponent
                 </button>
               </div>
 
-              {/* Private Room PvP */}
               <div
                 onClick={handleHostRoom}
-                className="p-5 bg-gradient-to-br from-cyan-950/80 to-slate-900 border-2 border-cyan-500/40 hover:border-cyan-400 rounded-2xl cursor-pointer transition-all hover:scale-[1.02] flex flex-col justify-between"
+                className="p-4 sm:p-5 bg-gradient-to-br from-cyan-950/80 to-slate-900 border border-cyan-500/40 hover:border-cyan-400 rounded-2xl cursor-pointer transition-all flex flex-col justify-between"
               >
                 <div>
-                  <div className="w-12 h-12 rounded-xl bg-cyan-500/20 border border-cyan-500/40 flex items-center justify-center text-2xl mb-3">
-                    📟
-                  </div>
-                  <h5 className="font-chakra font-bold text-white text-lg">CREATE BATTLE ROOM</h5>
+                  <h5 className="font-chakra font-bold text-white text-lg">Create Battle Room</h5>
                   <p className="text-slate-400 text-xs mt-1">
-                    Generate a 4-digit Digivice code to challenge a friend or rival directly.
+                    Generate a 4-digit Digivice room code to challenge a rival challenger directly.
                   </p>
                 </div>
-                <button className="mt-4 w-full bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-pixel text-xs py-2.5 rounded-xl font-bold">
-                  HOST 4-DIGIT ROOM
+                <button className="mt-4 w-full min-h-[44px] bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-chakra text-sm py-2.5 rounded-xl font-bold cursor-pointer">
+                  Host 4-Digit Room
                 </button>
               </div>
             </div>
@@ -551,7 +652,7 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
                   sound.playButton();
                   onOpenAdventure();
                 }}
-                className="p-4 bg-gradient-to-r from-emerald-950/90 to-slate-900 border-2 border-emerald-500/40 hover:border-emerald-400 rounded-2xl cursor-pointer transition-all flex items-center justify-between gap-3"
+                className="p-4 bg-gradient-to-r from-emerald-950/90 to-slate-900 border border-emerald-500/40 hover:border-emerald-400 rounded-2xl cursor-pointer transition-all flex items-center justify-between gap-3"
               >
                 <div className="flex items-center gap-3 min-w-0">
                   <div className="w-11 h-11 rounded-xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center shrink-0">
@@ -559,14 +660,14 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
                   </div>
                   <div className="min-w-0">
                     <h5 className="font-chakra font-bold text-white text-base">
-                      WORLD ADVENTURE MODE
+                      World Adventure Mode
                     </h5>
                     <p className="text-slate-300 text-xs truncate">
-                      7 Biomes · Rookie to Mega Waves · Farm Strength EXP & Items
+                      7 Biomes · Boss Crest Relics · Farm Stats, Meat & Vitamins
                     </p>
                   </div>
                 </div>
-                <button className="px-4 py-2 bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-chakra text-xs font-bold rounded-xl shrink-0 cursor-pointer whitespace-nowrap">
+                <button className="min-h-[44px] px-4 py-2 bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-chakra text-xs font-bold rounded-xl shrink-0 cursor-pointer whitespace-nowrap">
                   Enter Adventure
                 </button>
               </div>
@@ -580,23 +681,26 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
             <motion.div
               animate={{ rotate: 360 }}
               transition={{ repeat: Infinity, duration: 2, ease: 'linear' }}
-              className="w-16 h-16 rounded-full border-4 border-indigo-500 border-t-transparent mb-4"
+              className="w-14 h-14 rounded-full border-4 border-indigo-500 border-t-transparent mb-4"
             />
             <h4 className="font-chakra font-bold text-white text-xl">
-              CONNECTING TO DIGITAL NETWORK...
+              Connecting to Colosseum...
             </h4>
             <p className="text-slate-400 text-xs mt-1">
-              {roomCode ? `ROOM CODE: #${roomCode} (Waiting for rival)` : 'Searching for rival Tamer...'}
+              {roomCode ? `Room #${roomCode} · Pairing rival challenger...` : 'Searching for stage-matched rival...'}
             </p>
           </div>
         )}
 
         {/* BATTLING STATE */}
         {matchState === 'battling' && playerFighter && opponentFighter && (
-          <div className="flex flex-col space-y-4 py-2">
+          <div className="flex flex-col space-y-3 py-2">
             {/* Arena Battle Stage */}
-            <div className={`relative w-full h-56 sm:h-64 bg-gradient-to-b from-indigo-950 via-slate-900 to-slate-950 rounded-2xl border-2 border-slate-700 p-4 flex justify-between items-center overflow-hidden scanlines transition-transform ${arenaShake ? 'battle-arena-shake' : ''}`}>
-              {/* Screen Impact Flash Layer */}
+            <div
+              className={`relative w-full h-56 sm:h-64 bg-gradient-to-b from-indigo-950 via-slate-900 to-slate-950 rounded-2xl border border-slate-700 p-3.5 sm:p-4 flex justify-between items-center overflow-hidden scanlines transition-transform ${
+                arenaShake ? 'battle-arena-shake' : ''
+              }`}
+            >
               {screenFlash !== 'none' && (
                 <div
                   className={`absolute inset-0 pointer-events-none z-30 ${
@@ -609,40 +713,54 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
                 />
               )}
 
-              {/* Turn Banner */}
-              <div className="absolute top-2 left-1/2 -translate-x-1/2 px-3 py-1 bg-slate-900/90 border border-slate-700 rounded-full font-pixel text-[9px] text-amber-300 z-20 shadow-md">
-                {isPlayerTurn ? "YOUR TURN - CHOOSE MOVE!" : `${opponentFighter.name.toUpperCase()} IS ATTACKING...`}
+              <div className="absolute top-2 left-1/2 -translate-x-1/2 px-3 py-1 bg-slate-950/90 border border-slate-700 rounded-lg font-chakra text-xs font-semibold text-amber-300 z-20 whitespace-nowrap">
+                {isPlayerTurn ? 'Your Turn — Select Command' : `${opponentFighter.name} Acting...`}
               </div>
 
-              {/* Player Fighter Side (Left) */}
+              {/* Player Fighter Side */}
               <div className="flex flex-col items-center z-10 relative">
-                {/* Health & SP Bar */}
-                <div className="w-28 sm:w-36 bg-slate-950/90 border border-cyan-500/40 rounded-xl p-2 mb-2 font-pixel text-[9px]">
-                  <div className="flex justify-between text-cyan-300 font-bold mb-1">
+                <div className="w-32 sm:w-40 bg-slate-950/90 border border-cyan-500/40 rounded-xl p-2 mb-2 text-xs font-chakra tabular-nums">
+                  <div className="flex justify-between items-center text-cyan-200 font-bold gap-1">
                     <span className="truncate">{playerFighter.name}</span>
-                    <span>{playerFighter.currentHp}/{playerFighter.maxHp}</span>
+                    <span className="text-[10px] text-slate-300 shrink-0">
+                      {ATTACK_ELEMENT_META[playerFighter.element || 'neutral'].shortLabel}
+                    </span>
                   </div>
-                  {/* HP bar */}
+                  <div className="flex justify-between text-[10px] text-slate-300 mt-0.5 mb-0.5">
+                    <span>HP {playerFighter.currentHp}/{playerFighter.maxHp}</span>
+                    <span className="text-cyan-300">MP {playerFighter.mp ?? 0}/{playerFighter.maxMp ?? 60}</span>
+                  </div>
                   <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
                     <div
                       className="h-full bg-emerald-400 transition-all duration-300"
                       style={{ width: `${(playerFighter.currentHp / playerFighter.maxHp) * 100}%` }}
                     />
                   </div>
-                  {/* SP bar */}
-                  <div className="w-full h-1 bg-slate-800 rounded-full overflow-hidden mt-1">
-                    <div
-                      className="h-full bg-amber-400 transition-all duration-300"
-                      style={{ width: `${playerFighter.sp}%` }}
-                    />
+                  <div className="grid grid-cols-2 gap-1 mt-1">
+                    <div className="h-1 bg-slate-800 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-cyan-400 transition-all duration-300"
+                        style={{ width: `${((playerFighter.mp ?? 0) / (playerFighter.maxMp || 1)) * 100}%` }}
+                      />
+                    </div>
+                    <div className="h-1 bg-slate-800 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-amber-400 transition-all duration-300"
+                        style={{ width: `${playerFighter.sp}%` }}
+                      />
+                    </div>
                   </div>
                 </div>
 
-                {/* Animated Sprite Box (Lunge forward on attack, shake on hit) */}
-                <div className={`relative flex items-center justify-center ${
-                  playerEffect === 'lunge' ? 'battle-lunge-right' :
-                  playerEffect === 'hit' ? 'battle-shake-hit' : ''
-                }`}>
+                <div
+                  className={`relative flex items-center justify-center ${
+                    playerEffect === 'lunge'
+                      ? 'battle-lunge-right'
+                      : playerEffect === 'hit'
+                      ? 'battle-shake-hit'
+                      : ''
+                  }`}
+                >
                   <DigimonSprite
                     species={DIGIMON_DATABASE[playerFighter.speciesId]}
                     action={playerActionAnim}
@@ -650,53 +768,54 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
                     scale={1.0}
                   />
 
-                  {/* Active Shield Barrier Aura */}
                   {(isDefending || playerEffect === 'shield') && (
                     <div className="absolute inset-0 -m-3 rounded-full border-2 border-cyan-400 bg-cyan-400/20 battle-shield-aura pointer-events-none z-20 flex items-center justify-center">
-                      <Shield className="w-7 h-7 text-cyan-300 opacity-90 drop-shadow-[0_0_8px_rgba(56,189,248,0.8)]" />
+                      <Shield className="w-7 h-7 text-cyan-300" />
                     </div>
                   )}
 
-                  {/* Active Digital Soul Charged Aura */}
                   {(isCharged || playerEffect === 'charge') && (
                     <div className="absolute inset-0 -m-3 rounded-full border-2 border-amber-400 bg-amber-400/20 battle-charge-aura pointer-events-none z-20 flex items-center justify-center">
-                      <Zap className="w-7 h-7 text-amber-300 opacity-95 drop-shadow-[0_0_8px_rgba(245,158,11,0.8)] animate-pulse" />
+                      <Zap className="w-7 h-7 text-amber-300" />
                     </div>
                   )}
 
-                  {/* Floating Damage & Status Popups */}
-                  {damagePopups.filter((p) => p.target === 'player').map((p) => (
-                    <div
-                      key={p.id}
-                      className={`absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap font-pixel text-xs drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] pointer-events-none z-40 battle-damage-float ${p.color}`}
-                    >
-                      {p.text}
-                    </div>
-                  ))}
+                  {damagePopups
+                    .filter((p) => p.target === 'player')
+                    .map((p) => (
+                      <div
+                        key={p.id}
+                        className={`absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap font-pixel text-xs drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] pointer-events-none z-40 battle-damage-float ${p.color}`}
+                      >
+                        {p.text}
+                      </div>
+                    ))}
                 </div>
               </div>
 
-              {/* VS Crest in Center */}
-              <div className="flex flex-col items-center opacity-40">
-                <span className="font-pixel text-2xl text-slate-400 font-bold">VS</span>
+              <div className="hidden sm:flex flex-col items-center opacity-40">
+                <span className="font-chakra font-bold text-xl text-slate-400">VS</span>
               </div>
 
-              {/* Opponent Fighter Side (Right) */}
+              {/* Opponent Fighter Side */}
               <div className="flex flex-col items-center z-10 relative">
-                {/* Health & SP Bar */}
-                <div className="w-28 sm:w-36 bg-slate-950/90 border border-rose-500/40 rounded-xl p-2 mb-2 font-pixel text-[9px]">
-                  <div className="flex justify-between text-rose-300 font-bold mb-1">
+                <div className="w-32 sm:w-40 bg-slate-950/90 border border-rose-500/40 rounded-xl p-2 mb-2 text-xs font-chakra tabular-nums">
+                  <div className="flex justify-between items-center text-rose-200 font-bold gap-1">
                     <span className="truncate">{opponentFighter.name}</span>
-                    <span>{opponentFighter.currentHp}/{opponentFighter.maxHp}</span>
+                    <span className="text-[10px] text-slate-300 shrink-0">
+                      {ATTACK_ELEMENT_META[opponentFighter.element || 'neutral'].shortLabel}
+                    </span>
                   </div>
-                  {/* HP bar */}
+                  <div className="flex justify-between text-[10px] text-slate-300 mt-0.5 mb-0.5">
+                    <span>HP {opponentFighter.currentHp}/{opponentFighter.maxHp}</span>
+                    <span className="text-amber-300">SP {opponentFighter.sp}</span>
+                  </div>
                   <div className="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
                     <div
                       className="h-full bg-rose-400 transition-all duration-300"
                       style={{ width: `${(opponentFighter.currentHp / opponentFighter.maxHp) * 100}%` }}
                     />
                   </div>
-                  {/* SP bar */}
                   <div className="w-full h-1 bg-slate-800 rounded-full overflow-hidden mt-1">
                     <div
                       className="h-full bg-amber-400 transition-all duration-300"
@@ -705,11 +824,15 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
                   </div>
                 </div>
 
-                {/* Animated Sprite Box (Lunge forward on attack, shake on hit) */}
-                <div className={`relative flex items-center justify-center ${
-                  opponentEffect === 'lunge' ? 'battle-lunge-left' :
-                  opponentEffect === 'hit' ? 'battle-shake-hit' : ''
-                }`}>
+                <div
+                  className={`relative flex items-center justify-center ${
+                    opponentEffect === 'lunge'
+                      ? 'battle-lunge-left'
+                      : opponentEffect === 'hit'
+                      ? 'battle-shake-hit'
+                      : ''
+                  }`}
+                >
                   <DigimonSprite
                     species={DIGIMON_DATABASE[opponentFighter.speciesId]}
                     action={opponentActionAnim}
@@ -717,59 +840,114 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
                     scale={1.0}
                   />
 
-                  {/* Floating Damage & Status Popups */}
-                  {damagePopups.filter((p) => p.target === 'opponent').map((p) => (
-                    <div
-                      key={p.id}
-                      className={`absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap font-pixel text-xs drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] pointer-events-none z-40 battle-damage-float ${p.color}`}
-                    >
-                      {p.text}
-                    </div>
-                  ))}
+                  {damagePopups
+                    .filter((p) => p.target === 'opponent')
+                    .map((p) => (
+                      <div
+                        key={p.id}
+                        className={`absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap font-pixel text-xs drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] pointer-events-none z-40 battle-damage-float ${p.color}`}
+                      >
+                        {p.text}
+                      </div>
+                    ))}
                 </div>
               </div>
             </div>
 
-            {/* Battle Actions Bar */}
+            {/* Equipped Techniques Row (Up to 4 Learned Attacks using MP) */}
+            {playerFighter.equippedMoves && playerFighter.equippedMoves.length > 0 && (
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between text-[11px] font-chakra text-slate-400 px-0.5">
+                  <span>Equipped Techniques (MP Cost · Exploits 1.5x Elemental Weakness)</span>
+                  <span className="text-cyan-300 font-semibold tabular-nums">
+                    MP {playerFighter.mp ?? 0}/{playerFighter.maxMp ?? 60}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {playerFighter.equippedMoves.map((move) => {
+                    const hasMp = (playerFighter.mp ?? 0) >= move.mpCost;
+                    const mult = getElementDamageMultiplier(
+                      move.element,
+                      opponentFighter.element || 'neutral'
+                    );
+                    const elMeta = ATTACK_ELEMENT_META[move.element];
+                    return (
+                      <button
+                        key={move.id}
+                        disabled={!isPlayerTurn || !hasMp}
+                        onClick={() => handleUseLearnedTechnique(move)}
+                        className={`min-h-[52px] px-2.5 py-2 rounded-xl border text-left flex flex-col justify-between transition-all cursor-pointer active:scale-95 disabled:opacity-40 ${
+                          mult > 1
+                            ? 'bg-emerald-950/60 hover:bg-emerald-900/60 border-emerald-400/70'
+                            : 'bg-slate-800/90 hover:bg-slate-700 border-slate-600/80'
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-1 w-full">
+                          <span className="font-chakra font-bold text-xs text-white truncate">
+                            {move.name}
+                          </span>
+                          {mult > 1 && (
+                            <span className="text-[10px] font-chakra font-bold text-emerald-300 shrink-0">
+                              1.5x
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center justify-between text-[10px] font-chakra text-slate-300 w-full mt-0.5">
+                          <span>{elMeta.shortLabel} · {move.power}P</span>
+                          <span className="text-cyan-300 font-semibold">{move.mpCost} MP</span>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Core Combat Actions */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               <button
                 disabled={!isPlayerTurn}
                 onClick={handlePlayerAttack}
-                className="p-3 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 border border-slate-600 rounded-xl flex flex-col items-center justify-center font-pixel text-[10px] text-white active:scale-95 transition-all"
+                className="min-h-[50px] px-3 py-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-45 border border-slate-600 rounded-xl flex flex-col items-center justify-center font-chakra text-sm font-bold text-white cursor-pointer active:scale-95 transition-all"
               >
-                <span className="text-xl mb-1">⚔️</span>
-                <span>ATTACK</span>
-                <span className="text-[8px] text-slate-400 mt-0.5">+20 SP</span>
+                <span className="flex items-center gap-1.5">
+                  <Swords className="w-4 h-4 text-slate-200" /> Strike
+                </span>
+                <span className="text-[10px] font-normal text-slate-400">+20 SP · +8 MP</span>
               </button>
 
               <button
                 disabled={!isPlayerTurn || playerFighter.sp < 50}
                 onClick={handlePlayerSpecial}
-                className="p-3 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-400 hover:to-amber-400 disabled:opacity-50 text-slate-950 border border-amber-300 rounded-xl flex flex-col items-center justify-center font-pixel text-[10px] font-bold active:scale-95 transition-all"
+                className="min-h-[50px] px-3 py-2 bg-amber-400 hover:bg-amber-300 disabled:opacity-45 text-slate-950 border border-amber-300 rounded-xl flex flex-col items-center justify-center font-chakra text-sm font-bold cursor-pointer active:scale-95 transition-all"
               >
-                <Flame className="w-5 h-5 mb-1 fill-slate-950" />
-                <span className="truncate max-w-[110px]">{playerFighter.signatureMove.name.split(' ')[0]}</span>
-                <span className="text-[8px] opacity-80 mt-0.5">50 SP COST</span>
+                <span className="flex items-center gap-1.5 max-w-full truncate">
+                  <Flame className="w-4 h-4 shrink-0" />
+                  <span className="truncate">{playerFighter.signatureMove.name}</span>
+                </span>
+                <span className="text-[10px] font-semibold opacity-80">50 SP Signature</span>
               </button>
 
               <button
                 disabled={!isPlayerTurn}
                 onClick={handlePlayerDefend}
-                className="p-3 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 border border-slate-600 rounded-xl flex flex-col items-center justify-center font-pixel text-[10px] text-white active:scale-95 transition-all"
+                className="min-h-[50px] px-3 py-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-45 border border-slate-600 rounded-xl flex flex-col items-center justify-center font-chakra text-sm font-bold text-white cursor-pointer active:scale-95 transition-all"
               >
-                <Shield className="w-5 h-5 mb-1 text-cyan-400" />
-                <span>SHIELD</span>
-                <span className="text-[8px] text-slate-400 mt-0.5">-60% DMG</span>
+                <span className="flex items-center gap-1.5">
+                  <Shield className="w-4 h-4 text-cyan-400" /> Shield
+                </span>
+                <span className="text-[10px] font-normal text-slate-400">-60% DMG · +12 MP</span>
               </button>
 
               <button
                 disabled={!isPlayerTurn}
                 onClick={handlePlayerCharge}
-                className="p-3 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 border border-slate-600 rounded-xl flex flex-col items-center justify-center font-pixel text-[10px] text-white active:scale-95 transition-all"
+                className="min-h-[50px] px-3 py-2 bg-slate-800 hover:bg-slate-700 disabled:opacity-45 border border-slate-600 rounded-xl flex flex-col items-center justify-center font-chakra text-sm font-bold text-white cursor-pointer active:scale-95 transition-all"
               >
-                <Zap className="w-5 h-5 mb-1 text-amber-400" />
-                <span>CHARGE</span>
-                <span className="text-[8px] text-slate-400 mt-0.5">+35 SP & BOOST</span>
+                <span className="flex items-center gap-1.5">
+                  <Zap className="w-4 h-4 text-amber-400" /> Charge
+                </span>
+                <span className="text-[10px] font-normal text-slate-400">+35 SP · +18 MP</span>
               </button>
             </div>
 
@@ -778,13 +956,13 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
               {battleLogs.map((log) => (
                 <div
                   key={log.id}
-                  className={`${
+                  className={
                     log.type === 'special'
-                      ? 'text-amber-400 font-bold'
+                      ? 'text-amber-300 font-semibold'
                       : log.type === 'damage'
-                      ? 'text-rose-400'
+                      ? 'text-rose-300'
                       : 'text-slate-300'
-                  }`}
+                  }
                 >
                   {log.text}
                 </div>
@@ -797,28 +975,27 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
         {matchState === 'victory' && (
           <div className="py-10 flex flex-col items-center justify-center text-center">
             <Trophy className="w-16 h-16 text-amber-400 mb-2 animate-bounce" />
-            <h4 className="font-chakra font-bold text-white text-3xl">VICTORY ACHIEVED!</h4>
+            <h4 className="font-chakra font-bold text-white text-3xl">Victory Achieved!</h4>
             <p className="text-slate-300 text-sm mt-1 max-w-sm">
-              Your Digimon fought heroically and earned triumphant glory in the Online Colosseum!
+              Your Digimon fought strategically and earned triumphant glory in the Digital Colosseum.
             </p>
-            <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 my-5 flex items-center justify-center gap-6 font-pixel text-xs">
-              <span className="text-amber-400">🪙 +100 BITS</span>
-              <span className="text-cyan-400">⚡ +30 DP POWER</span>
-              <span className="text-emerald-400">★ +1 BATTLE WIN</span>
+            <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 my-5 flex items-center justify-center gap-6 font-chakra font-bold text-sm tabular-nums">
+              <span className="text-amber-400">+100 Bits</span>
+              <span className="text-cyan-400">+30 DP</span>
+              <span className="text-emerald-400">+1 Battle Win</span>
             </div>
             <div className="flex flex-col sm:flex-row gap-3">
               <button
                 onClick={handleRematch}
-                className="bg-indigo-600 hover:bg-indigo-500 text-white font-pixel text-xs px-6 py-3.5 rounded-xl font-bold shadow-lg shadow-indigo-500/30 flex items-center justify-center gap-2"
+                className="min-h-[44px] bg-indigo-600 hover:bg-indigo-500 text-white font-chakra text-sm px-6 py-3 rounded-xl font-bold shadow-lg shadow-indigo-500/30 cursor-pointer"
               >
-                <span>⚔️</span>
-                <span>BATTLE ANOTHER RIVAL</span>
+                Battle Another Rival
               </button>
               <button
                 onClick={handleClaimVictory}
-                className="bg-amber-500 hover:bg-amber-400 text-slate-950 font-pixel text-xs px-6 py-3.5 rounded-xl font-bold shadow-lg shadow-amber-500/40"
+                className="min-h-[44px] bg-amber-400 hover:bg-amber-300 text-slate-950 font-chakra text-sm px-6 py-3 rounded-xl font-bold cursor-pointer"
               >
-                CLAIM SPOILS & RETURN
+                Claim Spoils & Return
               </button>
             </div>
           </div>
@@ -827,32 +1004,29 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
         {/* DEFEAT STATE */}
         {matchState === 'defeat' && (
           <div className="py-10 flex flex-col items-center justify-center text-center">
-            <span className="text-5xl mb-2">💔</span>
-            <h4 className="font-chakra font-bold text-white text-3xl">DEFEATED IN COMBAT</h4>
+            <h4 className="font-chakra font-bold text-white text-3xl">Defeated in Combat</h4>
             <p className="text-slate-400 text-sm mt-1 max-w-sm">
-              Do not lose heart! Feed Big Meat, give vitamins to recover, and train at the punching bag!
+              Train at the 6-Station Gym or equip counter-element techniques for 1.5x advantage next time!
             </p>
-            <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 my-5 flex items-center justify-center gap-4 font-pixel text-xs text-slate-400">
-              <span>🪙 +25 Consolation Bits · +8 DP</span>
+            <div className="bg-slate-950 border border-slate-800 rounded-2xl p-4 my-5 font-chakra text-sm text-slate-300 tabular-nums">
+              +25 Consolation Bits · +8 DP
             </div>
             <div className="flex flex-col sm:flex-row gap-3">
               <button
                 onClick={handleRematch}
-                className="bg-indigo-600 hover:bg-indigo-500 text-white font-pixel text-xs px-6 py-3.5 rounded-xl font-bold flex items-center justify-center gap-2"
+                className="min-h-[44px] bg-indigo-600 hover:bg-indigo-500 text-white font-chakra text-sm px-6 py-3 rounded-xl font-bold cursor-pointer"
               >
-                <span>🔄</span>
-                <span>TRY ANOTHER BATTLE</span>
+                Try Another Battle
               </button>
               <button
                 onClick={handleClaimDefeat}
-                className="bg-slate-700 hover:bg-slate-600 text-white font-pixel text-xs px-6 py-3.5 rounded-xl font-bold"
+                className="min-h-[44px] bg-slate-700 hover:bg-slate-600 text-white font-chakra text-sm px-6 py-3 rounded-xl font-bold cursor-pointer"
               >
-                RETURN & HEAL
+                Return & Recover
               </button>
             </div>
           </div>
         )}
-
       </div>
     </div>
   );

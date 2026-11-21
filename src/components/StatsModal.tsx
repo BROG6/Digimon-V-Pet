@@ -7,19 +7,35 @@ import {
   computeNaturalEvoTiming,
   formatDurationMs,
 } from '../utils/evolutionEngine';
-import { getStageHungerHeartMs, getStagePoopIntervalMs } from '../utils/carePacing';
+import {
+  formatBedtimeLabel,
+  getStageHungerHeartMs,
+  getStagePoopIntervalMs,
+} from '../utils/carePacing';
+import {
+  ATTACK_ELEMENT_META,
+  BATTLE_TECHNIQUE_CATALOG,
+  MAX_EQUIPPED_ATTACKS,
+  getEffectiveBattleStats,
+  getEquippedBattleMoves,
+  getLearnedTechniqueIds,
+  getSpeciesElementType,
+} from '../data/battleTechniques';
 import { DigimonSprite } from './DigimonSprite';
-import { 
-  X, 
-  Activity, 
-  Shield, 
-  Zap, 
-  Flame, 
-  Trophy, 
-  Heart, 
-  Sparkles, 
-  Dumbbell, 
-  Award
+import {
+  X,
+  Activity,
+  Shield,
+  Zap,
+  Flame,
+  Trophy,
+  Heart,
+  Sparkles,
+  Dumbbell,
+  Award,
+  Brain,
+  Droplets,
+  Check,
 } from 'lucide-react';
 import { sound } from '../utils/audio';
 
@@ -33,6 +49,7 @@ interface StatsModalProps {
   onOpenColosseum?: () => void;
   onOpenDigidex?: () => void;
   onEquipSpecialItem?: (itemId: SpecialItemId | null) => void;
+  onToggleEquipAttack?: (moveId: string) => void;
   onUpdatePlayerName?: (name: string) => void;
   onUpdateNickname?: (nickname: string) => void;
 }
@@ -49,6 +66,7 @@ export const StatsModal: React.FC<StatsModalProps> = ({
   onOpenColosseum,
   onOpenDigidex,
   onEquipSpecialItem,
+  onToggleEquipAttack,
   onUpdatePlayerName,
   onUpdateNickname,
 }) => {
@@ -85,12 +103,19 @@ export const StatsModal: React.FC<StatsModalProps> = ({
   const ownedItems = pet.ownedSpecialItems || [];
   const equippedItem = pet.equippedSpecialItem ? SPECIAL_ITEMS[pet.equippedSpecialItem] : null;
 
-  // Attack boost from training
-  const trainingAtkBonus = Math.floor(pet.trainingCount * 2);
-  const totalAtk = (species?.baseAtk || 20) + trainingAtkBonus;
-  const totalHp = species?.baseHp || 100;
-  const totalDef = species?.baseDef || 15;
-  const totalSpd = species?.baseSpd || 15;
+  // Attack & 6-Stat RPG Profile (Digimon World: Next Order)
+  const rpgStats = getEffectiveBattleStats(pet, species);
+  const speciesElement = getSpeciesElementType(species);
+  const elementMeta = ATTACK_ELEMENT_META[speciesElement];
+  const learnedIds = getLearnedTechniqueIds(pet, species);
+  const equippedMoves = getEquippedBattleMoves(pet, species);
+  const equippedIdSet = new Set(equippedMoves.map((m) => m.id));
+  const totalHp = rpgStats.maxHp;
+  const totalMp = rpgStats.maxMp;
+  const totalAtk = rpgStats.offense;
+  const totalDef = rpgStats.defense;
+  const totalSpd = rpgStats.speed;
+  const totalBrains = rpgStats.brains;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/90 backdrop-blur-md font-display android-safe-modal">
@@ -323,105 +348,197 @@ export const StatsModal: React.FC<StatsModalProps> = ({
         {/* TAB 1: COMBAT STATS */}
         {activeTab === 'combat' && (
           <div className="py-4 space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {/* Elemental Affinity Summary */}
+            <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 flex flex-wrap items-center justify-between gap-2 text-xs font-chakra">
+              <div>
+                <span className="text-slate-400">Elemental Type: </span>
+                <span className="font-bold text-white">{elementMeta.label}</span>
+              </div>
+              <div className="text-slate-300">
+                <span>1.5x Strong vs: <strong className="text-emerald-300">{elementMeta.beatsLabel}</strong></span>
+                {elementMeta.weaknessLabel !== 'None' && (
+                  <span> · Weak vs: <strong className="text-rose-300">{elementMeta.weaknessLabel}</strong></span>
+                )}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 tabular-nums">
               {/* HP Card */}
               <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 space-y-1.5">
                 <div className="flex justify-between items-center text-xs font-pixel">
                   <span className="text-emerald-400 flex items-center gap-1">
-                    <Heart className="w-3.5 h-3.5" /> MAX HEALTH (HP)
+                    <Heart className="w-3.5 h-3.5" /> MAX HP (BOULDER)
                   </span>
-                  <span className="text-white font-bold">{totalHp} HP</span>
+                  <span className="text-white font-bold">{totalHp}</span>
                 </div>
                 <div className="w-full h-2 rounded-full bg-slate-800 overflow-hidden">
-                  <div 
+                  <div
                     className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 rounded-full"
-                    style={{ width: `${Math.min(100, (totalHp / 700) * 100)}%` }}
+                    style={{ width: `${Math.min(100, (totalHp / 800) * 100)}%` }}
                   />
                 </div>
-                <div className="text-[10px] text-slate-400">Total stamina in digital colosseum clashes</div>
               </div>
 
-              {/* Attack Card */}
+              {/* MP Card */}
+              <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 space-y-1.5">
+                <div className="flex justify-between items-center text-xs font-pixel">
+                  <span className="text-cyan-300 flex items-center gap-1">
+                    <Droplets className="w-3.5 h-3.5" /> MAX MP (WATERFALL)
+                  </span>
+                  <span className="text-white font-bold">{totalMp}</span>
+                </div>
+                <div className="w-full h-2 rounded-full bg-slate-800 overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-cyan-500 to-sky-400 rounded-full"
+                    style={{ width: `${Math.min(100, (totalMp / 300) * 100)}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* Offense Card */}
               <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 space-y-1.5">
                 <div className="flex justify-between items-center text-xs font-pixel">
                   <span className="text-rose-400 flex items-center gap-1">
-                    <Flame className="w-3.5 h-3.5" /> ATTACK POWER (ATK)
+                    <Flame className="w-3.5 h-3.5" /> OFFENSE (TREE)
                   </span>
-                  <span className="text-white font-bold">
-                    {totalAtk}
-                    {trainingAtkBonus > 0 && (
-                      <span className="text-amber-400 text-[10px] ml-1">(+{trainingAtkBonus})</span>
-                    )}
-                  </span>
+                  <span className="text-white font-bold">{totalAtk}</span>
                 </div>
                 <div className="w-full h-2 rounded-full bg-slate-800 overflow-hidden">
-                  <div 
+                  <div
                     className="h-full bg-gradient-to-r from-rose-500 to-amber-400 rounded-full"
                     style={{ width: `${Math.min(100, (totalAtk / 260) * 100)}%` }}
                   />
                 </div>
-                <div className="text-[10px] text-slate-400">Physical & elemental offensive strike output</div>
               </div>
 
               {/* Defense Card */}
               <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 space-y-1.5">
                 <div className="flex justify-between items-center text-xs font-pixel">
                   <span className="text-blue-400 flex items-center gap-1">
-                    <Shield className="w-3.5 h-3.5" /> DEFENSE ARMOR (DEF)
+                    <Shield className="w-3.5 h-3.5" /> DEFENSE (GLOVE)
                   </span>
                   <span className="text-white font-bold">{totalDef}</span>
                 </div>
                 <div className="w-full h-2 rounded-full bg-slate-800 overflow-hidden">
-                  <div 
+                  <div
                     className="h-full bg-gradient-to-r from-blue-500 to-cyan-400 rounded-full"
                     style={{ width: `${Math.min(100, (totalDef / 220) * 100)}%` }}
                   />
                 </div>
-                <div className="text-[10px] text-slate-400">Damage reduction and armor hardness</div>
               </div>
 
               {/* Speed Card */}
               <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 space-y-1.5">
                 <div className="flex justify-between items-center text-xs font-pixel">
                   <span className="text-amber-400 flex items-center gap-1">
-                    <Zap className="w-3.5 h-3.5" /> AGILITY & SPEED (SPD)
+                    <Zap className="w-3.5 h-3.5" /> SPEED (TRACK)
                   </span>
                   <span className="text-white font-bold">{totalSpd}</span>
                 </div>
                 <div className="w-full h-2 rounded-full bg-slate-800 overflow-hidden">
-                  <div 
+                  <div
                     className="h-full bg-gradient-to-r from-amber-400 to-yellow-300 rounded-full"
                     style={{ width: `${Math.min(100, (totalSpd / 200) * 100)}%` }}
                   />
                 </div>
-                <div className="text-[10px] text-slate-400">Turn order priority and evasion capability</div>
+              </div>
+
+              {/* Brains Card */}
+              <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 space-y-1.5">
+                <div className="flex justify-between items-center text-xs font-pixel">
+                  <span className="text-violet-400 flex items-center gap-1">
+                    <Brain className="w-3.5 h-3.5" /> BRAINS (BLACKBOARD)
+                  </span>
+                  <span className="text-white font-bold">{totalBrains}</span>
+                </div>
+                <div className="w-full h-2 rounded-full bg-slate-800 overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-violet-500 to-fuchsia-400 rounded-full"
+                    style={{ width: `${Math.min(100, (totalBrains / 160) * 100)}%` }}
+                  />
+                </div>
               </div>
             </div>
 
             {/* Signature Move Showcase */}
             {species?.signatureMove && (
-              <div className="p-4 rounded-2xl bg-gradient-to-r from-orange-950/40 via-amber-950/30 to-slate-950/80 border border-amber-500/30 space-y-2">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Flame className="w-4 h-4 text-orange-400" />
-                    <span className="font-chakra font-bold text-white text-sm">
-                      SIGNATURE MOVE: {species.signatureMove.name}
+              <div className="p-3.5 rounded-2xl bg-gradient-to-r from-orange-950/40 via-amber-950/30 to-slate-950/80 border border-amber-500/30 space-y-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Flame className="w-4 h-4 text-orange-400 shrink-0" />
+                    <span className="font-chakra font-bold text-white text-sm truncate">
+                      Signature Move: {species.signatureMove.name}
                     </span>
                   </div>
-                  <span className="px-2 py-0.5 rounded-full bg-orange-500/20 text-orange-300 font-pixel text-[9px] border border-orange-500/40 uppercase">
-                    POWER {species.signatureMove.power}
+                  <span className="text-orange-300 font-chakra font-bold text-xs shrink-0 tabular-nums">
+                    Power {species.signatureMove.power} · {elementMeta.shortLabel}
                   </span>
                 </div>
                 <p className="text-xs text-slate-300 leading-relaxed font-chakra">
                   {species.signatureMove.description}
                 </p>
-                <div className="flex items-center gap-3 text-[10px] font-pixel text-slate-400 pt-1">
-                  <span>ELEMENT: {species.signatureMove.type.toUpperCase()}</span>
-                  <span>•</span>
-                  <span>SFX: {species.signatureMove.soundType.toUpperCase()}</span>
-                </div>
               </div>
             )}
+
+            {/* Learned & Equipped Extra Techniques (Max 4) */}
+            <div className="p-3.5 rounded-2xl bg-slate-950/85 border border-slate-800 space-y-2.5">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-chakra font-bold text-cyan-300">
+                  Learned Techniques ({learnedIds.length} Learned · {equippedMoves.length}/{MAX_EQUIPPED_ATTACKS} Equipped)
+                </span>
+                {onOpenTraining && (
+                  <button
+                    onClick={() => {
+                      onClose();
+                      onOpenTraining();
+                    }}
+                    className="text-xs font-chakra font-semibold text-amber-300 hover:underline cursor-pointer"
+                  >
+                    Train Brains in Dojo »
+                  </button>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {learnedIds.map((id) => {
+                  const tech = BATTLE_TECHNIQUE_CATALOG.find((m) => m.id === id);
+                  if (!tech) return null;
+                  const isEq = equippedIdSet.has(tech.id);
+                  const canEquipMore = equippedMoves.length < MAX_EQUIPPED_ATTACKS;
+                  const techMeta = ATTACK_ELEMENT_META[tech.element];
+                  return (
+                    <button
+                      key={tech.id}
+                      type="button"
+                      disabled={!onToggleEquipAttack || (!isEq && !canEquipMore)}
+                      onClick={() => {
+                        sound.playButton();
+                        onToggleEquipAttack?.(tech.id);
+                      }}
+                      className={`p-2.5 rounded-xl border text-left flex items-center justify-between gap-2 transition-colors cursor-pointer disabled:opacity-55 ${
+                        isEq
+                          ? 'bg-amber-950/40 border-amber-400/60 text-white'
+                          : 'bg-slate-900/90 border-slate-800 text-slate-300 hover:border-slate-600'
+                      }`}
+                    >
+                      <div className="min-w-0">
+                        <div className="font-chakra font-bold text-xs truncate">{tech.name}</div>
+                        <div className="text-[10px] font-chakra text-slate-400">
+                          {techMeta.shortLabel} · {tech.power}P · {tech.mpCost} MP
+                        </div>
+                      </div>
+                      {isEq ? (
+                        <Check className="w-4 h-4 text-amber-300 shrink-0" />
+                      ) : (
+                        <span className="text-[10px] font-chakra text-slate-400 shrink-0">
+                          {canEquipMore ? 'Equip' : 'Full'}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         )}
 
@@ -518,16 +635,24 @@ export const StatsModal: React.FC<StatsModalProps> = ({
             </div>
 
             {pet.stage !== 'egg' && (
-              <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 flex flex-wrap items-center justify-between gap-2 text-[10px] font-chakra text-slate-300">
-                <span>
-                  <strong className="text-amber-300 font-pixel text-[9px]">HUNGER:</strong>{' '}
-                  -1 heart / {Math.round(getStageHungerHeartMs(pet.stage) / 60_000)}m
-                </span>
-                <span>
-                  <strong className="text-cyan-300 font-pixel text-[9px]">TOILET:</strong>{' '}
-                  every {Math.round(getStagePoopIntervalMs(pet.stage) / 60_000)}m (max 4)
-                </span>
-                <span className="text-slate-400">10m grace before care mistake</span>
+              <div className="p-3 rounded-xl bg-slate-950/80 border border-slate-800 space-y-1.5 text-xs font-chakra text-slate-300">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span>
+                    <strong className="text-amber-300">Hunger:</strong> -1 heart /{' '}
+                    {Math.round(getStageHungerHeartMs(pet.stage) / 60_000)}m
+                  </span>
+                  <span>
+                    <strong className="text-cyan-300">Toilet:</strong> every{' '}
+                    {Math.round(getStagePoopIntervalMs(pet.stage) / 60_000)}m (pauses overnight · 4 piles = Sickness, 0 CM)
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center justify-between gap-2 text-slate-300">
+                  <span>
+                    <strong className="text-indigo-300">Bedtime Schedule:</strong>{' '}
+                    {formatBedtimeLabel(pet.stage)}
+                  </span>
+                  <span className="text-slate-400">10m Call Light grace on Empty Hunger / Bedtime</span>
+                </div>
               </div>
             )}
           </div>

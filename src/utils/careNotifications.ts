@@ -199,7 +199,7 @@ export async function syncBackgroundCareAlarms(params: {
     title: `💩 Toilet Alert: ${petName}`,
     body:
       schedule.nextPoopCount >= 4
-        ? `${petName} has 4 toilet piles and got sick! Flush & cure now.`
+        ? `${petName} has 4 toilet piles — got sick & +1 Care Mistake! Flush & cure now.`
         : `${petName} needs the toilet! (${schedule.nextPoopCount}/4 piles)`,
     tag: 'digipet-toilet',
   });

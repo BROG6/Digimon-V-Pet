@@ -643,7 +643,7 @@ export const StatsModal: React.FC<StatsModalProps> = ({
                   </span>
                   <span>
                     <strong className="text-cyan-300">Toilet:</strong> every{' '}
-                    {Math.round(getStagePoopIntervalMs(pet.stage) / 60_000)}m (pauses overnight · 4 piles = Sickness, 0 CM)
+                    {Math.round(getStagePoopIntervalMs(pet.stage) / 60_000)}m (pauses overnight · 4 piles = Sickness + 1 CM)
                   </span>
                 </div>
                 <div className="flex flex-wrap items-center justify-between gap-2 text-slate-300">

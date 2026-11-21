@@ -603,13 +603,13 @@ export default function App() {
         }
       }
 
-      // 3. Toilet Alert (new poop pile added — causes sickness at 4, never Care Mistake)
+      // 3. Toilet Alert (new poop pile added — 4 piles causes sickness + 1 Care Mistake)
       if (pet.poopCount > tracker.poopCount) {
         sound.playAlert();
         triggerHaptic('alert');
         const msg =
           pet.poopCount >= 4
-            ? `${monName} has 4 toilet piles and got sick! Flush & cure now.`
+            ? `${monName} has 4 toilet piles — got sick & +1 Care Mistake! Flush & cure now.`
             : `${monName} needs the toilet! (${pet.poopCount}/4 pile${pet.poopCount === 1 ? '' : 's'})`;
         showNotification(`💩 ${msg}`);
         if (alertsEnabled) {
@@ -1935,9 +1935,9 @@ export default function App() {
                       </div>
                       <div className="text-[10px] font-chakra opacity-90 truncate">
                         {pet.poopCount >= 4
-                          ? '4 piles reached — flush & cure sickness now!'
+                          ? '4 piles reached — got sick & +1 Care Mistake! Flush & cure now.'
                           : pet.poopCount >= 3
-                          ? 'Urgent! Sickness triggers at 4 piles (0 CM).'
+                          ? 'Urgent! Sickness & Care Mistake trigger at 4 piles.'
                           : `${pet.nickname?.trim() || currentSpecies?.name || 'Digimon'} needs a toilet flush.`}
                       </div>
                     </div>

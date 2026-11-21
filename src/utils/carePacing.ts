@@ -186,7 +186,7 @@ export function evaluateCareNeeds(pet: PetState, nowMs: number = Date.now()): Ca
 /**
  * Advances V-Pet hunger, energy, toilet (poop), sleep schedule, sickness, and care mistake timers
  * using stage-calibrated Pendulum Ver. 20th rules:
- * - Poop timer pauses while asleep; leaving poop NEVER causes Care Mistakes (4 piles triggers sickness only).
+ * - Poop timer pauses while asleep; accumulating 4 poop piles triggers sickness and 1 Care Mistake.
  * - Care Mistakes trigger only from ignoring Call Light past 10m grace on Empty Hunger or Bedtime.
  * - Sleeping Digimon auto-wake cleanly at 7:00 AM.
  */
@@ -301,7 +301,7 @@ export function advanceCareState(prev: PetState, now: number = Date.now()): Care
   const energyDrop = Math.floor(energyElapsed / msPerEnergyPoint);
   const energy = energyDrop > 0 ? Math.max(0, prev.energy - energyDrop) : prev.energy;
 
-  // 3. Toilet / Poop Pacing (stops at 4 piles; 4 piles triggers sickness/injury ONLY — zero Care Mistakes!)
+  // 3. Toilet / Poop Pacing (stops at 4 piles; hitting 4 piles triggers sickness AND 1 Care Mistake)
   const poopIntervalMs = getStagePoopIntervalMs(prev.stage);
   let poopCount = prev.poopCount;
   let lastPoopAt = prev.lastPoopAt ?? prev.lastCareCheck ?? now;
@@ -327,7 +327,7 @@ export function advanceCareState(prev: PetState, now: number = Date.now()): Care
     }
   }
 
-  // Digital Monster Ver. 20th rule: accumulating 4 poop piles causes sickness/injury (never Care Mistake)
+  // Accumulating 4 poop piles causes sickness/injury AND adds a Care Mistake
   if (poopCount >= 4 && !isSick) {
     isSick = true;
     sickSince = sickSince ?? now;
@@ -338,9 +338,13 @@ export function advanceCareState(prev: PetState, now: number = Date.now()): Care
     sickSince = now;
   }
 
-  // 4. 10-Minute Grace Window for Empty Hunger Call Light (poop NEVER triggers Care Mistake)
+  // 4. Care Mistakes: 4-Poop overload + 10-Minute Grace Window for Empty Hunger Call Light
   let careMistakes = prev.careMistakes;
   let careCallStartedAt = prev.careCallStartedAt;
+  if (events.poopHitFour) {
+    careMistakes += 1;
+    events.careMistakeAdded = true;
+  }
   if (hunger === 0) {
     if (!careCallStartedAt) {
       careCallStartedAt = now;

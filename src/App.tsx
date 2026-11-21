@@ -2382,7 +2382,7 @@ export default function App() {
                   className="p-3 bg-slate-800 hover:bg-cyan-950/60 border border-cyan-500/40 rounded-2xl flex items-center gap-2.5 text-cyan-300 cursor-pointer"
                 >
                   <Backpack className="w-5 h-5 text-cyan-400 shrink-0" />
-                  <span className="truncate">INVENTORY &amp; EGGS</span>
+                  <span className="truncate">INVENTORY &amp; RELICS</span>
                 </button>
 
                 <button
@@ -2685,7 +2685,7 @@ export default function App() {
         onFeedMushroom={handleFeedMushroom}
         onFeedBerry={handleFeedBerry}
         onGiveVitamin={handleGiveVitamin}
-        onSelectEgg={handleSelectNewEgg}
+        onEquipSpecialItem={handleEquipSpecialItem}
       />
 
       <PwaInstallModal

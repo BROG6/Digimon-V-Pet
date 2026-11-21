@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { Backpack, Check, Shield, Sparkles, Utensils, X } from 'lucide-react';
-import { DigiEggInfo, PetState } from '../types/digimon';
-import { DIGI_EGGS, DIGIMON_DATABASE } from '../data/digidex';
+import { Backpack, Check, Lock, Shield, Sparkles, Utensils, X } from 'lucide-react';
+import { PetState, SpecialItemId } from '../types/digimon';
+import { DIGI_EGGS, DIGIMON_DATABASE, SPECIAL_ITEMS } from '../data/digidex';
+import { ADVENTURE_ZONES } from '../data/adventureZones';
 import { DigimonSprite } from './DigimonSprite';
 import {
   PixelBerryIcon,
@@ -22,7 +23,7 @@ interface InventoryModalProps {
   onFeedMushroom: () => void;
   onFeedBerry: () => void;
   onGiveVitamin: () => void;
-  onSelectEgg: (egg: DigiEggInfo, nickname: string, playerName: string) => void;
+  onEquipSpecialItem: (itemId: SpecialItemId | null) => void;
 }
 
 export const InventoryModal: React.FC<InventoryModalProps> = ({
@@ -34,19 +35,19 @@ export const InventoryModal: React.FC<InventoryModalProps> = ({
   onFeedMushroom,
   onFeedBerry,
   onGiveVitamin,
-  onSelectEgg,
+  onEquipSpecialItem,
 }) => {
-  const [activeTab, setActiveTab] = useState<'items' | 'eggs'>('items');
-  const [selectedEgg, setSelectedEgg] = useState<DigiEggInfo>(
-    () => DIGI_EGGS.find((e) => e.id === pet.eggId) || DIGI_EGGS[0]
-  );
-  const [eggNickname, setEggNickname] = useState<string>('');
+  const [activeTab, setActiveTab] = useState<'items' | 'relics'>('items');
 
   if (!isOpen) return null;
 
   const sirloinStock = pet.sirloinStock ?? 0;
   const mushroomStock = pet.mushroomStock ?? 0;
   const berryStock = pet.berryStock ?? 0;
+
+  const ownedRelics = pet.ownedSpecialItems || [];
+  const allRelics = Object.values(SPECIAL_ITEMS);
+  const equippedRelic = pet.equippedSpecialItem ? SPECIAL_ITEMS[pet.equippedSpecialItem] : undefined;
 
   const isDisabledForPet = Boolean(pet.isDead || pet.isFrozen || pet.stage === 'egg');
 
@@ -118,13 +119,6 @@ export const InventoryModal: React.FC<InventoryModalProps> = ({
     },
   ];
 
-  const handleHatchSelectedEgg = () => {
-    sound.playButton();
-    triggerHaptic('heavy');
-    onSelectEgg(selectedEgg, eggNickname.trim(), pet.playerName || '');
-    onClose();
-  };
-
   return (
     <div
       onClick={onClose}
@@ -144,10 +138,10 @@ export const InventoryModal: React.FC<InventoryModalProps> = ({
             </div>
             <div className="min-w-0">
               <h3 className="font-chakra font-bold text-white text-lg truncate">
-                TAMER INVENTORY &amp; DIGI-EGGS
+                TAMER INVENTORY &amp; ARMOR RELICS
               </h3>
               <p className="text-slate-400 text-xs truncate">
-                Feed Meat, Sirloin, Mushrooms &amp; Berries, or hatch any of the 15 Digi-Eggs
+                Feed Meat, Sirloin, Mushrooms &amp; Berries, or equip Armor Crest Relics
               </p>
             </div>
           </div>
@@ -184,16 +178,16 @@ export const InventoryModal: React.FC<InventoryModalProps> = ({
           <button
             onClick={() => {
               sound.playButton();
-              setActiveTab('eggs');
+              setActiveTab('relics');
             }}
             className={`min-h-[42px] rounded-xl font-chakra font-bold text-sm flex items-center justify-center gap-2 border cursor-pointer transition-all ${
-              activeTab === 'eggs'
+              activeTab === 'relics'
                 ? 'bg-cyan-400 text-slate-950 border-cyan-300 shadow-md shadow-cyan-500/20'
                 : 'bg-slate-950/70 text-slate-300 border-slate-800 hover:bg-slate-800'
             }`}
           >
-            <Sparkles className="w-4 h-4" />
-            <span>Digi-Eggs ({DIGI_EGGS.length})</span>
+            <Shield className="w-4 h-4" />
+            <span>Armor Relics ({ownedRelics.length}/{allRelics.length})</span>
           </button>
         </div>
 
@@ -204,7 +198,7 @@ export const InventoryModal: React.FC<InventoryModalProps> = ({
               {isDisabledForPet && (
                 <div className="p-3 rounded-xl bg-amber-950/50 border border-amber-500/40 text-amber-200 text-xs font-chakra">
                   {pet.isDead
-                    ? 'Your Digimon passed away. Switch to the Digi-Eggs tab to hatch a new partner!'
+                    ? 'Your Digimon passed away. Use Reset / Hatch in the menu to raise a new partner!'
                     : pet.isFrozen
                     ? 'Cold Mode (Fridge) is active — unfreeze under Care before feeding.'
                     : 'Your Digitama is still incubating! Wait for it to hatch before feeding.'}
@@ -265,101 +259,183 @@ export const InventoryModal: React.FC<InventoryModalProps> = ({
             </>
           )}
 
-          {activeTab === 'eggs' && (
+          {activeTab === 'relics' && (
             <div className="space-y-3">
-              <div className="p-3 rounded-xl bg-cyan-950/40 border border-cyan-500/35 text-xs text-cyan-200 font-chakra">
-                Select any of the 15 Digi-Eggs below to hatch a new partner. Your inventory items, DigiBits, Relics, and Adventure progress carry over!
-              </div>
+              {/* Active Equipped Relic Banner */}
+              <div className="p-3.5 rounded-2xl bg-slate-950/90 border border-amber-500/35 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-pixel text-[10px] text-amber-300 flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5" />
+                    ACTIVE ARMOR CREST SLOT
+                  </span>
+                  <span className="text-[10px] font-chakra text-slate-400">
+                    Stage: <strong className="text-white uppercase">{pet.stage}</strong>
+                  </span>
+                </div>
 
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2.5">
-                {DIGI_EGGS.map((egg) => {
-                  const isSelected = selectedEgg.id === egg.id;
-                  const isCurrent = pet.eggId === egg.id;
-                  return (
+                {equippedRelic ? (
+                  <div className="p-2.5 rounded-xl bg-amber-950/35 border border-amber-500/45 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <span className="text-2xl shrink-0">{equippedRelic.icon}</span>
+                      <div className="min-w-0">
+                        <div className="font-chakra font-bold text-sm text-amber-200 truncate">
+                          {equippedRelic.name}
+                        </div>
+                        <div className="text-[11px] font-chakra text-slate-300 truncate">
+                          {equippedRelic.eggId === pet.eggId
+                            ? pet.stage === 'rookie'
+                              ? 'Resonates with your Rookie! Triggers Armor Digivolution at timer completion.'
+                              : 'Matches your Digi-Egg! Triggers Armor Digivolution once Rookie stage is reached.'
+                            : 'Equipped, but resonates with another Digi-Egg line.'}
+                        </div>
+                      </div>
+                    </div>
+
                     <button
                       type="button"
-                      key={egg.id}
                       onClick={() => {
                         sound.playButton();
-                        setSelectedEgg(egg);
+                        triggerHaptic('light');
+                        onEquipSpecialItem(null);
                       }}
-                      className={`rounded-2xl p-2.5 border-2 transition-all flex flex-col items-center justify-between text-center cursor-pointer ${
-                        isSelected
-                          ? 'bg-slate-800 border-amber-400 shadow-lg shadow-amber-500/15'
-                          : 'bg-slate-950/75 border-slate-800 hover:border-slate-600'
-                      }`}
+                      className="min-h-[36px] px-3 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-pixel text-[9px] shrink-0 cursor-pointer"
                     >
-                      <div
-                        className="w-full text-[8px] font-pixel py-0.5 rounded-full mb-1 font-bold truncate px-1.5 text-slate-950"
-                        style={{ backgroundColor: egg.crestColor }}
-                      >
-                        #{String(egg.eggNumber).padStart(2, '0')} {egg.archetypeTitle}
-                      </div>
-
-                      <div className="my-1 h-16 flex items-center justify-center">
-                        <DigimonSprite egg={egg} scale={0.52} />
-                      </div>
-
-                      <div className="w-full space-y-0.5">
-                        <div className="font-chakra font-bold text-xs text-white truncate">
-                          {egg.crestName}
-                        </div>
-                        <div className="text-[10px] text-slate-400 truncate">
-                          {DIGIMON_DATABASE[egg.baby1Id]?.name || egg.baby1Id}
-                        </div>
-                        {egg.armorOption && (
-                          <div className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded bg-amber-500/15 text-[8px] font-pixel text-amber-300">
-                            <Shield className="w-2.5 h-2.5" /> ARMOR
-                          </div>
-                        )}
-                      </div>
-
-                      {isSelected ? (
-                        <span className="mt-1 text-amber-400 flex items-center gap-1 text-[8px] font-pixel">
-                          <Check className="w-3 h-3" /> SELECTED
-                        </span>
-                      ) : isCurrent ? (
-                        <span className="mt-1 text-cyan-400 text-[8px] font-pixel">CURRENT</span>
-                      ) : null}
+                      UNEQUIP
                     </button>
-                  );
-                })}
+                  </div>
+                ) : (
+                  <div className="text-xs font-chakra text-slate-400">
+                    No Armor Crest Relic equipped. Win Wave 6 Boss battles in Adventure Mode to unlock Crests &amp; Armor Digi-Eggs, then equip one here!
+                  </div>
+                )}
               </div>
 
-              {/* Selected Egg Incubation Action Card */}
-              <div className="bg-slate-950/90 border border-slate-800 rounded-2xl p-3.5 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-16 h-16 flex items-center justify-center shrink-0">
-                    <DigimonSprite egg={selectedEgg} scale={0.68} />
-                  </div>
-                  <div className="min-w-0">
-                    <div className="font-chakra font-bold text-white text-sm truncate">
-                      Egg #{String(selectedEgg.eggNumber).padStart(2, '0')}: {selectedEgg.crestName}
-                    </div>
-                    <p className="text-xs text-slate-400 line-clamp-2 mt-0.5">
-                      {selectedEgg.description}
-                    </p>
-                  </div>
-                </div>
+              {/* All Armor Crest Relics Vault */}
+              <div className="space-y-2.5">
+                {allRelics.map((relic) => {
+                  const isOwned = ownedRelics.includes(relic.id);
+                  const isEquipped = pet.equippedSpecialItem === relic.id;
+                  const eggInfo = DIGI_EGGS.find((e) => e.id === relic.eggId);
+                  const armorSpecies = DIGIMON_DATABASE[relic.armorSpeciesId];
+                  const matchesCurrentEgg = relic.eggId === pet.eggId;
+                  const dropZone = ADVENTURE_ZONES.find((z) => z.firstClearRelicId === relic.id);
+                  const isArmorUnlocked = Boolean(
+                    isOwned || (pet.unlockedSpeciesIds || []).includes(relic.armorSpeciesId)
+                  );
 
-                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 shrink-0">
-                  <input
-                    type="text"
-                    value={eggNickname}
-                    onChange={(e) => setEggNickname(e.target.value)}
-                    maxLength={14}
-                    placeholder="Nickname (optional)"
-                    className="bg-slate-900 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white font-chakra focus:outline-none focus:border-amber-400 placeholder:text-slate-500 sm:w-36"
-                  />
-                  <button
-                    type="button"
-                    onClick={handleHatchSelectedEgg}
-                    className="min-h-[42px] px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-pixel text-[10px] font-bold flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 whitespace-nowrap"
-                  >
-                    <Sparkles className="w-3.5 h-3.5" />
-                    <span>HATCH THIS EGG</span>
-                  </button>
-                </div>
+                  return (
+                    <div
+                      key={relic.id}
+                      className={`p-3.5 rounded-2xl border transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+                        isEquipped
+                          ? 'bg-amber-950/25 border-amber-400/70 shadow-lg shadow-amber-500/10'
+                          : isOwned
+                          ? 'bg-slate-950/85 border-emerald-500/35'
+                          : 'bg-slate-950/60 border-slate-800 opacity-85'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        {/* Crest Emblem + Armor Evolution Preview */}
+                        <div className="relative w-14 h-14 rounded-2xl bg-slate-900 border border-slate-700/80 flex items-center justify-center shrink-0 overflow-hidden">
+                          {armorSpecies ? (
+                            <div
+                              className={
+                                isArmorUnlocked
+                                  ? 'opacity-95'
+                                  : 'brightness-0 contrast-200 opacity-50'
+                              }
+                            >
+                              <DigimonSprite species={armorSpecies} scale={0.55} />
+                            </div>
+                          ) : (
+                            <span className="text-2xl">{relic.icon}</span>
+                          )}
+                          <span
+                            className="absolute -top-1 -right-1 w-6 h-6 rounded-lg bg-slate-950 border border-slate-700 flex items-center justify-center text-xs shadow"
+                            title={relic.shortName}
+                          >
+                            {isOwned ? relic.icon : <Lock className="w-3 h-3 text-slate-400" />}
+                          </span>
+                        </div>
+
+                        <div className="min-w-0 space-y-0.5">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <h4 className="font-chakra font-bold text-white text-sm sm:text-base">
+                              {relic.name}
+                            </h4>
+                            {isEquipped && (
+                              <span className="px-1.5 py-0.5 rounded bg-amber-400 text-slate-950 font-pixel text-[8px] font-bold">
+                                EQUIPPED
+                              </span>
+                            )}
+                            {matchesCurrentEgg && (
+                              <span className="px-1.5 py-0.5 rounded bg-cyan-500/20 border border-cyan-500/40 text-cyan-300 font-pixel text-[8px]">
+                                CURRENT EGG
+                              </span>
+                            )}
+                          </div>
+
+                          <div className="text-xs font-chakra text-slate-300 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                            {eggInfo && (
+                              <span style={{ color: eggInfo.crestColor }} className="font-semibold">
+                                Egg #{String(eggInfo.eggNumber).padStart(2, '0')} · {eggInfo.crestName}
+                              </span>
+                            )}
+                            <span className="text-slate-500">→</span>
+                            <span className="text-amber-300 font-semibold">
+                              Armor: {isArmorUnlocked ? armorSpecies?.name || relic.armorSpeciesId : '??? (Defeat Boss to Reveal)'}
+                            </span>
+                          </div>
+
+                          <p className="text-[11px] font-chakra text-slate-400">
+                            {isOwned
+                              ? relic.description
+                              : dropZone
+                              ? `Locked — Clear Zone ${String(dropZone.order).padStart(2, '0')} (${dropZone.name}) Wave 6 Boss in Adventure Mode.`
+                              : 'Locked — Defeat Adventure Mode Wave 6 Bosses to unlock.'}
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-end shrink-0">
+                        {isOwned ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              sound.playButton();
+                              triggerHaptic('medium');
+                              onEquipSpecialItem(isEquipped ? null : relic.id);
+                            }}
+                            className={`min-h-[38px] px-4 py-1.5 rounded-xl font-pixel text-[10px] font-bold flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all ${
+                              isEquipped
+                                ? 'bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600'
+                                : matchesCurrentEgg
+                                ? 'bg-amber-400 hover:bg-amber-300 text-slate-950 shadow-md shadow-amber-500/20'
+                                : 'bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-200 border border-emerald-500/40'
+                            }`}
+                          >
+                            {isEquipped ? (
+                              <>
+                                <Check className="w-3.5 h-3.5" />
+                                <span>UNEQUIP</span>
+                              </>
+                            ) : (
+                              <>
+                                <Shield className="w-3.5 h-3.5" />
+                                <span>EQUIP</span>
+                              </>
+                            )}
+                          </button>
+                        ) : (
+                          <span className="min-h-[38px] px-3.5 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-500 font-pixel text-[9px] flex items-center gap-1.5">
+                            <Lock className="w-3 h-3" />
+                            <span>LOCKED</span>
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}

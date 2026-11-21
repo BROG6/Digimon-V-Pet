@@ -200,3 +200,55 @@
 .battle-damage-float {
   animation: battleDamageFloat 0.95s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
 }
+
+/* ==========================================================================
+   GREEN GYM 6-STATION TRAINING ANIMATIONS
+   ========================================================================== */
+@keyframes gymRunLap {
+  0% { transform: translateX(0px); opacity: 1; }
+  28% { transform: translateX(240px); opacity: 1; }
+  29% { transform: translateX(240px); opacity: 0; }
+  31% { transform: translateX(-240px); opacity: 0; }
+  32% { transform: translateX(-240px); opacity: 1; }
+  64% { transform: translateX(240px); opacity: 1; }
+  65% { transform: translateX(240px); opacity: 0; }
+  67% { transform: translateX(-240px); opacity: 0; }
+  68% { transform: translateX(-240px); opacity: 1; }
+  100% { transform: translateX(0px); opacity: 1; }
+}
+
+@keyframes gymRunIdleBounce {
+  0%, 100% { transform: translateY(0px); }
+  50% { transform: translateY(-4px); }
+}
+
+@keyframes gymWaterfallFlow {
+  0% { transform: translateY(-14px); opacity: 0.78; }
+  100% { transform: translateY(14px); opacity: 0.95; }
+}
+
+@keyframes gymPencilWrite {
+  0% { transform: translate(0px, 0px) rotate(-14deg); }
+  20% { transform: translate(6px, -3px) rotate(-6deg); }
+  40% { transform: translate(11px, 1px) rotate(-16deg); }
+  60% { transform: translate(4px, 3px) rotate(-8deg); }
+  80% { transform: translate(12px, 0px) rotate(-15deg); }
+  100% { transform: translate(0px, 0px) rotate(-14deg); }
+}
+
+.gym-run-lap {
+  animation: gymRunLap 1.35s linear forwards;
+}
+
+.gym-run-idle-bounce {
+  animation: gymRunIdleBounce 0.45s ease-in-out infinite;
+}
+
+.gym-waterfall-flow {
+  animation: gymWaterfallFlow 0.55s linear infinite;
+}
+
+.gym-pencil-write {
+  animation: gymPencilWrite 0.65s ease-in-out infinite;
+}
+

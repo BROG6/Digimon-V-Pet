@@ -12,9 +12,10 @@ import {
   getStationPreferenceMultiplier,
 } from '../data/battleTechniques';
 import { DigimonSprite } from './DigimonSprite';
-import { PixelMeatIcon, PixelPunchingBag } from './PixelItemIcons';
+import { PixelMeatIcon } from './PixelItemIcons';
+import { GymStationScene } from './GymStationScene';
 import { sound } from '../utils/audio';
-import { Dumbbell, X, Flame, BookOpen, Check, Lock, Swords } from 'lucide-react';
+import { Dumbbell, X, Flame, Check, Lock, Swords } from 'lucide-react';
 
 interface TrainingArenaProps {
   pet: PetState;
@@ -43,7 +44,6 @@ export const TrainingArena: React.FC<TrainingArenaProps> = ({
   const [isPunching, setIsPunching] = useState<boolean>(false);
   const [actionSprite, setActionSprite] = useState<'idle' | 'attack' | 'happy'>('idle');
   const [roundResult, setRoundResult] = useState<{ text: string; isCrit: boolean } | null>(null);
-  const [bagDented, setBagDented] = useState<boolean>(false);
   const [bagHitState, setBagHitState] = useState<'idle' | 'critical' | 'weak'>('idle');
   const [bagHitNonce, setBagHitNonce] = useState<number>(0);
   const meterDirectionRef = useRef<number>(1);
@@ -106,7 +106,6 @@ export const TrainingArena: React.FC<TrainingArenaProps> = ({
     setRoundResult(null);
     setIsPunching(false);
     setActionSprite('idle');
-    setBagDented(false);
     setBagHitState('idle');
     setActiveTab('punch');
   };
@@ -115,7 +114,11 @@ export const TrainingArena: React.FC<TrainingArenaProps> = ({
     if (isPunching) return;
     clearTrainingTimers();
     setIsPunching(true);
-    sound.playPunch();
+    if (selectedStat === 'mp' || selectedStat === 'brains') {
+      sound.playButton();
+    } else {
+      sound.playPunch();
+    }
     setActionSprite('attack');
 
     const isSuccess = meterVal >= 75;
@@ -124,20 +127,14 @@ export const TrainingArena: React.FC<TrainingArenaProps> = ({
       sound.playBlast();
       setHits(nextHits);
       setRoundResult({ text: 'GREAT TIMING! +1', isCrit: true });
-      setBagDented(true);
       setBagHitState('critical');
     } else {
       setRoundResult({ text: 'GLANCING HIT', isCrit: false });
-      setBagDented(false);
       setBagHitState('weak');
     }
     setBagHitNonce((n) => n + 1);
 
-    const tDent = window.setTimeout(() => {
-      setBagDented(false);
-    }, 180);
-    timersRef.current.push(tDent);
-
+    const animDurationMs = selectedStat === 'speed' ? 1380 : 950;
     const tRound = window.setTimeout(() => {
       setActionSprite('idle');
       setBagHitState('idle');
@@ -157,7 +154,7 @@ export const TrainingArena: React.FC<TrainingArenaProps> = ({
         }, 650);
         timersRef.current.push(tDone);
       }
-    }, 600);
+    }, animDurationMs);
     timersRef.current.push(tRound);
   };
 
@@ -417,64 +414,16 @@ export const TrainingArena: React.FC<TrainingArenaProps> = ({
               </span>
             </div>
 
-            <div className="relative w-full h-44 bg-[#2d3640] border-2 border-slate-700 rounded-2xl overflow-hidden shadow-inner">
-              <svg
-                viewBox="0 0 160 80"
-                preserveAspectRatio="none"
-                shapeRendering="crispEdges"
-                className="absolute inset-0 w-full h-full opacity-55 pointer-events-none"
-                aria-hidden="true"
-              >
-                <rect x="0" y="0" width="160" height="80" fill="#2d3640" />
-                <rect x="0" y="10" width="38" height="8" fill="#1e252c" />
-                <rect x="52" y="6" width="44" height="8" fill="#3c4754" />
-                <rect x="112" y="14" width="48" height="8" fill="#1e252c" />
-                <rect x="16" y="28" width="46" height="8" fill="#3c4754" />
-                <rect x="82" y="34" width="52" height="8" fill="#1e252c" />
-                <rect x="0" y="48" width="34" height="8" fill="#1e252c" />
-                <rect x="56" y="52" width="42" height="8" fill="#3c4754" />
-                <rect x="118" y="46" width="42" height="8" fill="#3c4754" />
-                <rect x="0" y="66" width="160" height="14" fill="#1b2229" />
-              </svg>
-
-              {roundResult && (
-                <motion.div
-                  key={`res-${round}-${bagHitNonce}`}
-                  initial={{ y: 6, opacity: 0, scale: 0.85 }}
-                  animate={{ y: 0, opacity: 1, scale: 1 }}
-                  className={`absolute top-2.5 left-3 z-30 pointer-events-none font-chakra text-xs px-2.5 py-1 rounded-lg font-bold shadow-lg border ${
-                    roundResult.isCrit
-                      ? 'bg-amber-400 text-slate-950 border-amber-200'
-                      : 'bg-slate-800/95 text-rose-300 border-rose-500/60'
-                  }`}
-                >
-                  {roundResult.text}
-                </motion.div>
-              )}
-
-              <div className="relative z-10 w-full h-full flex items-end justify-center gap-4 pb-3 px-6">
-                <motion.div
-                  animate={
-                    isPunching
-                      ? { x: bagHitState === 'critical' ? [0, 26, 20, 0] : [0, 12, 0] }
-                      : { x: 0 }
-                  }
-                  transition={{ duration: 0.35, ease: 'easeOut' }}
-                  className="mb-1"
-                >
-                  <DigimonSprite species={species} action={actionSprite} facing="right" scale={0.95} />
-                </motion.div>
-
-                <div className="self-start">
-                  <PixelPunchingBag
-                    dented={bagDented}
-                    hitState={bagHitState}
-                    hitNonce={bagHitNonce}
-                    className="w-16"
-                  />
-                </div>
-              </div>
-            </div>
+            <GymStationScene
+              statKey={selectedStat}
+              species={species}
+              isExecuting={isPunching}
+              hitState={bagHitState}
+              hitNonce={bagHitNonce}
+              round={round}
+              actionSprite={actionSprite}
+              roundResult={roundResult}
+            />
 
             <div className="w-full mt-3.5">
               <div className="flex justify-between text-xs font-chakra text-slate-400 mb-1">
@@ -511,7 +460,19 @@ export const TrainingArena: React.FC<TrainingArenaProps> = ({
                 className="flex-1 min-h-[48px] bg-gradient-to-r from-red-500 to-amber-500 hover:from-red-400 hover:to-amber-400 text-slate-950 font-chakra text-base py-3 rounded-2xl font-bold shadow-lg shadow-orange-500/25 flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
               >
                 <Flame className="w-5 h-5 fill-slate-950" />
-                <span>Strike {activeStation.statLabel} Drill</span>
+                <span>
+                  {selectedStat === 'hp'
+                    ? 'Push Boulder'
+                    : selectedStat === 'mp'
+                    ? 'Meditate'
+                    : selectedStat === 'offense'
+                    ? 'Strike Trunk'
+                    : selectedStat === 'defense'
+                    ? 'Brace Impact'
+                    : selectedStat === 'speed'
+                    ? 'Sprint Laps'
+                    : 'Study Tactics'}
+                </span>
               </motion.button>
             </div>
           </div>

@@ -16,7 +16,7 @@ interface RunRect {
   fill: string;
 }
 
-function compileGridRects(grid: string[], palette: Record<string, string>): RunRect[] {
+export function compileGridRects(grid: string[], palette: Record<string, string>): RunRect[] {
   const rects: RunRect[] = [];
   for (let y = 0; y < grid.length; y++) {
     const row = grid[y];
@@ -39,7 +39,7 @@ function compileGridRects(grid: string[], palette: Record<string, string>): RunR
   return rects;
 }
 
-const PixelGridIcon: React.FC<PixelGridIconProps> = ({
+export const PixelGridIcon: React.FC<PixelGridIconProps> = ({
   grid,
   palette,
   className = 'w-5 h-5',

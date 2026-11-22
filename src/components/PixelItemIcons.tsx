@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { motion } from 'motion/react';
+import { SpecialItemId } from '../types/digimon';
 
 interface PixelGridIconProps {
   grid: string[];
@@ -610,6 +611,245 @@ export const PixelBerryIcon: React.FC<{
   size?: number;
 }> = ({ className = 'w-5 h-5', size }) => (
   <PixelGridIcon grid={BERRY_GRID} palette={BERRY_PALETTE} className={className} size={size} label="Digi-Berry" />
+);
+
+// ============================================================================
+// 9. DIGI RELICS (Armor Digi-Egg / Crest Relics + Supply Cache for Zone Cards)
+// ============================================================================
+const RELIC_GRIDS: Record<SpecialItemId, { grid: string[]; palette: Record<string, string>; label: string }> = {
+  knowledge_crest: {
+    label: 'Crest of Knowledge Relic',
+    palette: {
+      K: '#0f172a',
+      A: '#34d399', // Beetle crest emerald horn
+      B: '#059669',
+      C: '#a78bfa', // Mystic violet shell
+      D: '#7c3aed',
+      E: '#5b21b6',
+      Y: '#fde047', // Gold trim / emblem
+    },
+    grid: [
+      '......KKKK......',
+      '....KKAAAAKK....',
+      '...KAAABBBBKK...',
+      '..KAAKYYYYKAAK..',
+      '..KAKCCCCCCCKAK.',
+      '..KKCCCCYCCCCKK.',
+      '..KCCCCYYYCCCCK.',
+      '.KCCCCYYKYYCCCCK',
+      '.KDDDDDYYYDDDDDK',
+      '.KDDDDDDDDDDDDDK',
+      '.KDDDEEEEEEEEEDK',
+      '..KKEEEEEEEEEKK.',
+      '...KYYYYYYYYYYK.',
+      '....KKEEEEEEKK..',
+      '......KKKKKK....',
+      '................',
+    ],
+  },
+  hope_crest: {
+    label: 'Crest of Hope Relic',
+    palette: {
+      K: '#1e1b4b',
+      W: '#fef9c3', // Wing feather highlight
+      Y: '#facc15', // Radiant gold body
+      O: '#eab308',
+      D: '#a16207', // Deep amber trim
+      B: '#38bdf8', // Celestial sky accent
+    },
+    grid: [
+      '......KKKK......',
+      '....KKYYYYKK....',
+      '..KKWWYYYYWWKK..',
+      '.KWWYYYYYYYYWWK.',
+      '.KWKKYYBBYYKKWK.',
+      '..KKYYBBBBYYKK..',
+      '..KYYBBWWBBYYK..',
+      '.KYYYBBWWBBYYYK.',
+      '.KYYYYBBBBYYYYK.',
+      '.KOOOYYYYYYOOOK.',
+      '..KOOOOYYOOOOK..',
+      '..KDDDDDDDDDDK..',
+      '...KDDDDDDDDK...',
+      '....KKDDDDKK....',
+      '......KKKK......',
+      '................',
+    ],
+  },
+  love_crest: {
+    label: 'Crest of Love Relic',
+    palette: {
+      K: '#2e1026',
+      P: '#f472b6', // Rose pink wing
+      R: '#fb7185', // Crimson shell
+      D: '#e11d48',
+      W: '#fff1f2', // Heart sheen
+      Y: '#fde047', // Gold crest trim
+    },
+    grid: [
+      '......KKKK......',
+      '....KKPPPPKK....',
+      '..KKPPWWWWPPKK..',
+      '.KPPKRRRRRRKPPK.',
+      '.KPKRRRYYRRRKPK.',
+      '..KKRRYYYYRRKK..',
+      '..KRRYYWWYYRRK..',
+      '.KRRRYYYYYYRRRK.',
+      '.KDDDDYYYYDDDDK.',
+      '.KDDDDDYYDDDDDK.',
+      '..KDDDDDDDDDDK..',
+      '..KYYDDDDDDYYK..',
+      '...KKDDDDDDKK...',
+      '....KKDDDDKK....',
+      '......KKKK......',
+      '................',
+    ],
+  },
+  courage_crest: {
+    label: 'Crest of Courage Relic',
+    palette: {
+      K: '#270909',
+      F: '#fb923c', // Flame crest highlight
+      R: '#ef4444', // Crimson body
+      D: '#b91c1c', // Deep ruby shadow
+      Y: '#fde047', // Sun crest core
+      W: '#fff7ed',
+    },
+    grid: [
+      '....KK....KK....',
+      '...KFFK..KFFK...',
+      '...KFFKKKKFFK...',
+      '..KFFRRRRRRFFK..',
+      '..KKRRRYYRRRKK..',
+      '..KRRRYYYYRRRK..',
+      '.KRRRYWWWWYRRRK.',
+      '.KRRRYWWWWYRRRK.',
+      '.KDDDDYYYYDDDDK.',
+      '.KDDDDDYYDDDDDK.',
+      '..KDDDDDDDDDDK..',
+      '..KYYDDDDDDYYK..',
+      '...KKDDDDDDKK...',
+      '....KKDDDDKK....',
+      '......KKKK......',
+      '................',
+    ],
+  },
+  destiny_egg: {
+    label: 'Digi-Egg of Miracles Relic',
+    palette: {
+      K: '#1f1606',
+      W: '#fef9c3', // Divine gold sheen
+      Y: '#facc15', // Chrome gold body
+      O: '#d97706', // Amber bevel
+      B: '#38bdf8', // Azure miracle gem
+      C: '#0284c7',
+    },
+    grid: [
+      '......KKKK......',
+      '....KKWWWWKK....',
+      '...KWWYYYYWWK...',
+      '..KWWYYBBYYWWK..',
+      '..KWYYBBBBYYWK..',
+      '..KYYBBCCBBYYK..',
+      '.KYYYYBBBBYYYYK.',
+      '.KYYYYYBBYYYYYK.',
+      '.KOOOYYYYYYOOOK.',
+      '.KOOOOYYYYOOOOK.',
+      '..KOOOOOOOOOOK..',
+      '..KYYOOOOOOYYK..',
+      '...KKOOOOOOKK...',
+      '....KKOOOOKK....',
+      '......KKKK......',
+      '................',
+    ],
+  },
+  light_crest: {
+    label: 'Crest of Light Relic',
+    palette: {
+      K: '#1e1b4b',
+      W: '#ffffff', // Pure pearl light
+      C: '#fef3c7', // Warm ivory
+      Y: '#facc15', // Solar halo gold
+      P: '#e879f9', // Prismatic aura
+      D: '#c084fc',
+    },
+    grid: [
+      '......KKKK......',
+      '....KKYYYYKK....',
+      '...KYYWWWWYYK...',
+      '..KYWWCCCCWWYK..',
+      '..KWCWWYYWWCWK..',
+      '..KWCYYYYYYCWK..',
+      '.KWCCYYPPYYCCWK.',
+      '.KWCCYYYYYYCCWK.',
+      '.KCCCWWYYWWCCCK.',
+      '.KDDDDCCCCDDDDK.',
+      '..KDDDDDDDDDDK..',
+      '..KYYDDDDDDYYK..',
+      '...KKDDDDDDKK...',
+      '....KKDDDDKK....',
+      '......KKKK......',
+      '................',
+    ],
+  },
+};
+
+export const PixelRelicIcon: React.FC<{
+  relicId: SpecialItemId;
+  className?: string;
+  size?: number;
+}> = ({ relicId, className = 'w-9 h-9', size }) => {
+  const entry = RELIC_GRIDS[relicId] || RELIC_GRIDS.courage_crest;
+  return (
+    <PixelGridIcon
+      grid={entry.grid}
+      palette={entry.palette}
+      className={className}
+      size={size}
+      label={entry.label}
+    />
+  );
+};
+
+const SUPPLY_CACHE_PALETTE: Record<string, string> = {
+  K: '#082f49',
+  C: '#38bdf8', // Aqua steel top
+  B: '#0284c7', // Ocean armor body
+  D: '#0369a1', // Deep chest shade
+  Y: '#facc15', // Gold clasp & trim
+  W: '#e0f2fe',
+};
+
+const SUPPLY_CACHE_GRID = [
+  '................',
+  '................',
+  '...KKKKKKKKKK...',
+  '..KWWWWWWWWWWK..',
+  '..KCCCCCCCCCCK..',
+  '.KKYYYYYYYYYYKK.',
+  '.KBBBBYYYYBBBBK.',
+  '.KBBBBYKKYBBBBK.',
+  '.KBBBBYYYYBBBBK.',
+  '.KDDDDDDDDDDDDK.',
+  '.KDDYYDDDDYYDDK.',
+  '.KDDDDDDDDDDDDK.',
+  '..KKKKKKKKKKKK..',
+  '................',
+  '................',
+  '................',
+];
+
+export const PixelSupplyCacheIcon: React.FC<{
+  className?: string;
+  size?: number;
+}> = ({ className = 'w-9 h-9', size }) => (
+  <PixelGridIcon
+    grid={SUPPLY_CACHE_GRID}
+    palette={SUPPLY_CACHE_PALETTE}
+    className={className}
+    size={size}
+    label="Deep Sea Supply Cache"
+  />
 );
 
 

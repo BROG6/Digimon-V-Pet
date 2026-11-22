@@ -3,14 +3,15 @@ import { motion } from 'motion/react';
 import { DigimonSpecies, PetState, TrainingStatKey } from '../types/digimon';
 import {
   ATTACK_ELEMENT_META,
-  BATTLE_TECHNIQUE_CATALOG,
   GYM_STATIONS,
   MAX_EQUIPPED_ATTACKS,
   getEffectiveBattleStats,
   getEquippedBattleMoves,
   getLearnedTechniqueIds,
   getStationPreferenceMultiplier,
+  getTechniquePoolForLine,
 } from '../data/battleTechniques';
+import { TRAINING_ENERGY_COST } from '../utils/carePacing';
 import { DigimonSprite } from './DigimonSprite';
 import { PixelMeatIcon } from './PixelItemIcons';
 import {
@@ -490,7 +491,13 @@ export const TrainingArena: React.FC<TrainingArenaProps> = ({
     };
   }, [activeTab, isPunching, round]);
 
+  const hasEnoughEnergy = pet.energy >= TRAINING_ENERGY_COST;
+
   const handleStartStationTraining = (statKey: TrainingStatKey) => {
+    if (pet.energy < TRAINING_ENERGY_COST) {
+      sound.playAlert();
+      return;
+    }
     clearTrainingTimers();
     sound.playButton();
     setSelectedStat(statKey);
@@ -555,6 +562,7 @@ export const TrainingArena: React.FC<TrainingArenaProps> = ({
   if (!isOpen) return null;
 
   const stats = getEffectiveBattleStats(pet, species);
+  const linePool = getTechniquePoolForLine(pet, species);
   const learnedIds = getLearnedTechniqueIds(pet, species);
   const equippedMoves = getEquippedBattleMoves(pet, species);
   const equippedIds = new Set(equippedMoves.map((m) => m.id));
@@ -654,14 +662,37 @@ export const TrainingArena: React.FC<TrainingArenaProps> = ({
         {/* VIEW 1: 6 GYM STATIONS + MEAT CATCH */}
         {activeTab === 'menu' && (
           <div className="space-y-3">
+            {/* Training Energy Strip */}
+            <div
+              className={`px-3 py-2 rounded-xl border flex items-center justify-between gap-2 text-xs font-chakra ${
+                hasEnoughEnergy
+                  ? 'bg-slate-950/85 border-cyan-500/35 text-cyan-200'
+                  : 'bg-rose-950/55 border-rose-500/50 text-rose-200'
+              }`}
+            >
+              <span className="font-semibold">
+                {hasEnoughEnergy
+                  ? `⚡ Energy: ${pet.energy}/100 · -${TRAINING_ENERGY_COST} Energy per session`
+                  : `⚡ Low Energy (${pet.energy}/100) — Need ${TRAINING_ENERGY_COST} Energy! Rest or wait for passive regen.`}
+              </span>
+              <span className="text-[11px] opacity-80 shrink-0 tabular-nums">
+                +1 / 2m awake
+              </span>
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               {GYM_STATIONS.map((station) => {
                 const pref = getStationPreferenceMultiplier(station.id, species);
                 return (
                   <button
                     key={station.id}
+                    disabled={!hasEnoughEnergy}
                     onClick={() => handleStartStationTraining(station.id)}
-                    className={`text-left p-3 rounded-2xl border transition-all cursor-pointer hover:brightness-110 active:scale-[0.98] flex flex-col justify-between min-h-[106px] ${station.accentColor}`}
+                    className={`text-left p-3 rounded-2xl border transition-all flex flex-col justify-between min-h-[106px] ${
+                      hasEnoughEnergy
+                        ? `cursor-pointer hover:brightness-110 active:scale-[0.98] ${station.accentColor}`
+                        : 'opacity-45 cursor-not-allowed bg-slate-950/70 border-slate-800 text-slate-400'
+                    }`}
                   >
                     <div>
                       <div className="flex items-center justify-between gap-2">
@@ -680,7 +711,9 @@ export const TrainingArena: React.FC<TrainingArenaProps> = ({
                     </div>
                     <div className="mt-2 pt-1.5 border-t border-white/10 flex items-center justify-between text-[11px] font-chakra text-slate-200">
                       <span>+{station.primaryLabel} / +{station.secondaryLabel}</span>
-                      <span className="font-bold text-white whitespace-nowrap">Train »</span>
+                      <span className="font-bold text-white whitespace-nowrap">
+                        {hasEnoughEnergy ? `Train (-${TRAINING_ENERGY_COST}⚡) »` : 'Rest Needed'}
+                      </span>
                     </div>
                   </button>
                 );
@@ -716,20 +749,20 @@ export const TrainingArena: React.FC<TrainingArenaProps> = ({
           </div>
         )}
 
-        {/* VIEW 2: LEARNABLE ATTACK LOADOUT (MAX 4) */}
+        {/* VIEW 2: LEARNABLE EVOLUTION-LINE ATTACK LOADOUT (MAX 4) */}
         {activeTab === 'moves' && (
           <div className="space-y-2.5">
-            <div className="flex items-center justify-between text-xs font-chakra text-slate-300 px-1">
+            <div className="flex items-center justify-between text-xs font-chakra text-slate-300 px-1 gap-2">
               <span>
-                Train <strong className="text-violet-300">Blackboard (Brains)</strong> to unlock new attacks.
+                Starts with 1 attack. Train <strong className="text-violet-300">Blackboard (Brains)</strong> to learn your evolution line's moves!
               </span>
-              <span className="font-bold text-amber-300 tabular-nums">
+              <span className="font-bold text-amber-300 tabular-nums shrink-0">
                 Equipped {equippedMoves.length}/{MAX_EQUIPPED_ATTACKS}
               </span>
             </div>
 
             <div className="space-y-2 max-h-[48vh] overflow-y-auto pr-1">
-              {BATTLE_TECHNIQUE_CATALOG.map((tech) => {
+              {linePool.map((tech) => {
                 const isLearned = learnedIds.includes(tech.id);
                 const isEquipped = equippedIds.has(tech.id);
                 const elMeta = ATTACK_ELEMENT_META[tech.element];

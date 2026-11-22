@@ -3,6 +3,7 @@ import {
   AttackMove,
   BattleMove,
   BattleStats,
+  CrestType,
   DigimonSpecies,
   DigimonStage,
   PetState,
@@ -129,7 +130,7 @@ export const GYM_STATIONS: GymStationInfo[] = [
     basePrimaryGain: 32,
     baseSecondaryGain: 3,
     accentColor: 'text-emerald-300 border-emerald-500/50 bg-emerald-950/50',
-    description: 'Shatter heavy boulders to boost Max HP and add a small Offense gain.',
+    description: 'Push heavy boulders to boost Max HP and add a small Offense gain.',
   },
   {
     id: 'mp',
@@ -194,7 +195,7 @@ export const GYM_STATIONS: GymStationInfo[] = [
     basePrimaryGain: 8,
     baseSecondaryGain: 8,
     accentColor: 'text-violet-300 border-violet-500/50 bg-violet-950/50',
-    description: 'Study tactical combat formulas to raise Brains, MP, and learn new techniques.',
+    description: 'Study tactical combat formulas to raise Brains, MP, and learn evolution-line techniques.',
   },
 ];
 
@@ -203,194 +204,552 @@ export interface LearnableBattleMove extends BattleMove {
 }
 
 export const BATTLE_TECHNIQUE_CATALOG: LearnableBattleMove[] = [
-  // Neutral / Starter
-  {
-    id: 'sonic-jab',
-    name: 'Sonic Jab',
-    element: 'hand',
-    power: 28,
-    mpCost: 8,
-    brainsThreshold: 8,
-    soundType: 'punch',
-    description: 'Fast close-range barrage that counters mechanical fighters.',
-  },
+  // Starter (Slot 1 — 0 Brains required)
   {
     id: 'spit-fire',
     name: 'Spit Fire',
     element: 'fire',
-    power: 32,
-    mpCost: 10,
-    brainsThreshold: 12,
+    power: 30,
+    mpCost: 8,
+    brainsThreshold: 0,
     soundType: 'blast',
-    description: 'Launch an ember volley strong against Nature and Filth.',
+    description: 'Basic ember volley strong against Nature and Filth.',
+  },
+  {
+    id: 'petit-frost',
+    name: 'Blue Ember',
+    element: 'fire',
+    power: 30,
+    mpCost: 8,
+    brainsThreshold: 0,
+    soundType: 'blast',
+    description: 'Starter chill-flame breath favored by arctic hound Digimon.',
+  },
+  {
+    id: 'spiral-twister',
+    name: 'Gale Peck',
+    element: 'air',
+    power: 30,
+    mpCost: 8,
+    brainsThreshold: 0,
+    soundType: 'laser',
+    description: 'Swift wind-charged strike effective against Ice-type rivals.',
+  },
+  {
+    id: 'bug-zapper',
+    name: 'Electro Spark',
+    element: 'air',
+    power: 30,
+    mpCost: 8,
+    brainsThreshold: 0,
+    soundType: 'laser',
+    description: 'Crackling carapace discharge that disrupts Ice armor.',
+  },
+  {
+    id: 'poison-ivy',
+    name: 'Seed Shot',
+    element: 'nature',
+    power: 30,
+    mpCost: 8,
+    brainsThreshold: 0,
+    soundType: 'blast',
+    description: 'Rapid botanical pellet volley strong against Air foes.',
+  },
+  {
+    id: 'bubble-stream',
+    name: 'Bubble Stream',
+    element: 'ice',
+    power: 30,
+    mpCost: 8,
+    brainsThreshold: 0,
+    soundType: 'blast',
+    description: 'Pressurized water bubbles that quench Fire attackers.',
+  },
+  {
+    id: 'air-shot',
+    name: 'Air Shot',
+    element: 'air',
+    power: 30,
+    mpCost: 8,
+    brainsThreshold: 0,
+    soundType: 'blast',
+    description: 'Compressed wind burst fired from celestial wings.',
+  },
+  {
+    id: 'kitty-slash',
+    name: 'Cat Paw Rush',
+    element: 'hand',
+    power: 30,
+    mpCost: 8,
+    brainsThreshold: 0,
+    soundType: 'punch',
+    description: 'Lightning-quick claw flurry strong against Weapon armor.',
+  },
+  {
+    id: 'sonic-jab',
+    name: 'V-Knuckle',
+    element: 'hand',
+    power: 30,
+    mpCost: 8,
+    brainsThreshold: 0,
+    soundType: 'punch',
+    description: 'Close-range dragon punch that counters mechanical fighters.',
+  },
+  {
+    id: 'silk-thread',
+    name: 'Shadow Kunai',
+    element: 'dark',
+    power: 30,
+    mpCost: 8,
+    brainsThreshold: 0,
+    soundType: 'laser',
+    description: 'Stealthy shadow dart striking Holy foes at range.',
+  },
+  {
+    id: 'stone-jab',
+    name: 'Rock Knuckle',
+    element: 'hand',
+    power: 30,
+    mpCost: 8,
+    brainsThreshold: 0,
+    soundType: 'punch',
+    description: 'Heavy granite fist built for smashing cybernetic hulls.',
+  },
+  {
+    id: 'blazing-fire',
+    name: 'Rapid Shot',
+    element: 'weapon',
+    power: 30,
+    mpCost: 8,
+    brainsThreshold: 0,
+    soundType: 'laser',
+    description: 'Precision twin-blaster fire countering Hand-to-Hand brawlers.',
+  },
+  {
+    id: 'diamond-storm',
+    name: 'Fox Leaf',
+    element: 'nature',
+    power: 30,
+    mpCost: 8,
+    brainsThreshold: 0,
+    soundType: 'laser',
+    description: 'Mystic sharpened leaves swirling toward Air opponents.',
+  },
+  {
+    id: 'poop-toss',
+    name: 'Poop Toss',
+    element: 'filth',
+    power: 32,
+    mpCost: 8,
+    brainsThreshold: 0,
+    soundType: 'blast',
+    description: 'Unpredictable filth volley dealing 1.5x damage to Holy, Dark & Weapon.',
+  },
+
+  // Tier 2 (24 Brains via Blackboard)
+  {
+    id: 'claw-combo',
+    name: 'Dragon Claw',
+    element: 'hand',
+    power: 38,
+    mpCost: 12,
+    brainsThreshold: 24,
+    soundType: 'punch',
+    description: 'Fierce slashing combo taught through combat tactics.',
+  },
+  {
+    id: 'ice-fang',
+    name: 'Frost Fang',
+    element: 'ice',
+    power: 38,
+    mpCost: 12,
+    brainsThreshold: 24,
+    soundType: 'punch',
+    description: 'Subzero biting tackle that freezes Fire-element rivals.',
+  },
+  {
+    id: 'static-shock',
+    name: 'Feather Spark',
+    element: 'air',
+    power: 38,
+    mpCost: 12,
+    brainsThreshold: 24,
+    soundType: 'laser',
+    description: 'High-speed wind-lightning discharge strong against Ice.',
+  },
+  {
+    id: 'gear-cutter',
+    name: 'Mantis Claw',
+    element: 'weapon',
+    power: 38,
+    mpCost: 12,
+    brainsThreshold: 24,
+    soundType: 'punch',
+    description: 'Alloy blade strike countering Hand-to-Hand brawlers.',
   },
   {
     id: 'razor-leaf',
     name: 'Thorn Volley',
     element: 'nature',
-    power: 32,
-    mpCost: 10,
-    brainsThreshold: 14,
+    power: 38,
+    mpCost: 12,
+    brainsThreshold: 24,
     soundType: 'laser',
-    description: 'Razor-sharp botanical darts that pierce Air-element foes.',
-  },
-  {
-    id: 'static-shock',
-    name: 'Static Elect',
-    element: 'air',
-    power: 33,
-    mpCost: 10,
-    brainsThreshold: 16,
-    soundType: 'laser',
-    description: 'Crackling wind-lightning discharge strong against Ice.',
+    description: 'Razor-sharp botanical darts piercing Air defenders.',
   },
   {
     id: 'hail-spear',
     name: 'Hail Spear',
     element: 'ice',
-    power: 33,
-    mpCost: 10,
-    brainsThreshold: 18,
-    soundType: 'blast',
-    description: 'Sub-zero ice shards that quench Fire-element rivals.',
-  },
-  {
-    id: 'gear-cutter',
-    name: 'Mechanical Claw',
-    element: 'weapon',
-    power: 36,
+    power: 38,
     mpCost: 12,
-    brainsThreshold: 22,
-    soundType: 'punch',
-    description: 'Precision alloy slash that counters Hand-to-Hand brawlers.',
+    brainsThreshold: 24,
+    soundType: 'blast',
+    description: 'Crystalline ice lances quenching Fire-element foes.',
   },
   {
     id: 'saint-ray',
     name: 'Saint Ray',
     element: 'holy',
     power: 38,
-    mpCost: 14,
-    brainsThreshold: 26,
+    mpCost: 12,
+    brainsThreshold: 24,
     soundType: 'laser',
     description: 'Purifying beam of light effective against Dark opponents.',
+  },
+  {
+    id: 'vee-headbutt',
+    name: 'Dragon Fang',
+    element: 'hand',
+    power: 38,
+    mpCost: 12,
+    brainsThreshold: 24,
+    soundType: 'punch',
+    description: 'Armored headlong charge smashing mechanical targets.',
   },
   {
     id: 'blackout-pulse',
     name: 'Shadow Mist',
     element: 'dark',
     power: 38,
-    mpCost: 14,
-    brainsThreshold: 28,
+    mpCost: 12,
+    brainsThreshold: 24,
     soundType: 'howl',
-    description: 'Creeping darkness surge that hits Holy foes hard.',
+    description: 'Creeping darkness surge hitting Holy foes hard.',
   },
   {
-    id: 'poop-toss',
-    name: 'Poop Toss',
-    element: 'filth',
-    power: 34,
-    mpCost: 9,
+    id: 'angry-rock',
+    name: 'Crag Volley',
+    element: 'weapon',
+    power: 38,
+    mpCost: 12,
     brainsThreshold: 24,
     soundType: 'blast',
-    description: 'Unpredictable filth volley dealing bonus damage to Holy, Dark, and Weapon.',
+    description: 'Hardened mineral shells shattering Hand-to-Hand defenses.',
   },
+  {
+    id: 'fox-flame',
+    name: 'Kitsune Fire',
+    element: 'fire',
+    power: 38,
+    mpCost: 12,
+    brainsThreshold: 24,
+    soundType: 'blast',
+    description: 'Conjured spirit embers burning Nature opponents.',
+  },
+  {
+    id: 'sludge-splash',
+    name: 'Sludge Splash',
+    element: 'filth',
+    power: 40,
+    mpCost: 12,
+    brainsThreshold: 24,
+    soundType: 'blast',
+    description: 'Sticky sludge wave overwhelming Holy, Dark, and Weapon.',
+  },
+
+  // Tier 3 (40 Brains via Blackboard)
   {
     id: 'flame-inferno',
     name: 'Flame Storm',
     element: 'fire',
-    power: 46,
-    mpCost: 18,
-    brainsThreshold: 34,
+    power: 48,
+    mpCost: 16,
+    brainsThreshold: 40,
     soundType: 'blast',
     description: 'Roaring vortex of crimson fire sweeping Nature defenders.',
-  },
-  {
-    id: 'emerald-pulse',
-    name: 'Root Bind',
-    element: 'nature',
-    power: 46,
-    mpCost: 18,
-    brainsThreshold: 38,
-    soundType: 'blast',
-    description: 'Coiling forest surge that grounds agile Air fighters.',
-  },
-  {
-    id: 'megalo-spark',
-    name: 'Megalo Spark',
-    element: 'air',
-    power: 48,
-    mpCost: 18,
-    brainsThreshold: 42,
-    soundType: 'laser',
-    description: 'High-voltage thunderbolt shattering Ice armor.',
   },
   {
     id: 'winter-blast',
     name: 'Winter Blast',
     element: 'ice',
     power: 48,
-    mpCost: 18,
-    brainsThreshold: 46,
+    mpCost: 16,
+    brainsThreshold: 40,
     soundType: 'blast',
     description: 'Freezing blizzard wave extinguishing Fire-type attackers.',
   },
   {
-    id: 'tremar-punch',
-    name: 'Tremar Smash',
-    element: 'hand',
-    power: 52,
-    mpCost: 20,
-    brainsThreshold: 52,
+    id: 'crimson-wing',
+    name: 'Crimson Flare',
+    element: 'fire',
+    power: 48,
+    mpCost: 16,
+    brainsThreshold: 40,
+    soundType: 'blast',
+    description: 'Blazing updraft dive scorching forest enemies.',
+  },
+  {
+    id: 'horn-impulse',
+    name: 'Horn Impulse',
+    element: 'air',
+    power: 48,
+    mpCost: 16,
+    brainsThreshold: 40,
+    soundType: 'laser',
+    description: 'Charged beetle-horn shockwave piercing Ice armor.',
+  },
+  {
+    id: 'emerald-pulse',
+    name: 'Root Bind',
+    element: 'nature',
+    power: 48,
+    mpCost: 16,
+    brainsThreshold: 40,
+    soundType: 'blast',
+    description: 'Coiling forest surge grounding agile Air fighters.',
+  },
+  {
+    id: 'tidal-wave',
+    name: 'Ocean Surge',
+    element: 'ice',
+    power: 48,
+    mpCost: 16,
+    brainsThreshold: 40,
+    soundType: 'blast',
+    description: 'Crushing abyssal torrent overwhelming Fire rivals.',
+  },
+  {
+    id: 'heaven-knuckle',
+    name: 'Hand of Fate',
+    element: 'holy',
+    power: 48,
+    mpCost: 16,
+    brainsThreshold: 40,
     soundType: 'punch',
-    description: 'Seismic knuckle shockwave built for breaking Weapon armor.',
+    description: 'Golden angelic strike punishing Dark Digimon.',
+  },
+  {
+    id: 'holy-ring',
+    name: 'Sacred Ring',
+    element: 'holy',
+    power: 48,
+    mpCost: 16,
+    brainsThreshold: 40,
+    soundType: 'laser',
+    description: 'Radiant halo pulse cutting through shadow barriers.',
+  },
+  {
+    id: 'plasma-shoot',
+    name: 'Shining V-Force',
+    element: 'holy',
+    power: 48,
+    mpCost: 16,
+    brainsThreshold: 40,
+    soundType: 'laser',
+    description: 'Sacred V-crest energy burst banishing Dark foes.',
+  },
+  {
+    id: 'ninja-slash',
+    name: 'Crimson Shuriken',
+    element: 'weapon',
+    power: 48,
+    mpCost: 16,
+    brainsThreshold: 40,
+    soundType: 'laser',
+    description: 'High-speed alloy blades counterswiping Hand fighters.',
+  },
+  {
+    id: 'feather-slash',
+    name: 'Sonic Wing',
+    element: 'air',
+    power: 48,
+    mpCost: 16,
+    brainsThreshold: 40,
+    soundType: 'laser',
+    description: 'Razor wind blades slicing straight through Ice armor.',
+  },
+  {
+    id: 'quake-stomp',
+    name: 'Tectonic Crash',
+    element: 'hand',
+    power: 48,
+    mpCost: 16,
+    brainsThreshold: 40,
+    soundType: 'punch',
+    description: 'Ground-splitting impact wrecking steel armor.',
+  },
+  {
+    id: 'chrono-breaker',
+    name: 'Chrono Gear',
+    element: 'weapon',
+    power: 48,
+    mpCost: 16,
+    brainsThreshold: 40,
+    soundType: 'laser',
+    description: 'Synchronized cybernetic salvo built for heavy combat.',
+  },
+  {
+    id: 'talisman-star',
+    name: 'Talisman Star',
+    element: 'holy',
+    power: 48,
+    mpCost: 16,
+    brainsThreshold: 40,
+    soundType: 'laser',
+    description: 'Sacred ofuda barrage purifying Dark threats.',
+  },
+  {
+    id: 'stink-cloud',
+    name: 'Noxious Haze',
+    element: 'filth',
+    power: 48,
+    mpCost: 16,
+    brainsThreshold: 40,
+    soundType: 'howl',
+    description: 'Toxic cloud catching Holy, Dark, and Weapon off-guard.',
+  },
+
+  // Tier 4 (58 Brains via Blackboard)
+  {
+    id: 'flare-rush',
+    name: 'Mega Burst',
+    element: 'fire',
+    power: 58,
+    mpCost: 22,
+    brainsThreshold: 58,
+    soundType: 'blast',
+    description: 'Condensed plasma fireball scorching Nature defenses.',
+  },
+  {
+    id: 'howling-blaster',
+    name: 'Garuru Blaster',
+    element: 'ice',
+    power: 58,
+    mpCost: 22,
+    brainsThreshold: 58,
+    soundType: 'blast',
+    description: 'Cryo cannon volley shutting down Fire opponents.',
+  },
+  {
+    id: 'megalo-spark',
+    name: 'Tempest Bolt',
+    element: 'air',
+    power: 58,
+    mpCost: 22,
+    brainsThreshold: 58,
+    soundType: 'laser',
+    description: 'High-voltage thunderbolt shattering Ice armor.',
   },
   {
     id: 'buster-laser',
-    name: 'Full Metal Laser',
+    name: 'Giga Cannon',
     element: 'weapon',
-    power: 54,
+    power: 58,
     mpCost: 22,
     brainsThreshold: 58,
     soundType: 'laser',
     description: 'Heavy cybernetic artillery barrage countering Hand-to-Hand.',
   },
   {
+    id: 'petal-vortex',
+    name: 'Flower Tempest',
+    element: 'nature',
+    power: 58,
+    mpCost: 22,
+    brainsThreshold: 58,
+    soundType: 'blast',
+    description: 'Cyclone of razor petals sweeping Air contenders.',
+  },
+  {
+    id: 'vulcan-hammer',
+    name: 'Thor Hammer',
+    element: 'weapon',
+    power: 58,
+    mpCost: 22,
+    brainsThreshold: 58,
+    soundType: 'punch',
+    description: 'Thunder-forged alloy hammer breaking Hand-to-Hand guards.',
+  },
+  {
     id: 'shining-nova',
     name: 'Shining Nova',
     element: 'holy',
     power: 58,
-    mpCost: 24,
-    brainsThreshold: 64,
+    mpCost: 22,
+    brainsThreshold: 58,
     soundType: 'blast',
     description: 'Radiant celestial detonation dealing 1.5x to Dark threats.',
+  },
+  {
+    id: 'tremar-punch',
+    name: 'Tremar Smash',
+    element: 'hand',
+    power: 58,
+    mpCost: 22,
+    brainsThreshold: 58,
+    soundType: 'punch',
+    description: 'Seismic knuckle shockwave built for breaking Weapon armor.',
   },
   {
     id: 'evil-squall',
     name: 'Chaos Cloud',
     element: 'dark',
     power: 58,
-    mpCost: 24,
-    brainsThreshold: 70,
+    mpCost: 22,
+    brainsThreshold: 58,
     soundType: 'howl',
     description: 'Abyssal energy storm piercing Holy wards.',
   },
   {
-    id: 'buster-dive',
-    name: 'Buster Tackle',
-    element: 'neutral',
-    power: 55,
-    mpCost: 20,
-    brainsThreshold: 76,
-    soundType: 'punch',
-    description: 'Full-body momentum charge with reliable neutral impact.',
+    id: 'atomic-blaster',
+    name: 'Atomic Blaster',
+    element: 'fire',
+    power: 58,
+    mpCost: 22,
+    brainsThreshold: 58,
+    soundType: 'blast',
+    description: 'crimson Digital Hazard beam vaporizing Nature rivals.',
   },
+  {
+    id: 'amethyst-wind',
+    name: 'Amethyst Mandala',
+    element: 'holy',
+    power: 58,
+    mpCost: 22,
+    brainsThreshold: 58,
+    soundType: 'laser',
+    description: 'Spiritual barrier burst shattering Dark illusions.',
+  },
+  {
+    id: 'love-serenade',
+    name: 'Dark Serenade',
+    element: 'dark',
+    power: 58,
+    mpCost: 22,
+    brainsThreshold: 58,
+    soundType: 'howl',
+    description: 'Chaotic sonic blast rattling Holy opponents.',
+  },
+
+  // Tier 5 (80 Brains via Blackboard)
   {
     id: 'prominence-beam',
     name: 'Prominence Beam',
     element: 'fire',
-    power: 68,
+    power: 70,
     mpCost: 28,
-    brainsThreshold: 86,
+    brainsThreshold: 80,
     soundType: 'laser',
     description: 'Master-tier solar lance incinerating Nature opponents.',
   },
@@ -398,13 +757,166 @@ export const BATTLE_TECHNIQUE_CATALOG: LearnableBattleMove[] = [
     id: 'aurora-freeze',
     name: 'Aurora Freeze',
     element: 'ice',
-    power: 68,
+    power: 70,
     mpCost: 28,
-    brainsThreshold: 96,
+    brainsThreshold: 80,
     soundType: 'laser',
     description: 'Crystalline zero-point ray crushing Fire opponents.',
   },
+  {
+    id: 'solar-wing',
+    name: 'Starlight Wing',
+    element: 'holy',
+    power: 70,
+    mpCost: 28,
+    brainsThreshold: 80,
+    soundType: 'blast',
+    description: 'Blinding feather supernova purging Dark foes.',
+  },
+  {
+    id: 'megalo-horn',
+    name: 'Super Shocker',
+    element: 'air',
+    power: 70,
+    mpCost: 28,
+    brainsThreshold: 80,
+    soundType: 'laser',
+    description: 'Ultimate gigawatt horn surge obliterating Ice defenses.',
+  },
+  {
+    id: 'gaia-thorn',
+    name: 'Forbidden Thorn',
+    element: 'nature',
+    power: 70,
+    mpCost: 28,
+    brainsThreshold: 80,
+    soundType: 'blast',
+    description: 'Ancient jungle tempest tearing through Air guardians.',
+  },
+  {
+    id: 'testament-light',
+    name: 'Seven Heavens',
+    element: 'holy',
+    power: 70,
+    mpCost: 28,
+    brainsThreshold: 80,
+    soundType: 'blast',
+    description: 'Seven radiant orbs annihilating Dark lords.',
+  },
+  {
+    id: 'celestial-flame',
+    name: 'Eden Javelin',
+    element: 'holy',
+    power: 70,
+    mpCost: 28,
+    brainsThreshold: 80,
+    soundType: 'laser',
+    description: 'Judgment lance of pure light piercing Dark forces.',
+  },
+  {
+    id: 'miracle-nova',
+    name: 'Extreme Jihad',
+    element: 'holy',
+    power: 70,
+    mpCost: 28,
+    brainsThreshold: 80,
+    soundType: 'blast',
+    description: 'Golden Miracle energy detonation reshaping the battlefield.',
+  },
+  {
+    id: 'oblivion-blade',
+    name: 'Phantom Blade',
+    element: 'dark',
+    power: 70,
+    mpCost: 28,
+    brainsThreshold: 80,
+    soundType: 'laser',
+    description: 'Moonlit shinobi crescent slicing through Holy light.',
+  },
+  {
+    id: 'valkyrie-gale',
+    name: 'Fenrir Sword',
+    element: 'air',
+    power: 70,
+    mpCost: 28,
+    brainsThreshold: 80,
+    soundType: 'laser',
+    description: 'Freezing gale slash cutting down Ice champions.',
+  },
+  {
+    id: 'dino-cannon',
+    name: 'Terra Cannon',
+    element: 'weapon',
+    power: 70,
+    mpCost: 28,
+    brainsThreshold: 80,
+    soundType: 'blast',
+    description: 'Heavy armored artillery battery shattering Hand-to-Hand.',
+  },
+  {
+    id: 'hazard-lance',
+    name: 'Royal Lance',
+    element: 'holy',
+    power: 70,
+    mpCost: 28,
+    brainsThreshold: 80,
+    soundType: 'laser',
+    description: 'Final lance discharge unleashing overwhelming Knight force.',
+  },
+  {
+    id: 'infinity-cannon',
+    name: 'Infinity Cannon',
+    element: 'weapon',
+    power: 70,
+    mpCost: 28,
+    brainsThreshold: 80,
+    soundType: 'blast',
+    description: 'Twin Dreadnought railguns firing maximum machine power.',
+  },
+  {
+    id: 'moonlight-rite',
+    name: 'Spirit Dance',
+    element: 'dark',
+    power: 70,
+    mpCost: 28,
+    brainsThreshold: 80,
+    soundType: 'howl',
+    description: 'Forbidden spirit rite striking Holy rivals.',
+  },
+  {
+    id: 'mega-poop-drop',
+    name: 'Golden Flush',
+    element: 'filth',
+    power: 68,
+    mpCost: 26,
+    brainsThreshold: 80,
+    soundType: 'blast',
+    description: 'Supreme filth storm overwhelming Holy, Dark, and Weapon.',
+  },
 ];
+
+export const EVOLUTION_LINE_MOVE_IDS: Record<CrestType | 'filth', [string, string, string, string, string]> = {
+  courage: ['spit-fire', 'claw-combo', 'flame-inferno', 'flare-rush', 'prominence-beam'],
+  friendship: ['petit-frost', 'ice-fang', 'winter-blast', 'howling-blaster', 'aurora-freeze'],
+  love: ['spiral-twister', 'static-shock', 'crimson-wing', 'megalo-spark', 'solar-wing'],
+  knowledge: ['bug-zapper', 'gear-cutter', 'horn-impulse', 'buster-laser', 'megalo-horn'],
+  sincerity: ['poison-ivy', 'razor-leaf', 'emerald-pulse', 'petal-vortex', 'gaia-thorn'],
+  reliability: ['bubble-stream', 'hail-spear', 'tidal-wave', 'vulcan-hammer', 'aurora-freeze'],
+  hope: ['air-shot', 'saint-ray', 'heaven-knuckle', 'shining-nova', 'testament-light'],
+  light: ['kitty-slash', 'saint-ray', 'holy-ring', 'shining-nova', 'celestial-flame'],
+  miracles: ['sonic-jab', 'vee-headbutt', 'plasma-shoot', 'tremar-punch', 'miracle-nova'],
+  shadow: ['silk-thread', 'blackout-pulse', 'ninja-slash', 'evil-squall', 'oblivion-blade'],
+  wind: ['spiral-twister', 'static-shock', 'feather-slash', 'megalo-spark', 'valkyrie-gale'],
+  earth: ['stone-jab', 'angry-rock', 'quake-stomp', 'tremar-punch', 'dino-cannon'],
+  hazard: ['spit-fire', 'blackout-pulse', 'flame-inferno', 'atomic-blaster', 'hazard-lance'],
+  mech: ['blazing-fire', 'gear-cutter', 'chrono-breaker', 'buster-laser', 'infinity-cannon'],
+  mystic: ['diamond-storm', 'fox-flame', 'talisman-star', 'amethyst-wind', 'moonlight-rite'],
+  filth: ['poop-toss', 'sludge-splash', 'stink-cloud', 'love-serenade', 'mega-poop-drop'],
+};
+
+const MOVE_BY_ID: Record<string, LearnableBattleMove> = Object.fromEntries(
+  BATTLE_TECHNIQUE_CATALOG.map((m) => [m.id, m])
+);
 
 const FILTH_SPECIES_KEYWORDS = [
   'numemon',
@@ -431,6 +943,32 @@ export function isFilthSpecies(species?: DigimonSpecies): boolean {
     if (FILTH_SPECIES_KEYWORDS.some((kw) => idLower.includes(kw))) return true;
   }
   return FILTH_SPECIES_KEYWORDS.some((kw) => idLower.includes(kw));
+}
+
+export function resolveEvolutionLineKey(
+  pet?: Pick<PetState, 'eggId' | 'currentSpeciesId'>,
+  species?: DigimonSpecies
+): CrestType | 'filth' {
+  if (isFilthSpecies(species)) return 'filth';
+  if (pet?.eggId && pet.eggId.startsWith('egg-')) {
+    const rawCrest = pet.eggId.slice(4) as CrestType;
+    if (rawCrest in EVOLUTION_LINE_MOVE_IDS) {
+      return rawCrest;
+    }
+  }
+  if (species?.crest && species.crest in EVOLUTION_LINE_MOVE_IDS) {
+    return species.crest;
+  }
+  return 'courage';
+}
+
+export function getTechniquePoolForLine(
+  pet?: Pick<PetState, 'eggId' | 'currentSpeciesId'>,
+  species?: DigimonSpecies
+): LearnableBattleMove[] {
+  const lineKey = resolveEvolutionLineKey(pet, species);
+  const ids = EVOLUTION_LINE_MOVE_IDS[lineKey] || EVOLUTION_LINE_MOVE_IDS.courage;
+  return ids.map((id) => MOVE_BY_ID[id]).filter((m): m is LearnableBattleMove => Boolean(m));
 }
 
 export function mapMoveTypeToElement(
@@ -646,27 +1184,30 @@ export function getEffectiveBattleStats(pet: PetState, species?: DigimonSpecies)
   };
 }
 
+/**
+ * Every Digimon starts strictly with ONLY 1 attack specific to its evolution line.
+ * Additional attacks are learned exclusively by training Brains at the Blackboard.
+ */
 export function getStarterTechniqueIdsForSpecies(
   species?: DigimonSpecies,
-  brainsVal: number = 20
+  eggIdOrUnused?: string | number
 ): string[] {
-  const el = getSpeciesElementType(species);
-  const matching = BATTLE_TECHNIQUE_CATALOG.filter(
-    (m) => m.element === el && m.brainsThreshold <= brainsVal + 14
-  ).map((m) => m.id);
-  const thresholdMatches = BATTLE_TECHNIQUE_CATALOG.filter(
-    (m) => m.brainsThreshold <= brainsVal
-  ).map((m) => m.id);
-  return Array.from(new Set(['sonic-jab', ...matching, ...thresholdMatches]));
+  const petHint =
+    typeof eggIdOrUnused === 'string' && eggIdOrUnused.startsWith('egg-')
+      ? { eggId: eggIdOrUnused, currentSpeciesId: species?.id || '' }
+      : undefined;
+  const pool = getTechniquePoolForLine(petHint, species);
+  return pool.length > 0 ? [pool[0].id] : ['spit-fire'];
 }
 
 export function getLearnedTechniqueIds(pet: PetState, species?: DigimonSpecies): string[] {
-  const stats = getEffectiveBattleStats(pet, species);
-  const baseStarter = getStarterTechniqueIdsForSpecies(species, stats.brains);
-  const stored = Array.isArray(pet.learnedAttackIds) ? pet.learnedAttackIds : [];
-  return Array.from(new Set([...baseStarter, ...stored])).filter((id) =>
-    BATTLE_TECHNIQUE_CATALOG.some((m) => m.id === id)
-  );
+  const pool = getTechniquePoolForLine(pet, species);
+  const poolIds = new Set(pool.map((m) => m.id));
+  const starterId = pool[0]?.id || 'spit-fire';
+  const stored = Array.isArray(pet.learnedAttackIds)
+    ? pet.learnedAttackIds.filter((id) => poolIds.has(id))
+    : [];
+  return Array.from(new Set([starterId, ...stored]));
 }
 
 export function getEquippedBattleMoves(pet: PetState, species?: DigimonSpecies): BattleMove[] {
@@ -677,16 +1218,11 @@ export function getEquippedBattleMoves(pet: PetState, species?: DigimonSpecies):
 
   let finalIds = storedEq.slice(0, MAX_EQUIPPED_ATTACKS);
   if (pet.equippedAttackIds === undefined && learned.length > 0) {
-    const el = getSpeciesElementType(species);
-    const preferred = learned.filter((id) => {
-      const m = BATTLE_TECHNIQUE_CATALOG.find((t) => t.id === id);
-      return m?.element === el;
-    });
-    finalIds = Array.from(new Set([...preferred, ...learned])).slice(0, MAX_EQUIPPED_ATTACKS);
+    finalIds = learned.slice(0, MAX_EQUIPPED_ATTACKS);
   }
 
   return finalIds
-    .map((id) => BATTLE_TECHNIQUE_CATALOG.find((m) => m.id === id))
+    .map((id) => MOVE_BY_ID[id])
     .filter((m): m is LearnableBattleMove => Boolean(m));
 }
 
@@ -742,22 +1278,18 @@ export function calculateTrainingOutcome(
     brains: current.brains + deltas.brains,
   };
 
+  const linePool = getTechniquePoolForLine(pet, species);
   const alreadyLearned = new Set(getLearnedTechniqueIds(pet, species));
   const newlyLearnedMoves: LearnableBattleMove[] = [];
 
-  if (statKey === 'brains' || deltas.brains > 0) {
-    // Check threshold unlocks from Brains
-    for (const tech of BATTLE_TECHNIQUE_CATALOG) {
-      if (!alreadyLearned.has(tech.id) && nextStats.brains >= tech.brainsThreshold) {
-        newlyLearnedMoves.push(tech);
-        alreadyLearned.add(tech.id);
-      }
-    }
-    // Bonus chance when training directly at Blackboard to discover next unlearned move if close
-    if (statKey === 'brains' && newlyLearnedMoves.length === 0 && hits >= 2) {
-      const nextCandidate = BATTLE_TECHNIQUE_CATALOG.find((t) => !alreadyLearned.has(t.id));
-      if (nextCandidate && nextStats.brains + 6 >= nextCandidate.brainsThreshold) {
-        newlyLearnedMoves.push(nextCandidate);
+  // Learn attacks strictly from training Brains at the Blackboard (1 evolution-line attack unlocked at a time)
+  if (statKey === 'brains') {
+    const nextUnlearned = linePool.find((tech) => !alreadyLearned.has(tech.id));
+    if (nextUnlearned) {
+      const meetsThreshold = nextStats.brains >= nextUnlearned.brainsThreshold;
+      const closeOnGoodHit = hits >= 2 && nextStats.brains + 6 >= nextUnlearned.brainsThreshold;
+      if (meetsThreshold || closeOnGoodHit) {
+        newlyLearnedMoves.push(nextUnlearned);
       }
     }
   }

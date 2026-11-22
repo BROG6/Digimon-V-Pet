@@ -3,8 +3,10 @@ import { motion } from 'motion/react';
 import { PetState, DigimonSpecies, DigiEggInfo } from '../types/digimon';
 import { DigimonSprite } from './DigimonSprite';
 import { fetchDigimonAiDialogue, DigimonChatTurn } from '../utils/digimonPersonality';
+import { getCustomUpdateUrl, setCustomUpdateUrl } from '../utils/appUpdater';
 import { sound } from '../utils/audio';
-import { Sparkles, Send, X, MessageSquare, User, Check, Pencil } from 'lucide-react';
+import { Capacitor } from '@capacitor/core';
+import { Sparkles, Send, X, MessageSquare, User, Check, Pencil, Globe } from 'lucide-react';
 
 interface DigimonTalkModalProps {
   pet: PetState;
@@ -29,6 +31,9 @@ export const DigimonTalkModal: React.FC<DigimonTalkModalProps> = ({
   const [moodAction, setMoodAction] = useState<'idle' | 'happy'>('idle');
   const [isEditingName, setIsEditingName] = useState<boolean>(false);
   const [draftName, setDraftName] = useState<string>(pet.playerName || '');
+  const [connectionError, setConnectionError] = useState<string | null>(null);
+  const [showServerConfig, setShowServerConfig] = useState<boolean>(false);
+  const [serverUrlDraft, setServerUrlDraft] = useState<string>(() => getCustomUpdateUrl());
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -36,6 +41,8 @@ export const DigimonTalkModal: React.FC<DigimonTalkModalProps> = ({
       const saved = pet.playerName || '';
       setDraftName(saved);
       setIsEditingName(!saved.trim());
+      setConnectionError(null);
+      setServerUrlDraft(getCustomUpdateUrl());
     }
   }, [isOpen, pet.playerName]);
 
@@ -118,9 +125,12 @@ export const DigimonTalkModal: React.FC<DigimonTalkModalProps> = ({
 
       setMessages((prev) => [...prev, { role: 'model', text: result.text }]);
       if (result.source === 'ai') {
+        setConnectionError(null);
         sound.playAlert();
         setMoodAction('happy');
         setTimeout(() => setMoodAction('idle'), 1400);
+      } else if (result.error) {
+        setConnectionError(result.error);
       }
     } finally {
       setIsThinking(false);
@@ -269,6 +279,46 @@ export const DigimonTalkModal: React.FC<DigimonTalkModalProps> = ({
             </div>
           )}
         </div>
+
+        {/* Native APK Server URL Helper (shown only if connection failed on native device) */}
+        {connectionError && Capacitor.isNativePlatform() && (
+          <div className="mb-2.5 p-2.5 rounded-xl bg-amber-950/50 border border-amber-500/40 text-[11px] space-y-2">
+            <div className="flex items-center justify-between gap-2 text-amber-200">
+              <span className="truncate">Need a public Server URL for mobile AI Chat</span>
+              <button
+                type="button"
+                onClick={() => setShowServerConfig((v) => !v)}
+                className="px-2 py-0.5 rounded-md bg-amber-500/20 border border-amber-400/50 text-amber-300 font-pixel text-[8px] flex items-center gap-1 shrink-0 cursor-pointer"
+              >
+                <Globe className="w-2.5 h-2.5" />
+                <span>{showServerConfig ? 'HIDE' : 'SET URL'}</span>
+              </button>
+            </div>
+            {showServerConfig && (
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="url"
+                  value={serverUrlDraft}
+                  onChange={(e) => setServerUrlDraft(e.target.value)}
+                  placeholder="https://your-shared-app-url.run.app"
+                  className="flex-1 min-w-0 bg-slate-950 border border-slate-700 rounded-lg px-2 py-1 text-[11px] text-white focus:outline-none focus:border-cyan-400"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    sound.playButton();
+                    setCustomUpdateUrl(serverUrlDraft.trim());
+                    setShowServerConfig(false);
+                    setConnectionError(null);
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-cyan-500 hover:bg-cyan-400 text-slate-950 font-pixel text-[8px] font-bold shrink-0 cursor-pointer"
+                >
+                  SAVE
+                </button>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Quick Prompts */}
         <div className="flex flex-wrap gap-1.5 mb-2.5">

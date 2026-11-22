@@ -343,7 +343,7 @@ VOICE & ROLEPLAY GUIDELINES:
         : `${playerContextPrefix}${userPrompt}`;
 
       let lastErr: any = null;
-      const modelsToTry = ['gemini-4-hydrogen', 'gemini-3.1-flash-lite'];
+      const modelsToTry = ['gemini-3.1-flash-lite', 'gemini-2.5-flash'];
       for (let attempt = 0; attempt < modelsToTry.length; attempt++) {
         const modelName = modelsToTry[attempt];
         try {
@@ -354,9 +354,7 @@ VOICE & ROLEPLAY GUIDELINES:
               config: {
                 systemInstruction,
                 thinkingConfig: {
-                  thinkingLevel: modelName === 'gemini-3.1-flash-lite'
-                    ? ThinkingLevel.MINIMAL
-                    : ThinkingLevel.LOW,
+                  thinkingLevel: ThinkingLevel.MINIMAL,
                 },
               },
             }),

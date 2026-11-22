@@ -371,15 +371,15 @@ public class OverlayPlugin extends Plugin {
 
     @PluginMethod
     public void showCareNotification(PluginCall call) {
-        // Never pop system notifications while the player is actively inside the game
-        if (isAppInForeground) {
+        Context ctx = getActivity() != null ? getActivity() : getContext();
+        // Only skip OS notification while the player is actively looking at the unlocked game
+        if (isAppInForeground && !CareAlarmReceiver.isScreenLockedOrOff(ctx)) {
             JSObject ret = new JSObject();
             ret.put("success", false);
             call.resolve(ret);
             return;
         }
 
-        Context ctx = getActivity() != null ? getActivity() : getContext();
         if (Build.VERSION.SDK_INT >= 33) {
             if (ContextCompat.checkSelfPermission(ctx, Manifest.permission.POST_NOTIFICATIONS)
                 != PackageManager.PERMISSION_GRANTED) {
@@ -413,6 +413,9 @@ public class OverlayPlugin extends Plugin {
             );
             channel.setDescription("Digivice alerts when your Digimon is hungry, sleepy, or needs the toilet.");
             channel.enableVibration(true);
+            channel.setVibrationPattern(new long[]{0L, 250L, 150L, 250L});
+            channel.setLockscreenVisibility(android.app.Notification.VISIBILITY_PUBLIC);
+            channel.setShowBadge(true);
             AudioAttributes audioAttrs = new AudioAttributes.Builder()
                 .setUsage(AudioAttributes.USAGE_NOTIFICATION)
                 .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
@@ -433,7 +436,12 @@ public class OverlayPlugin extends Plugin {
             .setContentTitle(title)
             .setContentText(body)
             .setStyle(new NotificationCompat.BigTextStyle().bigText(body))
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setPriority(NotificationCompat.PRIORITY_MAX)
+            .setCategory(NotificationCompat.CATEGORY_REMINDER)
+            .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+            .setDefaults(NotificationCompat.DEFAULT_VIBRATE | NotificationCompat.DEFAULT_LIGHTS)
+            .setWhen(System.currentTimeMillis())
+            .setShowWhen(true)
             .setSound(soundUri)
             .setAutoCancel(true)
             .setContentIntent(pendingIntent);
@@ -460,10 +468,24 @@ public class OverlayPlugin extends Plugin {
         if (am == null) return;
         PendingIntent pi = createCareAlarmPendingIntent(ctx, reqCode, notifId, title, body);
         if (triggerAtMs > System.currentTimeMillis() + 1000L) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMs, pi);
-            } else {
-                am.set(AlarmManager.RTC_WAKEUP, triggerAtMs, pi);
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    if (am.canScheduleExactAlarms()) {
+                        am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMs, pi);
+                    } else {
+                        am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMs, pi);
+                    }
+                } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMs, pi);
+                } else {
+                    am.setExact(AlarmManager.RTC_WAKEUP, triggerAtMs, pi);
+                }
+            } catch (SecurityException se) {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMs, pi);
+                } else {
+                    am.set(AlarmManager.RTC_WAKEUP, triggerAtMs, pi);
+                }
             }
         } else {
             am.cancel(pi);
@@ -522,6 +544,8 @@ public class OverlayPlugin extends Plugin {
         long hungryAtMs = readLongOption(call, "hungryAtMs", 0L);
         long starvingAtMs = readLongOption(call, "starvingAtMs", 0L);
         long nextPoopAtMs = readLongOption(call, "nextPoopAtMs", 0L);
+        long poop2AtMs = readLongOption(call, "poop2AtMs", 0L);
+        long poop3AtMs = readLongOption(call, "poop3AtMs", 0L);
         long poopFullAtMs = readLongOption(call, "poopFullAtMs", 0L);
         long bedtimeAtMs = readLongOption(call, "bedtimeAtMs", 0L);
         int nextPoopCount = Math.max(1, Math.min(4, readIntOption(call, "nextPoopCount", 1)));
@@ -554,6 +578,24 @@ public class OverlayPlugin extends Plugin {
             nextPoopCount >= 4
                 ? petName + " has 4 toilet piles — got sick & +1 Care Mistake! Flush & cure now."
                 : petName + " needs the toilet! (" + nextPoopCount + "/4 piles)"
+        );
+        scheduleOrCancelAlarm(
+            ctx,
+            am,
+            3006,
+            2002,
+            poop2AtMs,
+            "💩 Toilet Alert: " + petName,
+            petName + " needs the toilet! (" + Math.min(3, nextPoopCount + 1) + "/4 piles)"
+        );
+        scheduleOrCancelAlarm(
+            ctx,
+            am,
+            3007,
+            2002,
+            poop3AtMs,
+            "💩 Toilet Alert: " + petName,
+            petName + " needs the toilet! (3/4 piles — flush soon!)"
         );
         scheduleOrCancelAlarm(
             ctx,
@@ -593,6 +635,8 @@ public class OverlayPlugin extends Plugin {
             am.cancel(createCareAlarmPendingIntent(ctx, 3003, 2002, "", ""));
             am.cancel(createCareAlarmPendingIntent(ctx, 3004, 2002, "", ""));
             am.cancel(createCareAlarmPendingIntent(ctx, 3005, 2005, "", ""));
+            am.cancel(createCareAlarmPendingIntent(ctx, 3006, 2002, "", ""));
+            am.cancel(createCareAlarmPendingIntent(ctx, 3007, 2002, "", ""));
         }
         JSObject ret = new JSObject();
         ret.put("success", true);

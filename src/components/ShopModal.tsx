@@ -8,7 +8,7 @@ interface ShopModalProps {
   isOpen: boolean;
   onClose: () => void;
   pet: PetState;
-  onBuyItem: (itemId: 'meat' | 'meat_bundle' | 'sirloin' | 'vitamin' | 'vitamin_bundle' | 'energy_drink' | 'medicine', cost: number) => void;
+  onBuyItem: (itemId: 'meat' | 'meat_bundle' | 'sirloin' | 'vitamin' | 'vitamin_bundle' | 'medicine', cost: number) => void;
 }
 
 export const ShopModal: React.FC<ShopModalProps> = ({
@@ -87,16 +87,6 @@ export const ShopModal: React.FC<ShopModalProps> = ({
       discountBadge: 'VALUE PACK',
     },
     {
-      id: 'energy_drink' as const,
-      name: 'Digital Surge Drink ⚡',
-      category: 'Energy',
-      description: 'Sparkling high-voltage elixir. Restores +50 Energy and clears sleepiness.',
-      price: 30,
-      rewardText: '+50 Energy directly',
-      icon: '⚡',
-      currentStock: null,
-    },
-    {
       id: 'medicine' as const,
       name: 'Digital Antivirus 🩹',
       category: 'Care',
@@ -133,7 +123,7 @@ export const ShopModal: React.FC<ShopModalProps> = ({
                   OPEN 24/7
                 </span>
               </h3>
-              <p className="text-slate-400 text-xs">Big Meat, Vitamins, Energy &amp; Antivirus Supplies</p>
+              <p className="text-slate-400 text-xs">Big Meat, Prime Sirloin, Vitamins &amp; Antivirus Supplies</p>
             </div>
           </div>
           <div className="flex items-center gap-3">

@@ -1,4 +1,6 @@
-import { AdventureWave, AdventureZone, DigimonStage } from '../types/digimon';
+import { AdventureWave, AdventureZone, DigimonSpecies, DigimonStage } from '../types/digimon';
+import { DIGIMON_DATABASE } from './digidex';
+import { getSpeciesElementType, isFilthSpecies } from './battleTechniques';
 
 export const STAGE_RANK: Record<string, number> = {
   egg: 0,
@@ -802,3 +804,108 @@ export const ADVENTURE_ZONES: AdventureZone[] = [
     ],
   },
 ];
+
+const AQUATIC_KEYWORDS =
+  /aquatic|sea|marine|fish|crustacean|amphibian|mollusk|plesiosaur|whamon|seadramon|coelamon|octmon|syakomon|crabmon|otamamon|bukamon|gomamon|ikkakumon|zudomon|vikemon|leviamon/i;
+
+const MACHINE_KEYWORDS = /machine|cyborg|android|robot|gear|clock/i;
+
+function isZoneElementMatch(zoneId: string, sp: DigimonSpecies, strictBiome: boolean): boolean {
+  if (isFilthSpecies(sp)) return false;
+  const el = getSpeciesElementType(sp);
+
+  switch (zoneId) {
+    case 'emerald-jungle':
+      return el === 'nature';
+    case 'net-ocean': {
+      const isAquatic =
+        sp.signatureMove?.type === 'water' || AQUATIC_KEYWORDS.test(`${sp.type} ${sp.id}`);
+      return strictBiome ? isAquatic && (el === 'ice' || sp.signatureMove?.type === 'water') : el === 'ice';
+    }
+    case 'frost-tundra': {
+      const isAquatic =
+        sp.signatureMove?.type === 'water' || AQUATIC_KEYWORDS.test(`${sp.type} ${sp.id}`);
+      return strictBiome ? el === 'ice' && !isAquatic : el === 'ice';
+    }
+    case 'tempest-spire':
+      return el === 'air';
+    case 'pyro-caldera':
+      return el === 'fire';
+    case 'cyber-factory':
+      return strictBiome
+        ? el === 'weapon' || sp.crest === 'mech' || MACHINE_KEYWORDS.test(sp.type)
+        : el === 'weapon' || sp.crest === 'mech';
+    case 'dark-citadel':
+      return el === 'dark';
+    default:
+      return true;
+  }
+}
+
+function shuffleWithRng<T>(arr: T[], rng: () => number): T[] {
+  const copy = [...arr];
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    const tmp = copy[i];
+    copy[i] = copy[j];
+    copy[j] = tmp;
+  }
+  return copy;
+}
+
+function getZoneStageCandidates(zoneId: string, stage: DigimonStage): DigimonSpecies[] {
+  const all = Object.values(DIGIMON_DATABASE).filter((sp) => sp.stage === stage);
+  const strictMatches = all.filter((sp) => isZoneElementMatch(zoneId, sp, true));
+  if (strictMatches.length > 0) return strictMatches;
+  const relaxedMatches = all.filter((sp) => isZoneElementMatch(zoneId, sp, false));
+  return relaxedMatches;
+}
+
+/**
+ * Randomizes enemies for a zone strictly within that zone's element type
+ * from Rookie (Waves 1-3) -> Champion (Wave 4) -> Ultimate (Wave 5) -> Mega (Wave 6).
+ */
+export function generateRandomizedZoneWaves(
+  zone: AdventureZone,
+  rng: () => number = Math.random
+): AdventureWave[] {
+  const rookies = shuffleWithRng(getZoneStageCandidates(zone.id, 'rookie'), rng);
+  const champions = shuffleWithRng(getZoneStageCandidates(zone.id, 'champion'), rng);
+  const ultimates = shuffleWithRng(getZoneStageCandidates(zone.id, 'ultimate'), rng);
+  const megas = shuffleWithRng(getZoneStageCandidates(zone.id, 'mega'), rng);
+
+  let rookieCursor = 0;
+  return zone.waves.map((baseWave) => {
+    let picked: DigimonSpecies | undefined;
+    if (baseWave.stageLabel === 'Rookie' && rookies.length > 0) {
+      picked = rookies[rookieCursor % rookies.length];
+      rookieCursor += 1;
+    } else if (baseWave.stageLabel === 'Champion' && champions.length > 0) {
+      picked = champions[0];
+    } else if (baseWave.stageLabel === 'Ultimate' && ultimates.length > 0) {
+      picked = ultimates[0];
+    } else if (baseWave.stageLabel === 'Mega' && megas.length > 0) {
+      picked = megas[0];
+    }
+
+    const chosenId = picked?.id || baseWave.speciesId;
+    const chosenName = DIGIMON_DATABASE[chosenId]?.name || picked?.name || 'Wild Digimon';
+
+    return {
+      ...baseWave,
+      speciesId: chosenId,
+      bossFlavor: `A wild ${chosenName} emerges along ${zone.name}!`,
+    };
+  });
+}
+
+export function generateAllRandomizedZoneWaves(
+  rng: () => number = Math.random
+): Record<string, AdventureWave[]> {
+  const result: Record<string, AdventureWave[]> = {};
+  for (const zone of ADVENTURE_ZONES) {
+    result[zone.id] = generateRandomizedZoneWaves(zone, rng);
+  }
+  return result;
+}
+

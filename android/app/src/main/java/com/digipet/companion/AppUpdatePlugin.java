@@ -333,34 +333,54 @@ public class AppUpdatePlugin extends Plugin {
         new Thread(() -> {
             HttpURLConnection conn = null;
             try {
-                URL url = new URL(targetUrl);
-                conn = (HttpURLConnection) url.openConnection();
-                conn.setRequestMethod("POST");
-                conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
-                conn.setRequestProperty("Accept", "application/json");
-                conn.setInstanceFollowRedirects(false);
-                conn.setConnectTimeout(15000);
-                conn.setReadTimeout(35000);
-                conn.setDoOutput(true);
-                byte[] outBytes = (body != null ? body : "{}").getBytes("UTF-8");
-                conn.setFixedLengthStreamingMode(outBytes.length);
-                try (java.io.OutputStream os = conn.getOutputStream()) {
-                    os.write(outBytes);
-                    os.flush();
-                }
+                String currentUrl = targetUrl;
+                int redirects = 0;
+                int code = 0;
+                while (redirects <= 2) {
+                    URL url = new URL(currentUrl);
+                    conn = (HttpURLConnection) url.openConnection();
+                    conn.setRequestMethod("POST");
+                    conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
+                    conn.setRequestProperty("Accept", "application/json");
+                    conn.setRequestProperty("User-Agent", "DigiPet-Android/1.2");
+                    conn.setInstanceFollowRedirects(false);
+                    conn.setConnectTimeout(15000);
+                    conn.setReadTimeout(35000);
+                    conn.setDoOutput(true);
+                    byte[] outBytes = (body != null ? body : "{}").getBytes("UTF-8");
+                    conn.setFixedLengthStreamingMode(outBytes.length);
+                    try (java.io.OutputStream os = conn.getOutputStream()) {
+                        os.write(outBytes);
+                        os.flush();
+                    }
 
-                int code = conn.getResponseCode();
-                if (code >= 300 && code < 400) {
-                    final String location = conn.getHeaderField("Location");
-                    final String redirectErr = "{\"success\":false,\"error\":\"Auth/redirect blocked by host (" + code + (location != null ? " -> " + location : "") + "). Try the public Shared App URL (ais-pre-...) in Updater Settings.\"}";
-                    new Handler(Looper.getMainLooper()).post(() -> {
-                        JSObject ret = new JSObject();
-                        ret.put("ok", false);
-                        ret.put("status", 401);
-                        ret.put("data", redirectErr);
-                        call.resolve(ret);
-                    });
-                    return;
+                    code = conn.getResponseCode();
+                    if (code >= 300 && code < 400) {
+                        final String location = conn.getHeaderField("Location");
+                        conn.disconnect();
+                        conn = null;
+                        boolean isAuthRedirect = location == null
+                            || location.contains("cookie_check")
+                            || location.contains("accounts.google.com")
+                            || location.contains("ServiceLogin");
+                        if (!isAuthRedirect && (code == 307 || code == 308) && redirects < 2) {
+                            currentUrl = location.startsWith("http")
+                                ? location
+                                : new URL(new URL(currentUrl), location).toString();
+                            redirects++;
+                            continue;
+                        }
+                        final String redirectErr = "{\"success\":false,\"error\":\"Host requires Google login cookies (" + code + "). Publish/Share the app publicly or set your Server URL.\"}";
+                        new Handler(Looper.getMainLooper()).post(() -> {
+                            JSObject ret = new JSObject();
+                            ret.put("ok", false);
+                            ret.put("status", 401);
+                            ret.put("data", redirectErr);
+                            call.resolve(ret);
+                        });
+                        return;
+                    }
+                    break;
                 }
 
                 InputStream stream = code >= 400 ? conn.getErrorStream() : conn.getInputStream();
@@ -375,14 +395,18 @@ public class AppUpdatePlugin extends Plugin {
                 }
                 final int statusCode;
                 final String result;
+                final String rawBody = sb.toString();
                 final boolean isHtml = (conn.getContentType() != null && conn.getContentType().toLowerCase().contains("text/html"))
-                    || sb.toString().trim().startsWith("<");
-                if (isHtml) {
+                    || rawBody.trim().startsWith("<");
+                if (code == 404) {
+                    statusCode = 404;
+                    result = "{\"success\":false,\"error\":\"Server endpoint returned 404 (host not published or route unavailable). Share the app or set a Server URL.\"}";
+                } else if (isHtml) {
                     statusCode = 401;
-                    result = "{\"success\":false,\"error\":\"Endpoint returned an HTML login page instead of JSON. Set the public Shared App URL (ais-pre-...) in Updater Settings.\"}";
+                    result = "{\"success\":false,\"error\":\"Host returned an HTML login gate instead of JSON. Use a public Shared App URL or custom Server URL.\"}";
                 } else {
                     statusCode = code;
-                    result = sb.toString();
+                    result = rawBody;
                 }
 
                 new Handler(Looper.getMainLooper()).post(() -> {
@@ -394,7 +418,7 @@ public class AppUpdatePlugin extends Plugin {
                 });
             } catch (Exception e) {
                 new Handler(Looper.getMainLooper()).post(() -> {
-                    call.reject("Native POST error: " + e.getMessage());
+                    call.reject("Native connection failed: " + e.getMessage());
                 });
             } finally {
                 if (conn != null) {

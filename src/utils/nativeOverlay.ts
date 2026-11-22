@@ -56,6 +56,8 @@ export interface OverlayPluginInterface {
     starvingAtMs: string;
     nextPoopAtMs: string;
     nextPoopCount: number;
+    poop2AtMs?: string;
+    poop3AtMs?: string;
     poopFullAtMs: string;
     bedtimeAtMs?: string;
   }): Promise<{ success: boolean }>;

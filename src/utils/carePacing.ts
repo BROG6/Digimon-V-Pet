@@ -62,9 +62,18 @@ export const STAGE_BEDTIME_HOUR: Record<DigimonStage, number | null> = {
 };
 
 export const WAKE_UP_HOUR = 7; // 7:00 AM
+export const EARLY_SLEEP_WINDOW_HOURS = 3; // Allow lights off within 3 hours before bedtime
+export const TRAINING_ENERGY_COST = 12;
+export const ENERGY_AWAKE_REGEN_MS = 120_000; // +1 Energy every 2 minutes awake (+30/hr)
 
 export function getStageBedtimeHour(stage: DigimonStage): number | null {
   return STAGE_BEDTIME_HOUR[stage] ?? null;
+}
+
+export function getEarlySleepStartHour(stage: DigimonStage): number | null {
+  const bedtime = getStageBedtimeHour(stage);
+  if (bedtime === null) return null;
+  return (bedtime - EARLY_SLEEP_WINDOW_HOURS + 24) % 24;
 }
 
 export function formatBedtimeLabel(stage: DigimonStage): string {
@@ -75,6 +84,17 @@ export function formatBedtimeLabel(stage: DigimonStage): string {
   return `${h12}:00 PM – 7:00 AM`;
 }
 
+export function formatEarlyBedtimeLabel(stage: DigimonStage): string {
+  const start = getEarlySleepStartHour(stage);
+  if (start === null) return 'Anytime';
+  const formatHr = (h: number) => {
+    if (h === 0) return '12:00 AM';
+    if (h === 12) return '12:00 PM';
+    return h > 12 ? `${h - 12}:00 PM` : `${h}:00 AM`;
+  };
+  return `${formatHr(start)} – 7:00 AM`;
+}
+
 export function isWithinSleepWindow(stage: DigimonStage, date: Date = new Date()): boolean {
   const bedtime = getStageBedtimeHour(stage);
   if (bedtime === null) return false;
@@ -83,6 +103,17 @@ export function isWithinSleepWindow(stage: DigimonStage, date: Date = new Date()
     return hour >= 0 && hour < WAKE_UP_HOUR;
   }
   return hour >= bedtime || hour < WAKE_UP_HOUR;
+}
+
+/**
+ * Allows putting the Digimon to sleep up to 3 hours prior to its scheduled bedtime
+ * and staying asleep all night until 7:00 AM.
+ */
+export function isWithinEarlyOrSleepWindow(stage: DigimonStage, date: Date = new Date()): boolean {
+  const earlyStart = getEarlySleepStartHour(stage);
+  if (earlyStart === null) return false;
+  const hour = date.getHours();
+  return hour >= earlyStart || hour < WAKE_UP_HOUR;
 }
 
 export function getNextBedtimeTimestampMs(stage: DigimonStage, nowMs: number = Date.now()): number {
@@ -215,6 +246,7 @@ export function advanceCareState(prev: PetState, now: number = Date.now()): Care
         ...prev,
         lastHungerDropAt: now,
         lastPoopAt: now,
+        lastEnergyRegenAt: now,
         lastCareCheck: now,
         sleepCallStartedAt: undefined,
       },
@@ -224,12 +256,13 @@ export function advanceCareState(prev: PetState, now: number = Date.now()): Care
 
   const nowDate = new Date(now);
   const inSleepWindow = isWithinSleepWindow(prev.stage, nowDate);
+  const canStayAsleep = isWithinEarlyOrSleepWindow(prev.stage, nowDate);
   const hasFixedBedtime = getStageBedtimeHour(prev.stage) !== null;
 
-  // Auto-wake at 7:00 AM when morning arrives for stage-scheduled sleep
-  if (prev.lightsOff && hasFixedBedtime && !inSleepWindow) {
+  // Auto-wake at 7:00 AM when morning arrives (early sleepers up to 3h before bedtime stay asleep all night)
+  if (prev.lightsOff && hasFixedBedtime && !canStayAsleep) {
     const sleepAnchor = prev.lastCareCheck || now;
-    const sleepElapsed = Math.max(0, Math.min(now - sleepAnchor, 10 * 3_600_000));
+    const sleepElapsed = Math.max(0, Math.min(now - sleepAnchor, 12 * 3_600_000));
     const energyGain = Math.floor((sleepElapsed / 60_000) * 4);
     const nextEnergy = Math.min(100, prev.energy + Math.max(10, energyGain));
     return {
@@ -241,6 +274,7 @@ export function advanceCareState(prev: PetState, now: number = Date.now()): Care
         sleepCallStartedAt: undefined,
         lastHungerDropAt: now,
         lastPoopAt: now,
+        lastEnergyRegenAt: now,
         lastCareCheck: now,
       },
       events: {
@@ -252,10 +286,16 @@ export function advanceCareState(prev: PetState, now: number = Date.now()): Care
 
   // While sleeping (lightsOff), hunger & poop timers pause and energy recovers gradually
   if (prev.lightsOff) {
-    const sleepAnchor = prev.lastCareCheck || now;
-    const sleepElapsed = Math.max(0, Math.min(now - sleepAnchor, 4 * 3_600_000));
-    const energyGain = Math.floor((sleepElapsed / 60_000) * 4);
-    const nextEnergy = Math.min(100, prev.energy + Math.max(1, energyGain));
+    const sleepAnchor = prev.lastEnergyRegenAt ?? prev.lastCareCheck ?? now;
+    const sleepElapsed = Math.max(0, Math.min(now - sleepAnchor, 12 * 3_600_000));
+    const pointsRecovered = Math.floor(sleepElapsed / 15_000); // +4 Energy/min while sleeping
+    const nextEnergy = pointsRecovered > 0 ? Math.min(100, prev.energy + pointsRecovered) : prev.energy;
+    const nextEnergyAnchor =
+      nextEnergy >= 100
+        ? now
+        : pointsRecovered > 0
+        ? sleepAnchor + pointsRecovered * 15_000
+        : sleepAnchor;
     return {
       nextPet: {
         ...prev,
@@ -263,6 +303,7 @@ export function advanceCareState(prev: PetState, now: number = Date.now()): Care
         sleepCallStartedAt: undefined,
         lastHungerDropAt: now,
         lastPoopAt: now,
+        lastEnergyRegenAt: nextEnergyAnchor,
         lastCareCheck: now,
       },
       events: emptyEvents,
@@ -293,13 +334,24 @@ export function advanceCareState(prev: PetState, now: number = Date.now()): Care
     events.hungerBecameEmpty = true;
   }
 
-  // 2. Energy Drain
-  const energyHeartMs = STAGE_ENERGY_HEART_MS[prev.stage] ?? 75 * 60_000;
-  const msPerEnergyPoint = Math.max(1000, energyHeartMs / 25);
-  const careAnchor = prev.lastCareCheck ?? now;
-  const energyElapsed = Math.max(0, Math.min(now - careAnchor, 4 * 3_600_000));
-  const energyDrop = Math.floor(energyElapsed / msPerEnergyPoint);
-  const energy = energyDrop > 0 ? Math.max(0, prev.energy - energyDrop) : prev.energy;
+  // 2. Slow Passive Energy Regeneration while awake (+1 per 2 min, capped at 100)
+  const energyAnchor = prev.lastEnergyRegenAt ?? prev.lastCareCheck ?? now;
+  const energyElapsed = Math.max(0, Math.min(now - energyAnchor, 8 * 3_600_000));
+  let energy = prev.energy;
+  let lastEnergyRegenAt = energyAnchor;
+  if (energy >= 100) {
+    energy = 100;
+    lastEnergyRegenAt = now;
+  } else {
+    const energyPointsToGain = Math.floor(energyElapsed / ENERGY_AWAKE_REGEN_MS);
+    if (energyPointsToGain > 0) {
+      energy = Math.min(100, prev.energy + energyPointsToGain);
+      lastEnergyRegenAt =
+        energy >= 100 || energyElapsed >= 8 * 3_600_000
+          ? now
+          : energyAnchor + energyPointsToGain * ENERGY_AWAKE_REGEN_MS;
+    }
+  }
 
   // 3. Toilet / Poop Pacing (stops at 4 piles; hitting 4 piles triggers sickness AND 1 Care Mistake)
   const poopIntervalMs = getStagePoopIntervalMs(prev.stage);
@@ -391,6 +443,7 @@ export function advanceCareState(prev: PetState, now: number = Date.now()): Care
         sleepCallStartedAt,
         lastHungerDropAt,
         lastPoopAt,
+        lastEnergyRegenAt,
         isDead: true,
         diedAt: now,
         deathReason: 'Severe neglect (8+ Care Mistakes).',
@@ -417,6 +470,7 @@ export function advanceCareState(prev: PetState, now: number = Date.now()): Care
         sleepCallStartedAt,
         lastHungerDropAt,
         lastPoopAt,
+        lastEnergyRegenAt,
         isDead: true,
         diedAt: now,
         deathReason: 'Untreated sickness persisted too long.',
@@ -445,6 +499,7 @@ export function advanceCareState(prev: PetState, now: number = Date.now()): Care
       sleepCallStartedAt,
       lastHungerDropAt,
       lastPoopAt,
+      lastEnergyRegenAt,
       lastCareCheck: now,
     },
     events,
@@ -456,13 +511,15 @@ export interface FutureCareAlertSchedule {
   starvingAtMs: number;
   nextPoopAtMs: number;
   nextPoopCount: number;
+  poop2AtMs: number;
+  poop3AtMs: number;
   poopFullAtMs: number;
   bedtimeAtMs: number;
 }
 
 /**
  * Computes exact future wall-clock timestamps when Hunger <= 25%, Hunger == 0%,
- * next Poop pile, 4/4 Poop Sickness, and stage Bedtime will occur.
+ * each remaining Poop pile (1..4), 4/4 Poop Sickness, and stage Bedtime will occur.
  */
 export function computeFutureCareAlertSchedule(
   pet: PetState,
@@ -474,6 +531,8 @@ export function computeFutureCareAlertSchedule(
       starvingAtMs: 0,
       nextPoopAtMs: 0,
       nextPoopCount: pet.poopCount,
+      poop2AtMs: 0,
+      poop3AtMs: 0,
       poopFullAtMs: 0,
       bedtimeAtMs: 0,
     };
@@ -502,6 +561,16 @@ export function computeFutureCareAlertSchedule(
       ? Math.max(nowMs + 5_000, Math.round(poopAnchor + poopIntervalMs))
       : 0;
 
+  const poop2AtMs =
+    pet.poopCount < 2 && poopIntervalMs > 0
+      ? Math.max(nowMs + 5_000, Math.round(poopAnchor + 2 * poopIntervalMs))
+      : 0;
+
+  const poop3AtMs =
+    pet.poopCount < 3 && poopIntervalMs > 0
+      ? Math.max(nowMs + 5_000, Math.round(poopAnchor + (3 - pet.poopCount) * poopIntervalMs))
+      : 0;
+
   const poopFullAtMs =
     pet.poopCount < 4 && poopIntervalMs > 0
       ? Math.max(nowMs + 5_000, Math.round(poopAnchor + (4 - pet.poopCount) * poopIntervalMs))
@@ -515,6 +584,8 @@ export function computeFutureCareAlertSchedule(
     starvingAtMs,
     nextPoopAtMs,
     nextPoopCount,
+    poop2AtMs,
+    poop3AtMs,
     poopFullAtMs,
     bedtimeAtMs,
   };

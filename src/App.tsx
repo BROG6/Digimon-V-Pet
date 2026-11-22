@@ -72,7 +72,15 @@ import {
   recordUnlockedSpeciesId,
   saveUnlockedSpeciesIds,
 } from './utils/evolutionEngine';
-import { advanceCareState, computeFutureCareAlertSchedule, evaluateCareNeeds } from './utils/carePacing';
+import {
+  TRAINING_ENERGY_COST,
+  advanceCareState,
+  computeFutureCareAlertSchedule,
+  evaluateCareNeeds,
+  formatEarlyBedtimeLabel,
+  getStageBedtimeHour,
+  isWithinEarlyOrSleepWindow,
+} from './utils/carePacing';
 import {
   getCareAlertsEnabled,
   requestCareNotificationPermission,
@@ -1142,20 +1150,36 @@ export default function App() {
 
   const handleToggleLights = () => {
     if (!requireAliveAndHatched()) return;
-    sound.playButton();
     const now = Date.now();
-    setPet((prev) => {
-      const nextLightsOff = !prev.lightsOff;
-      return {
-        ...prev,
-        lightsOff: nextLightsOff,
-        isSleeping: nextLightsOff,
-        sleepCallStartedAt: nextLightsOff ? undefined : prev.sleepCallStartedAt,
-        lastCareCheck: now,
-        lastHungerDropAt: now,
-        lastPoopAt: now,
-      };
-    });
+    const nowDate = new Date(now);
+    const monName = pet.nickname?.trim() || currentSpecies?.name || 'Digimon';
+    const hasFixedBedtime = getStageBedtimeHour(pet.stage) !== null;
+
+    if (!pet.lightsOff && hasFixedBedtime && !isWithinEarlyOrSleepWindow(pet.stage, nowDate)) {
+      sound.playAlert();
+      showNotification(
+        `⏰ ${monName} isn't sleepy yet! Sleep opens ${formatEarlyBedtimeLabel(pet.stage)} (up to 3h before bedtime).`
+      );
+      return;
+    }
+
+    sound.playButton();
+    const nextLightsOff = !pet.lightsOff;
+    setPet((prev) => ({
+      ...prev,
+      lightsOff: nextLightsOff,
+      isSleeping: nextLightsOff,
+      sleepCallStartedAt: nextLightsOff ? undefined : prev.sleepCallStartedAt,
+      lastCareCheck: now,
+      lastHungerDropAt: now,
+      lastPoopAt: now,
+      lastEnergyRegenAt: now,
+    }));
+    showNotification(
+      nextLightsOff
+        ? `🌙 Lights OFF — ${monName} is resting until 7:00 AM!`
+        : `☀️ Lights ON — ${monName} woke up!`
+    );
   };
 
   const handleToggleFridge = () => {
@@ -1239,6 +1263,7 @@ export default function App() {
     const outcome = calculateTrainingOutcome(statKey, pet, speciesObj, hits);
 
     setPet((prev) => {
+      const now = Date.now();
       const prevSpecies = DIGIMON_DATABASE[prev.currentSpeciesId];
       const existingLearned = getLearnedTechniqueIds(prev, prevSpecies);
       const nextLearned = Array.from(
@@ -1251,6 +1276,7 @@ export default function App() {
           nextEquipped.push(m.id);
         }
       }
+      const nextEnergy = Math.max(0, prev.energy - TRAINING_ENERGY_COST);
 
       return {
         ...prev,
@@ -1259,6 +1285,8 @@ export default function App() {
         effort: Math.min(10, (prev.effort ?? 0) + (success ? 2 : 1)),
         strength: prev.strength + (success ? 10 : 4),
         dpPoints: prev.dpPoints + (success ? 15 : 5),
+        energy: nextEnergy,
+        lastEnergyRegenAt: prev.energy >= 100 ? now : (prev.lastEnergyRegenAt ?? now),
         weight: Math.max(10, prev.weight - (success ? 2 : 1)),
         happiness: Math.min(100, prev.happiness + (success ? 15 : 6)),
         digiBits: prev.digiBits + (success ? 25 : 10),
@@ -1348,7 +1376,7 @@ export default function App() {
   const handleAdventureComplete = (result: AdventureBattleResult) => {
     setPet((prev) => {
       const prevCleared = prev.adventureClearedWave?.[result.zoneId] ?? 0;
-      const nextCleared = result.won ? Math.max(prevCleared, result.waveNumber) : prevCleared;
+      const nextCleared = result.won ? Math.max(prevCleared, result.waveNumber) : 0;
       const existingRelics = prev.ownedSpecialItems || [];
       const nextRelics =
         result.unlockedRelicId && !existingRelics.includes(result.unlockedRelicId)
@@ -1398,7 +1426,9 @@ export default function App() {
         `Adventure Wave ${result.waveNumber} Cleared! +${result.strengthGained} STR, +${result.bitsGained} Bits${bonusFoods ? ` · ${bonusFoods}` : ''}${relicNote}`
       );
     } else {
-      showNotification(`Adventure Battle Exp: +${result.strengthGained} STR & +${result.dpGained} DP gained!`);
+      showNotification(
+        `Defeated in Wave ${result.waveNumber}! Area reset to Wave 1 (+${result.strengthGained} STR, +${result.dpGained} DP).`
+      );
     }
   };
 
@@ -1439,7 +1469,7 @@ export default function App() {
   };
 
   const handleBuyShopItem = (
-    itemId: 'meat' | 'meat_bundle' | 'sirloin' | 'vitamin' | 'vitamin_bundle' | 'energy_drink' | 'medicine',
+    itemId: 'meat' | 'meat_bundle' | 'sirloin' | 'vitamin' | 'vitamin_bundle' | 'medicine',
     cost: number
   ) => {
     if (pet.digiBits < cost) {
@@ -1452,7 +1482,6 @@ export default function App() {
       let bigMeatStock = prev.bigMeatStock;
       let sirloinStock = prev.sirloinStock ?? 0;
       let vitaminStock = prev.vitaminStock;
-      let energy = prev.energy;
       let isSick = prev.isSick;
 
       if (itemId === 'meat') {
@@ -1465,8 +1494,6 @@ export default function App() {
         vitaminStock += 1;
       } else if (itemId === 'vitamin_bundle') {
         vitaminStock += 5;
-      } else if (itemId === 'energy_drink') {
-        energy = Math.min(100, energy + 50);
       } else if (itemId === 'medicine') {
         isSick = false;
       }
@@ -1477,7 +1504,6 @@ export default function App() {
         bigMeatStock,
         sirloinStock,
         vitaminStock,
-        energy,
         isSick,
         sickSince: itemId === 'medicine' ? undefined : prev.sickSince,
         neglectTicks: itemId === 'medicine' ? 0 : prev.neglectTicks,

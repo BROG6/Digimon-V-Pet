@@ -525,6 +525,7 @@ export async function fetchDigimonAiDialogue(params: DigimonTalkParams): Promise
   };
 
   let lastErrorReason = 'Network unreachable right now.';
+  let nativePluginHandled = false;
 
   // On Capacitor Native Android/iOS, call native AppUpdatePlugin.httpPost FIRST to bypass WebView CORS
   if (Capacitor.isNativePlatform()) {
@@ -534,6 +535,7 @@ export async function fetchDigimonAiDialogue(params: DigimonTalkParams): Promise
           url,
           body: bodyJson,
         });
+        nativePluginHandled = true;
         const status = Number(nativeRes?.status || 502);
         const { data, parseError } = parseTalkPayload(nativeRes?.data || '');
         if (nativeRes?.ok && data && typeof data.text === 'string' && data.text.trim()) {
@@ -544,63 +546,79 @@ export async function fetchDigimonAiDialogue(params: DigimonTalkParams): Promise
         }
         const errMsg = data?.error || parseError || `Server returned ${status}`;
         lastErrorReason = errMsg;
-        // If blocked by auth redirect or HTML login page on this candidate, continue to next candidate
+        // If blocked by auth redirect or inactive host on this candidate, continue to next candidate
         if (status === 401 || status === 403 || status === 404 || parseError) {
           continue;
         }
         // Real backend/API error (e.g., 503 missing key or 429) — return immediately
         return handleParsedResponse(false, status, data, parseError);
       } catch (nativeErr: any) {
+        const nativeMsg = String(nativeErr?.message || '');
+        const isUnimplemented =
+          nativeErr?.code === 'UNIMPLEMENTED' ||
+          nativeMsg.toLowerCase().includes('not implemented');
+        if (!isUnimplemented) {
+          nativePluginHandled = true;
+          lastErrorReason = nativeMsg || 'Native connection failed.';
+        } else {
+          lastErrorReason = 'Installed APK does not have the updated native chat plugin yet.';
+        }
         console.warn(`Native httpPost error for ${url}:`, nativeErr);
-        lastErrorReason = nativeErr?.message || 'Native connection failed.';
       }
     }
   }
 
-  // Web path (or final fallback if native plugin wasn't registered)
-  for (const url of candidates) {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => {
+  // Web path (or fallback ONLY if native plugin wasn't available in older APKs)
+  if (!Capacitor.isNativePlatform() || !nativePluginHandled) {
+    for (const url of candidates) {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => {
+        try {
+          controller.abort();
+        } catch {}
+      }, 35000);
+
       try {
-        controller.abort();
-      } catch {}
-    }, 35000);
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Accept: 'application/json',
+          },
+          body: bodyJson,
+          signal: controller.signal,
+        });
 
-    try {
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Accept: 'application/json',
-        },
-        body: bodyJson,
-        signal: controller.signal,
-      });
+        clearTimeout(timeoutId);
+        const rawText = await res.text();
+        const { data, parseError } = parseTalkPayload(rawText);
 
-      clearTimeout(timeoutId);
-      const rawText = await res.text();
-      const { data, parseError } = parseTalkPayload(rawText);
+        if (res.ok && data && typeof data.text === 'string' && data.text.trim()) {
+          return {
+            text: data.text.trim(),
+            source: 'ai',
+          };
+        }
 
-      if (res.ok && data && typeof data.text === 'string' && data.text.trim()) {
-        return {
-          text: data.text.trim(),
-          source: 'ai',
-        };
+        const errMsg = data?.error || parseError || `Server returned ${res.status}`;
+        lastErrorReason = errMsg;
+        if (res.status === 401 || res.status === 403 || res.status === 404 || parseError) {
+          continue;
+        }
+        return handleParsedResponse(false, res.status, data, parseError);
+      } catch (err: any) {
+        clearTimeout(timeoutId);
+        console.warn(`Gemini AI talk request failed (${url}):`, err);
+        if (!Capacitor.isNativePlatform()) {
+          lastErrorReason =
+            err?.name === 'AbortError'
+              ? 'Connection timed out. Please try again!'
+              : err?.message || lastErrorReason;
+        } else {
+          lastErrorReason =
+            'Cannot reach Digi-Network from standalone APK. Install the latest APK build and configure a public Server URL (e.g. Shared App URL).';
+        }
       }
-
-      const errMsg = data?.error || parseError || `Server returned ${res.status}`;
-      lastErrorReason = errMsg;
-      if (res.status === 401 || res.status === 403 || res.status === 404 || parseError) {
-        continue;
-      }
-      return handleParsedResponse(false, res.status, data, parseError);
-    } catch (err: any) {
-      clearTimeout(timeoutId);
-      console.warn(`Gemini AI talk request failed (${url}):`, err);
-      lastErrorReason =
-        err?.name === 'AbortError'
-          ? 'Connection timed out. Please try again!'
-          : err?.message || lastErrorReason;
     }
   }
 

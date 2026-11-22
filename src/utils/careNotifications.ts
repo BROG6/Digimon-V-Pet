@@ -60,13 +60,9 @@ export async function sendCareSystemNotification(params: {
 }): Promise<boolean> {
   if (!getCareAlertsEnabled()) return false;
 
-  // Notifications must NOT fire while actively inside the game
-  if (isAppVisibleInForeground()) {
-    return false;
-  }
-
   if (Capacitor.isNativePlatform()) {
     try {
+      // Native Android checks isAppInForeground && !isScreenLockedOrOff(ctx) so locked-screen alerts still fire
       const res = await OverlayPlugin.showCareNotification({
         id: params.id,
         title: params.title,
@@ -77,6 +73,11 @@ export async function sendCareSystemNotification(params: {
     } catch {
       return false;
     }
+  }
+
+  // Web notifications must NOT fire while actively inside the game tab
+  if (isAppVisibleInForeground()) {
+    return false;
   }
 
   if (typeof window === 'undefined' || !('Notification' in window)) {
@@ -138,6 +139,8 @@ export async function syncBackgroundCareAlarms(params: {
     (schedule.hungryAtMs > 0 ||
       schedule.starvingAtMs > 0 ||
       schedule.nextPoopAtMs > 0 ||
+      schedule.poop2AtMs > 0 ||
+      schedule.poop3AtMs > 0 ||
       schedule.poopFullAtMs > 0 ||
       schedule.bedtimeAtMs > 0);
 
@@ -152,6 +155,8 @@ export async function syncBackgroundCareAlarms(params: {
           starvingAtMs: String(schedule.starvingAtMs || 0),
           nextPoopAtMs: String(schedule.nextPoopAtMs || 0),
           nextPoopCount: schedule.nextPoopCount || 1,
+          poop2AtMs: String(schedule.poop2AtMs || 0),
+          poop3AtMs: String(schedule.poop3AtMs || 0),
           poopFullAtMs: String(schedule.poopFullAtMs || 0),
           bedtimeAtMs: String(schedule.bedtimeAtMs || 0),
         });
@@ -201,6 +206,27 @@ export async function syncBackgroundCareAlarms(params: {
       schedule.nextPoopCount >= 4
         ? `${petName} has 4 toilet piles — got sick & +1 Care Mistake! Flush & cure now.`
         : `${petName} needs the toilet! (${schedule.nextPoopCount}/4 piles)`,
+    tag: 'digipet-toilet',
+  });
+
+  queueWebAlarm(schedule.poop2AtMs, {
+    id: 2002,
+    title: `💩 Toilet Alert: ${petName}`,
+    body: `${petName} needs the toilet! (${Math.min(3, schedule.nextPoopCount + 1)}/4 piles)`,
+    tag: 'digipet-toilet',
+  });
+
+  queueWebAlarm(schedule.poop3AtMs, {
+    id: 2002,
+    title: `💩 Toilet Alert: ${petName}`,
+    body: `${petName} needs the toilet! (3/4 piles — flush soon!)`,
+    tag: 'digipet-toilet',
+  });
+
+  queueWebAlarm(schedule.poopFullAtMs, {
+    id: 2002,
+    title: `🚨 Toilet Full Alert: ${petName}`,
+    body: `${petName} hit 4 toilet piles — got sick & +1 Care Mistake! Flush & give medicine right away.`,
     tag: 'digipet-toilet',
   });
 

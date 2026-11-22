@@ -234,6 +234,7 @@ export interface PetState {
   neglectTicks?: number;
   lastHungerDropAt?: number;
   lastPoopAt?: number;
+  lastEnergyRegenAt?: number;
   careCallStartedAt?: number;
   sleepCallStartedAt?: number;
   isFrozen?: boolean;

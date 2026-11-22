@@ -484,7 +484,7 @@ export const StatsModal: React.FC<StatsModalProps> = ({
             <div className="p-3.5 rounded-2xl bg-slate-950/85 border border-slate-800 space-y-2.5">
               <div className="flex items-center justify-between gap-2">
                 <span className="text-xs font-chakra font-bold text-cyan-300">
-                  Learned Techniques ({learnedIds.length} Learned · {equippedMoves.length}/{MAX_EQUIPPED_ATTACKS} Equipped)
+                  Evolution-Line Techniques ({learnedIds.length} Learned · {equippedMoves.length}/{MAX_EQUIPPED_ATTACKS} Equipped)
                 </span>
                 {onOpenTraining && (
                   <button
@@ -538,6 +538,9 @@ export const StatsModal: React.FC<StatsModalProps> = ({
                   );
                 })}
               </div>
+              <p className="text-[10px] text-slate-400 font-chakra">
+                Digimon start with 1 attack and learn more from their evolution line by training Brains at the Blackboard.
+              </p>
             </div>
           </div>
         )}
@@ -573,7 +576,7 @@ export const StatsModal: React.FC<StatsModalProps> = ({
                     style={{ width: `${pet.energy}%` }}
                   />
                 </div>
-                <div className="text-[9px] text-slate-400">Turn lights off to rest and recharge</div>
+                <div className="text-[9px] text-slate-400">Regenerates slowly over time · Sleep recharges faster</div>
               </div>
 
               {/* Happiness */}

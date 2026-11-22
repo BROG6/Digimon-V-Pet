@@ -252,3 +252,26 @@
   animation: gymPencilWrite 0.65s ease-in-out infinite;
 }
 
+/* ==========================================================================
+   ADVENTURE MODE HORIZONTAL PARALLAX WALK SCROLLING
+   ========================================================================== */
+@keyframes advScrollLoop {
+  0% { transform: translateX(0%); }
+  100% { transform: translateX(-50%); }
+}
+
+.adv-scroll-far {
+  animation: advScrollLoop 9s linear infinite;
+  will-change: transform;
+}
+
+.adv-scroll-mid {
+  animation: advScrollLoop 5.2s linear infinite;
+  will-change: transform;
+}
+
+.adv-scroll-near {
+  animation: advScrollLoop 2.2s linear infinite;
+  will-change: transform;
+}
+

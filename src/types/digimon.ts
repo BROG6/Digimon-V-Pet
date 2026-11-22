@@ -185,7 +185,30 @@ export interface FurnitureItem {
   icon: string;
   description: string;
   interactEffect?: string;
+  minTamerRank?: number;
 }
+
+export interface RoomTheme {
+  id: string;
+  name: string;
+  skyColor: string;
+  floorColor: string;
+  description: string;
+  minTamerRank?: number;
+  accentTag?: string;
+}
+
+export type ShopItemId =
+  | 'meat'
+  | 'meat_bundle'
+  | 'sirloin'
+  | 'forage_basket'
+  | 'vitamin'
+  | 'vitamin_bundle'
+  | 'medicine'
+  | 'training_chip'
+  | 'miracle_elixir'
+  | 'sovereign_core';
 
 export interface PetState {
   eggId: string;
@@ -209,6 +232,7 @@ export interface PetState {
   careMistakes: number;
   battlesWon: number;
   battlesTotal: number;
+  lifetimeBattlesWon?: number;
   trainingCount: number;
   stageBattlesWon?: number;
   stageBattlesTotal?: number;

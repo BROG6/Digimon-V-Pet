@@ -11,6 +11,9 @@ export const DARK_ROOM_THEME_IDS = new Set([
   'starlit-island',
   'cyber-matrix',
   'colosseum-arena',
+  'neon-arcade',
+  'sovereign-throne',
+  'infinity-nexus',
 ]);
 
 export function isEveningHours(date: Date = new Date()): boolean {

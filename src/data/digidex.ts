@@ -1,4 +1,4 @@
-import { DigimonSpecies, FurnitureItem } from '../types/digimon';
+import { DigimonSpecies, FurnitureItem, RoomTheme } from '../types/digimon';
 import {
   DIGI_EGGS,
   SPECIAL_ITEMS,
@@ -69,15 +69,57 @@ export const FURNITURE_SHOP: FurnitureItem[] = [
     description: 'Gentle temperature incubator that keeps future Digi-Eggs warm and happy.',
     interactEffect: 'Soft pulsing hum warms the room.',
   },
+  {
+    id: 'crest-banner',
+    name: 'Sacred Crest Banner',
+    category: 'decoration',
+    price: 85,
+    icon: '🚩',
+    description: 'Woven tapestry bearing the eight original Crests. Awarded to proven Bronze Tamers.',
+    interactEffect: 'The woven Crest shimmers with warm golden light!',
+    minTamerRank: 2,
+  },
+  {
+    id: 'neon-arcade-cab',
+    name: 'Holo-Arcade Cabinet',
+    category: 'toy',
+    price: 160,
+    icon: '🕹️',
+    description: 'Retro Digital Monster battle cabinet built for Silver Tamer training lounges.',
+    interactEffect: 'Beep-boop! Your Digimon sets a new high score!',
+    minTamerRank: 3,
+  },
+  {
+    id: 'knight-statue',
+    name: 'Royal Knight Statue',
+    category: 'decoration',
+    price: 260,
+    icon: '⚔️',
+    description: 'Marble & chrome guardian monument reserved for Gold Tamers.',
+    interactEffect: 'Noble aura inspires battle courage!',
+    minTamerRank: 4,
+  },
+  {
+    id: 'sovereign-throne',
+    name: 'Sovereign Data Throne',
+    category: 'bed',
+    price: 380,
+    icon: '👑',
+    description: 'Opulent gilded command throne crafted exclusively for Master Tamers.',
+    interactEffect: 'Your Digimon lounges like Digital World royalty!',
+    minTamerRank: 5,
+  },
 ];
 
-export const ROOM_THEMES = [
+export const ROOM_THEMES: RoomTheme[] = [
   {
     id: 'file-island',
     name: 'File Island Beach',
     skyColor: 'from-amber-200 via-sky-300 to-sky-500',
     floorColor: 'from-amber-300 to-amber-600',
     description: 'Sunny beach with tropical palm trees and waves from the Digital Ocean.',
+    minTamerRank: 1,
+    accentTag: 'Starter Theme',
   },
   {
     id: 'starlit-island',
@@ -85,6 +127,8 @@ export const ROOM_THEMES = [
     skyColor: 'from-slate-950 via-indigo-950 to-blue-950',
     floorColor: 'from-slate-900 to-indigo-950',
     description: 'Calm nocturnal island shore bathed in soft moonlight and evening stars.',
+    minTamerRank: 1,
+    accentTag: 'Starter Night',
   },
   {
     id: 'cyber-matrix',
@@ -92,6 +136,8 @@ export const ROOM_THEMES = [
     skyColor: 'from-slate-950 via-emerald-950 to-slate-900',
     floorColor: 'from-emerald-900 to-emerald-950',
     description: 'Futuristic matrix grid with streaming neon green hexadecimal code.',
+    minTamerRank: 1,
+    accentTag: 'Starter Cyber',
   },
   {
     id: 'primary-village',
@@ -99,6 +145,8 @@ export const ROOM_THEMES = [
     skyColor: 'from-pink-200 via-purple-200 to-indigo-300',
     floorColor: 'from-emerald-300 to-teal-600',
     description: 'The peaceful nursery of all Digi-Eggs with soft pastel cradle blocks.',
+    minTamerRank: 1,
+    accentTag: 'Starter Nursery',
   },
   {
     id: 'colosseum-arena',
@@ -106,6 +154,53 @@ export const ROOM_THEMES = [
     skyColor: 'from-indigo-950 via-purple-900 to-slate-900',
     floorColor: 'from-slate-800 to-slate-950',
     description: 'Grand illuminated stadium where legendary Tamers clash under stadium lights.',
+    minTamerRank: 1,
+    accentTag: 'Starter Arena',
+  },
+  {
+    id: 'ancient-temple',
+    name: 'Ancient Digi-Ruins',
+    skyColor: 'from-emerald-900 via-teal-700 to-amber-200',
+    floorColor: 'from-stone-600 to-emerald-950',
+    description: 'Sunbeam-drenched jungle sanctuary lined with carved Digi-Code stone pillars.',
+    minTamerRank: 2,
+    accentTag: 'Emerald Sanctuary',
+  },
+  {
+    id: 'neon-arcade',
+    name: 'Cyber Neon Dojo',
+    skyColor: 'from-slate-950 via-fuchsia-950 to-indigo-950',
+    floorColor: 'from-violet-950 to-slate-950',
+    description: 'Electric synth-wave training lounge pulsing with cyan & magenta holo-grids.',
+    minTamerRank: 3,
+    accentTag: 'Synth Arena',
+  },
+  {
+    id: 'celestial-sky',
+    name: 'Celestial Cloud Sanctuary',
+    skyColor: 'from-sky-300 via-amber-100 to-indigo-400',
+    floorColor: 'from-amber-100 to-sky-400',
+    description: 'Floating sky citadel above golden clouds with drifting prismatic light.',
+    minTamerRank: 4,
+    accentTag: 'Radiant Horizon',
+  },
+  {
+    id: 'sovereign-throne',
+    name: 'Sovereign Gold Citadel',
+    skyColor: 'from-slate-950 via-amber-950 to-rose-950',
+    floorColor: 'from-amber-900 to-stone-950',
+    description: 'Imperial obsidian hall framed by molten gold arches and royal crests.',
+    minTamerRank: 5,
+    accentTag: 'Royal Aurora',
+  },
+  {
+    id: 'infinity-nexus',
+    name: 'Infinity Astral Vault',
+    skyColor: 'from-black via-indigo-950 to-fuchsia-950',
+    floorColor: 'from-indigo-950 to-black',
+    description: 'Cosmic nexus where starlight, Digital World code, and sovereign legends converge.',
+    minTamerRank: 6,
+    accentTag: 'Cosmic Apex',
   },
 ];
 

@@ -37,6 +37,7 @@ import {
   Droplets,
   Check,
 } from 'lucide-react';
+import { computeTamerRankProgress } from '../utils/tamerRank';
 import { sound } from '../utils/audio';
 
 interface StatsModalProps {
@@ -48,6 +49,7 @@ interface StatsModalProps {
   onOpenTraining?: () => void;
   onOpenColosseum?: () => void;
   onOpenDigidex?: () => void;
+  onOpenTamerRank?: () => void;
   onEquipSpecialItem?: (itemId: SpecialItemId | null) => void;
   onToggleEquipAttack?: (moveId: string) => void;
   onUpdatePlayerName?: (name: string) => void;
@@ -65,6 +67,7 @@ export const StatsModal: React.FC<StatsModalProps> = ({
   onOpenTraining,
   onOpenColosseum,
   onOpenDigidex,
+  onOpenTamerRank,
   onEquipSpecialItem,
   onToggleEquipAttack,
   onUpdatePlayerName,
@@ -102,6 +105,7 @@ export const StatsModal: React.FC<StatsModalProps> = ({
   const evoTiming = computeNaturalEvoTiming(pet, species, nowMs);
   const ownedItems = pet.ownedSpecialItems || [];
   const equippedItem = pet.equippedSpecialItem ? SPECIAL_ITEMS[pet.equippedSpecialItem] : null;
+  const tamerRank = computeTamerRankProgress(pet);
 
   // Attack & 6-Stat RPG Profile (Digimon World: Next Order)
   const rpgStats = getEffectiveBattleStats(pet, species);
@@ -294,6 +298,39 @@ export const StatsModal: React.FC<StatsModalProps> = ({
                 ? 'A mysterious Digitama warming up on your Digivice! It will hatch in 1 minute.'
                 : species?.description || 'A mysterious Digi-Egg waiting to hatch and begin its journey.'}
             </p>
+
+            {/* Tamer Rank Progression Strip */}
+            <div
+              className={`p-2.5 rounded-xl border ${tamerRank.currentTier.borderClass} ${tamerRank.currentTier.bgClass} flex flex-wrap items-center justify-between gap-2 text-left`}
+            >
+              <div className="min-w-0">
+                <div className={`font-chakra font-bold text-sm flex items-center gap-1.5 ${tamerRank.currentTier.accentClass}`}>
+                  <span>{tamerRank.badge}</span>
+                  <span>
+                    Rank {tamerRank.rank} · {tamerRank.title}
+                  </span>
+                </div>
+                <div className="font-chakra text-[11px] text-slate-300 tabular-nums">
+                  {tamerRank.battlesWon} Battles Won · {tamerRank.zonesCleared}/{tamerRank.totalZones} Zones Cleared ·{' '}
+                  {tamerRank.nextTier
+                    ? `${tamerRank.pointsToNext} pts to Rank ${tamerRank.nextTier.rank}`
+                    : 'Max Rank'}
+                </div>
+              </div>
+              {onOpenTamerRank && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    sound.playButton();
+                    onClose();
+                    onOpenTamerRank();
+                  }}
+                  className="px-2.5 py-1.5 rounded-lg bg-slate-950/80 hover:bg-slate-900 border border-amber-400/40 text-amber-300 font-pixel text-[9px] cursor-pointer shrink-0"
+                >
+                  VIEW RANKS »
+                </button>
+              )}
+            </div>
           </div>
         </div>
 

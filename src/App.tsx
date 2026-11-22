@@ -8,7 +8,8 @@ import {
   DigimonStage,
   SpecialItemId,
   AdventureBattleResult,
-  TrainingStatKey
+  TrainingStatKey,
+  ShopItemId
 } from './types/digimon';
 import { DIGI_EGGS, DIGIMON_DATABASE, FURNITURE_SHOP, ROOM_THEMES, SPECIAL_ITEMS } from './data/digidex';
 import {
@@ -30,6 +31,7 @@ import { DigiRoom } from './components/DigiRoom';
 import { DigidexModal } from './components/DigidexModal';
 import { StatsModal } from './components/StatsModal';
 import { ShopModal } from './components/ShopModal';
+import { TamerRankModal } from './components/TamerRankModal';
 import { InventoryModal } from './components/InventoryModal';
 import { PwaInstallModal } from './components/PwaInstallModal';
 import { NativePipOverlay } from './components/NativePipOverlay';
@@ -97,6 +99,12 @@ import {
   saveDaytimeTheme,
   syncRoomThemeForLightCycle,
 } from './utils/dayNightCycle';
+import {
+  computeTamerRankProgress,
+  getLifetimeBattlesWon,
+  getTamerRankTier,
+  isRankRequirementMet,
+} from './utils/tamerRank';
 import confetti from 'canvas-confetti';
 import { sound, triggerHaptic } from './utils/audio';
 import { 
@@ -129,7 +137,8 @@ import {
   BellOff,
   Moon,
   Sun,
-  Backpack
+  Backpack,
+  Award
 } from 'lucide-react';
 
 const STORAGE_KEY = 'digipet_vpet_save_v1';
@@ -172,6 +181,7 @@ export default function App() {
           mushroomStock: 0,
           berryStock: 0,
           ...parsed,
+          lifetimeBattlesWon: Math.max(parsed.lifetimeBattlesWon ?? 0, parsed.battlesWon ?? 0),
           activeRoomTheme: syncedTheme,
           stageEnteredAt: parsed.stageEnteredAt || Date.now(),
           lastHungerDropAt: parsed.lastHungerDropAt || parsed.lastCareCheck || Date.now(),
@@ -206,6 +216,7 @@ export default function App() {
       careMistakes: 0,
       battlesWon: 0,
       battlesTotal: 0,
+      lifetimeBattlesWon: 0,
       trainingCount: 0,
       stageBattlesWon: 0,
       stageBattlesTotal: 0,
@@ -249,6 +260,7 @@ export default function App() {
   const [isDigidexOpen, setIsDigidexOpen] = useState<boolean>(false);
   const [isStatsOpen, setIsStatsOpen] = useState<boolean>(false);
   const [isShopOpen, setIsShopOpen] = useState<boolean>(false);
+  const [isTamerRankOpen, setIsTamerRankOpen] = useState<boolean>(false);
   const [isInventoryOpen, setIsInventoryOpen] = useState<boolean>(false);
   const [isPwaModalOpen, setIsPwaModalOpen] = useState<boolean>(false);
   const [isNativePipOpen, setIsNativePipOpen] = useState<boolean>(false);
@@ -1355,17 +1367,46 @@ export default function App() {
     showNotification(`Feast Over! +2 Effort, +${meatEarned} Big Meat 🍖${vitText} & +${coinsEarned} Bits 🪙!`);
   };
 
+  const triggerRankUpCelebration = (newRank: number, newTitle: string) => {
+    sound.playVictory();
+    triggerHaptic('success');
+    try {
+      confetti({
+        particleCount: 75,
+        spread: 70,
+        origin: { y: 0.55 },
+        colors: ['#fbbf24', '#38bdf8', '#c084fc', '#ffffff'],
+      });
+    } catch {}
+    showNotification(`🎖️ TAMER RANK UP! Reached Rank ${newRank} (${newTitle}) — New Shop & Room unlocks!`);
+  };
+
   const handleBattleEnd = (won: boolean, coinsReward: number, dpReward: number) => {
+    const prevRank = computeTamerRankProgress(pet).rank;
+    const nextLifetimeWins = won ? getLifetimeBattlesWon(pet) + 1 : getLifetimeBattlesWon(pet);
+    const nextRankProgress = computeTamerRankProgress({
+      battlesWon: won ? pet.battlesWon + 1 : pet.battlesWon,
+      lifetimeBattlesWon: nextLifetimeWins,
+      adventureClearedWave: pet.adventureClearedWave,
+    });
+
     setPet((prev) => ({
       ...prev,
       battlesTotal: prev.battlesTotal + 1,
       battlesWon: won ? prev.battlesWon + 1 : prev.battlesWon,
+      lifetimeBattlesWon: won ? getLifetimeBattlesWon(prev) + 1 : getLifetimeBattlesWon(prev),
       stageBattlesTotal: (prev.stageBattlesTotal ?? 0) + 1,
       stageBattlesWon: won ? (prev.stageBattlesWon ?? 0) + 1 : (prev.stageBattlesWon ?? 0),
       digiBits: prev.digiBits + coinsReward,
       dpPoints: prev.dpPoints + dpReward,
       energy: Math.max(10, prev.energy - 15),
     }));
+
+    if (won && nextRankProgress.rank > prevRank) {
+      triggerRankUpCelebration(nextRankProgress.rank, nextRankProgress.title);
+      return;
+    }
+
     showNotification(
       won
         ? `Colosseum Victory! +${coinsReward} Bits 🪙 & +${dpReward} DP Power ⚡!`
@@ -1374,9 +1415,23 @@ export default function App() {
   };
 
   const handleAdventureComplete = (result: AdventureBattleResult) => {
+    const prevRank = computeTamerRankProgress(pet).rank;
+    const prevCleared = pet.adventureClearedWave?.[result.zoneId] ?? 0;
+    const nextCleared = result.won ? Math.max(prevCleared, result.waveNumber) : 0;
+    const nextAdventureWaves = {
+      ...(pet.adventureClearedWave || {}),
+      [result.zoneId]: nextCleared,
+    };
+    const nextLifetimeWins = result.won ? getLifetimeBattlesWon(pet) + 1 : getLifetimeBattlesWon(pet);
+    const nextRankProgress = computeTamerRankProgress({
+      battlesWon: result.won ? pet.battlesWon + 1 : pet.battlesWon,
+      lifetimeBattlesWon: nextLifetimeWins,
+      adventureClearedWave: nextAdventureWaves,
+    });
+
     setPet((prev) => {
-      const prevCleared = prev.adventureClearedWave?.[result.zoneId] ?? 0;
-      const nextCleared = result.won ? Math.max(prevCleared, result.waveNumber) : 0;
+      const prevWave = prev.adventureClearedWave?.[result.zoneId] ?? 0;
+      const updatedWave = result.won ? Math.max(prevWave, result.waveNumber) : 0;
       const existingRelics = prev.ownedSpecialItems || [];
       const nextRelics =
         result.unlockedRelicId && !existingRelics.includes(result.unlockedRelicId)
@@ -1389,6 +1444,7 @@ export default function App() {
         ...prev,
         battlesTotal: prev.battlesTotal + 1,
         battlesWon: result.won ? prev.battlesWon + 1 : prev.battlesWon,
+        lifetimeBattlesWon: result.won ? getLifetimeBattlesWon(prev) + 1 : getLifetimeBattlesWon(prev),
         stageBattlesTotal: (prev.stageBattlesTotal ?? 0) + 1,
         stageBattlesWon: result.won ? (prev.stageBattlesWon ?? 0) + 1 : (prev.stageBattlesWon ?? 0),
         strength: prev.strength + result.strengthGained,
@@ -1406,10 +1462,15 @@ export default function App() {
         equippedSpecialItem: shouldAutoEquip ? result.unlockedRelicId : prev.equippedSpecialItem,
         adventureClearedWave: {
           ...(prev.adventureClearedWave || {}),
-          [result.zoneId]: nextCleared,
+          [result.zoneId]: updatedWave,
         },
       };
     });
+
+    if (result.won && nextRankProgress.rank > prevRank) {
+      triggerRankUpCelebration(nextRankProgress.rank, nextRankProgress.title);
+      return;
+    }
 
     if (result.won) {
       const relicNote = result.unlockedRelicId
@@ -1434,6 +1495,12 @@ export default function App() {
 
   // ROOM CUSTOMIZATION
   const handleBuyFurniture = (item: FurnitureItem) => {
+    if (!isRankRequirementMet(pet, item.minTamerRank)) {
+      sound.playAlert();
+      const tier = getTamerRankTier(item.minTamerRank || 1);
+      showNotification(`🔒 Requires Rank ${tier.rank} (${tier.title}) for ${item.name}!`);
+      return;
+    }
     setPet((prev) => ({
       ...prev,
       digiBits: prev.digiBits - item.price,
@@ -1468,21 +1535,66 @@ export default function App() {
     }));
   };
 
-  const handleBuyShopItem = (
-    itemId: 'meat' | 'meat_bundle' | 'sirloin' | 'vitamin' | 'vitamin_bundle' | 'medicine',
-    cost: number
-  ) => {
+  const handleBuyShopItem = (itemId: ShopItemId, cost: number) => {
+    const itemRankRequirements: Partial<Record<ShopItemId, number>> = {
+      sirloin: 2,
+      forage_basket: 2,
+      training_chip: 3,
+      miracle_elixir: 4,
+      sovereign_core: 5,
+    };
+    const requiredRank = itemRankRequirements[itemId] ?? 1;
+    if (!isRankRequirementMet(pet, requiredRank)) {
+      sound.playAlert();
+      const tier = getTamerRankTier(requiredRank);
+      showNotification(`🔒 Requires Rank ${tier.rank} (${tier.title}) to unlock this item!`);
+      return;
+    }
+
+    const needsActivePartner =
+      itemId === 'training_chip' || itemId === 'miracle_elixir' || itemId === 'sovereign_core';
+    if (needsActivePartner && !requireAliveAndHatched()) {
+      return;
+    }
+
     if (pet.digiBits < cost) {
       sound.playAlert();
       showNotification('Not enough DigiBits! Win Colosseum battles or train in mini-games!');
       return;
     }
 
+    let purchaseMessage = `Purchased item from Bazaar! 🪙 (-${cost} Bits)`;
+    if (itemId === 'forage_basket') {
+      purchaseMessage = 'Bought Trail Ration Crate! (+2 Digi-Mushrooms & +2 Digi-Berries)';
+    } else if (itemId === 'training_chip') {
+      purchaseMessage = 'Installed Gym Mastery Chip! (+6 OFF/DEF, +4 SPD/BRN, +2 Effort, +25 EXP)';
+    } else if (itemId === 'miracle_elixir') {
+      purchaseMessage = 'Applied Royal Miracle Elixir! (100% Hunger & Energy, Cured, +30 Happy, +15 DP)';
+    } else if (itemId === 'sovereign_core') {
+      purchaseMessage = 'Merged Sovereign Data Core! (+12 All RPG Stats, +15 STR, +30 DP, +100 EXP)';
+    }
+
     setPet((prev) => {
+      const speciesObj = DIGIMON_DATABASE[prev.currentSpeciesId];
+      const baseBattle = getEffectiveBattleStats(prev, speciesObj);
       let bigMeatStock = prev.bigMeatStock;
       let sirloinStock = prev.sirloinStock ?? 0;
+      let mushroomStock = prev.mushroomStock ?? 0;
+      let berryStock = prev.berryStock ?? 0;
       let vitaminStock = prev.vitaminStock;
       let isSick = prev.isSick;
+      let hunger = prev.hunger;
+      let energy = prev.energy;
+      let happiness = prev.happiness;
+      let strength = prev.strength;
+      let dpPoints = prev.dpPoints;
+      let effort = prev.effort ?? 0;
+      let battleExp = prev.battleExp ?? 0;
+      let battleStats = prev.battleStats;
+      let careCallStartedAt = prev.careCallStartedAt;
+      let lastHungerDropAt = prev.lastHungerDropAt;
+      let sickSince = prev.sickSince;
+      let neglectTicks = prev.neglectTicks;
 
       if (itemId === 'meat') {
         bigMeatStock += 1;
@@ -1490,12 +1602,51 @@ export default function App() {
         bigMeatStock += 5;
       } else if (itemId === 'sirloin') {
         sirloinStock += 1;
+      } else if (itemId === 'forage_basket') {
+        mushroomStock += 2;
+        berryStock += 2;
       } else if (itemId === 'vitamin') {
         vitaminStock += 1;
       } else if (itemId === 'vitamin_bundle') {
         vitaminStock += 5;
       } else if (itemId === 'medicine') {
         isSick = false;
+        sickSince = undefined;
+        neglectTicks = 0;
+      } else if (itemId === 'training_chip') {
+        effort = Math.min(10, effort + 2);
+        battleExp += 25;
+        strength += 5;
+        battleStats = {
+          ...baseBattle,
+          offense: baseBattle.offense + 6,
+          defense: baseBattle.defense + 6,
+          speed: baseBattle.speed + 4,
+          brains: baseBattle.brains + 4,
+        };
+      } else if (itemId === 'miracle_elixir') {
+        hunger = 100;
+        energy = 100;
+        happiness = Math.min(100, happiness + 30);
+        dpPoints += 15;
+        isSick = false;
+        sickSince = undefined;
+        neglectTicks = 0;
+        careCallStartedAt = undefined;
+        lastHungerDropAt = Date.now();
+      } else if (itemId === 'sovereign_core') {
+        battleExp += 100;
+        strength += 15;
+        dpPoints += 30;
+        effort = Math.min(10, effort + 3);
+        battleStats = {
+          maxHp: baseBattle.maxHp + 40,
+          maxMp: baseBattle.maxMp + 15,
+          offense: baseBattle.offense + 12,
+          defense: baseBattle.defense + 12,
+          speed: baseBattle.speed + 12,
+          brains: baseBattle.brains + 12,
+        };
       }
 
       return {
@@ -1503,14 +1654,26 @@ export default function App() {
         digiBits: prev.digiBits - cost,
         bigMeatStock,
         sirloinStock,
+        mushroomStock,
+        berryStock,
         vitaminStock,
         isSick,
-        sickSince: itemId === 'medicine' ? undefined : prev.sickSince,
-        neglectTicks: itemId === 'medicine' ? 0 : prev.neglectTicks,
+        sickSince,
+        neglectTicks,
+        hunger,
+        energy,
+        happiness,
+        strength,
+        dpPoints,
+        effort,
+        battleExp,
+        battleStats,
+        careCallStartedAt,
+        lastHungerDropAt,
       };
     });
 
-    showNotification(`Purchased item from Bazaar! 🪙 (-${cost} Bits)`);
+    showNotification(purchaseMessage);
   };
 
   const handleEquipSpecialItem = (itemId: SpecialItemId | null) => {
@@ -1527,6 +1690,14 @@ export default function App() {
   };
 
   const handleChangeTheme = (themeId: string) => {
+    const theme = ROOM_THEMES.find((t) => t.id === themeId);
+    if (!theme) return;
+    if (!isRankRequirementMet(pet, theme.minTamerRank)) {
+      sound.playAlert();
+      const tier = getTamerRankTier(theme.minTamerRank || 1);
+      showNotification(`🔒 ${theme.name} unlocks at Rank ${tier.rank} (${tier.title})!`);
+      return;
+    }
     manualThemeOverrideRef.current = true;
     if (!DARK_ROOM_THEME_IDS.has(themeId)) {
       saveDaytimeTheme(themeId);
@@ -1624,6 +1795,7 @@ export default function App() {
       careMistakes: 0,
       battlesWon: 0,
       battlesTotal: 0,
+      lifetimeBattlesWon: getLifetimeBattlesWon(prev),
       trainingCount: 0,
       stageBattlesWon: 0,
       stageBattlesTotal: 0,
@@ -1679,6 +1851,7 @@ export default function App() {
   };
 
   const careNeeds = evaluateCareNeeds(pet, evoNowMs);
+  const tamerRank = computeTamerRankProgress(pet);
 
   return (
     <div
@@ -2128,6 +2301,48 @@ export default function App() {
           </div>
         </div>
 
+        {/* Compact Tamer Rank Progression Strip */}
+        <div className="w-full px-2.5 sm:px-4 mb-2">
+          <button
+            type="button"
+            onClick={() => {
+              sound.playButton();
+              triggerHaptic('light');
+              setIsTamerRankOpen(true);
+            }}
+            className={`w-full px-3 py-2 rounded-xl border ${tamerRank.currentTier.borderClass} bg-slate-900/90 hover:bg-slate-800/90 flex items-center justify-between gap-2.5 cursor-pointer transition-colors text-left`}
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-base shrink-0">{tamerRank.badge}</span>
+              <div className="min-w-0">
+                <div className="flex items-center gap-1.5">
+                  <span className={`font-pixel text-[9px] font-bold truncate ${tamerRank.currentTier.accentClass}`}>
+                    RANK {tamerRank.rank} · {tamerRank.title.toUpperCase()}
+                  </span>
+                </div>
+                <div className="text-[10px] font-chakra text-slate-400 truncate tabular-nums">
+                  {tamerRank.battlesWon} Wins · {tamerRank.zonesCleared}/{tamerRank.totalZones} Zones ·{' '}
+                  {tamerRank.nextTier
+                    ? `${tamerRank.pointsToNext} pts to Rank ${tamerRank.nextTier.rank}`
+                    : 'Max Rank'}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <div className="w-16 sm:w-24 h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all ${tamerRank.currentTier.barClass}`}
+                  style={{ width: `${tamerRank.progressPct}%` }}
+                />
+              </div>
+              <span className="font-pixel text-[8px] text-amber-300 tabular-nums whitespace-nowrap">
+                {tamerRank.score} PT »
+              </span>
+            </div>
+          </button>
+        </div>
+
         {/* 1997 Digivice Hardware Shell (Edge-to-Edge) */}
         <DigiviceHUD
           pet={pet}
@@ -2439,6 +2654,18 @@ export default function App() {
                   onClick={() => {
                     sound.playButton();
                     setIsMoreSheetOpen(false);
+                    setIsTamerRankOpen(true);
+                  }}
+                  className="p-3 bg-slate-800 hover:bg-yellow-950/60 border border-yellow-500/40 rounded-2xl flex items-center gap-2.5 text-yellow-300 cursor-pointer"
+                >
+                  <Award className="w-5 h-5 text-yellow-400 shrink-0" />
+                  <span className="truncate">TAMER RANK</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    sound.playButton();
+                    setIsMoreSheetOpen(false);
                     setIsChatOpen(true);
                   }}
                   className="p-3 bg-slate-800 hover:bg-pink-950/60 border border-pink-500/40 rounded-2xl flex items-center gap-2.5 text-pink-300 cursor-pointer"
@@ -2663,6 +2890,7 @@ export default function App() {
         isNightTime={isNightMode}
         dayNightPref={dayNightPref}
         onCycleDayNight={handleCycleDayNight}
+        onOpenTamerRank={() => setIsTamerRankOpen(true)}
       />
 
       <DigidexModal
@@ -2689,6 +2917,7 @@ export default function App() {
           setIsColosseumOpen(true);
         }}
         onOpenDigidex={() => setIsDigidexOpen(true)}
+        onOpenTamerRank={() => setIsTamerRankOpen(true)}
         onEquipSpecialItem={handleEquipSpecialItem}
         onToggleEquipAttack={handleToggleEquipAttack}
         onUpdatePlayerName={handleUpdatePlayerName}
@@ -2700,6 +2929,19 @@ export default function App() {
         onClose={() => setIsShopOpen(false)}
         pet={pet}
         onBuyItem={handleBuyShopItem}
+        onOpenTamerRank={() => setIsTamerRankOpen(true)}
+      />
+
+      <TamerRankModal
+        isOpen={isTamerRankOpen}
+        onClose={() => setIsTamerRankOpen(false)}
+        pet={pet}
+        onOpenShop={() => setIsShopOpen(true)}
+        onOpenRoom={() => setIsRoomOpen(true)}
+        onOpenAdventure={() => {
+          if (!requireAliveAndHatched()) return;
+          setIsAdventureOpen(true);
+        }}
       />
 
       <InventoryModal
@@ -2814,6 +3056,7 @@ export default function App() {
                 mushroomStock: 0,
                 berryStock: 0,
                 ...parsed,
+                lifetimeBattlesWon: Math.max(parsed.lifetimeBattlesWon ?? 0, parsed.battlesWon ?? 0),
                 stageEnteredAt: parsed.stageEnteredAt || Date.now(),
                 lastHungerDropAt: parsed.lastHungerDropAt || parsed.lastCareCheck || Date.now(),
                 lastPoopAt: parsed.lastPoopAt || parsed.lastCareCheck || Date.now(),

@@ -6,7 +6,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import './index.css';
 
 if (typeof window !== 'undefined' && 'serviceWorker' in navigator) {
-  if (Capacitor.isNativePlatform()) {
+  if (Capacitor.isNativePlatform() || import.meta.env.DEV) {
     const hadController = !!navigator.serviceWorker.controller;
     Promise.all([
       navigator.serviceWorker.getRegistrations().then((regs) =>

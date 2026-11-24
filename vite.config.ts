@@ -20,8 +20,9 @@ function readAndroidGradleVersion() {
   }
 }
 
-export default defineConfig(() => {
+export default defineConfig(({ command }) => {
   const gradleVersion = readAndroidGradleVersion();
+  const isBuild = command === 'build';
   return {
     define: {
       __GRADLE_VERSION_NAME__: JSON.stringify(gradleVersion.versionName),
@@ -31,52 +32,57 @@ export default defineConfig(() => {
       ),
     },
     plugins: [
-      react(), 
+      react(),
       tailwindcss(),
-      VitePWA({
-        registerType: 'autoUpdate',
-        injectRegister: null,
-        includeAssets: ['favicon.ico', 'apple-touch-icon.png'],
-        manifest: {
-          id: '/',
-          name: 'DigiPet: Virtual Digivice Companion',
-          short_name: 'DigiPet',
-          description: 'Authentic 1997 Bandai Digivice Virtual Pet with real Battle Spirit sprites, training, colosseum battles, and room habitat.',
-          theme_color: '#992d24',
-          background_color: '#0f172a',
-          display: 'standalone',
-          orientation: 'portrait',
-          start_url: '/',
-          scope: '/',
-          icons: [
-            {
-              src: '/pwa-192x192.png',
-              sizes: '192x192',
-              type: 'image/png',
-              purpose: 'any',
-            },
-            {
-              src: '/pwa-512x512.png',
-              sizes: '512x512',
-              type: 'image/png',
-              purpose: 'any',
-            },
-            {
-              src: '/pwa-maskable-512x512.png',
-              sizes: '512x512',
-              type: 'image/png',
-              purpose: 'maskable',
-            },
-          ],
-        },
-        devOptions: {
-          enabled: false,
-        },
-        workbox: {
-          globPatterns: ['**/*.{js,css,html,ico,png,svg,jpeg,jpg}'],
-          maximumFileSizeToCacheInBytes: 12 * 1024 * 1024,
-        },
-      }),
+      ...(isBuild
+        ? [
+            VitePWA({
+              registerType: 'autoUpdate',
+              injectRegister: null,
+              includeAssets: ['favicon.ico', 'apple-touch-icon.png'],
+              manifest: {
+                id: '/',
+                name: 'DigiPet: Virtual Digivice Companion',
+                short_name: 'DigiPet',
+                description:
+                  'Authentic 1997 Bandai Digivice Virtual Pet with real Battle Spirit sprites, training, colosseum battles, and room habitat.',
+                theme_color: '#992d24',
+                background_color: '#0f172a',
+                display: 'standalone',
+                orientation: 'portrait',
+                start_url: '/',
+                scope: '/',
+                icons: [
+                  {
+                    src: '/pwa-192x192.png',
+                    sizes: '192x192',
+                    type: 'image/png',
+                    purpose: 'any',
+                  },
+                  {
+                    src: '/pwa-512x512.png',
+                    sizes: '512x512',
+                    type: 'image/png',
+                    purpose: 'any',
+                  },
+                  {
+                    src: '/pwa-maskable-512x512.png',
+                    sizes: '512x512',
+                    type: 'image/png',
+                    purpose: 'maskable',
+                  },
+                ],
+              },
+              devOptions: {
+                enabled: false,
+              },
+              workbox: {
+                globPatterns: ['**/*.{js,css,html,ico,png,svg,jpeg,jpg}'],
+                maximumFileSizeToCacheInBytes: 12 * 1024 * 1024,
+              },
+            }),
+          ]
+        : []),
     ],
     resolve: {
       alias: {

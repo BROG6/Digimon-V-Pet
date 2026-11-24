@@ -30,8 +30,8 @@ export interface TamerRankProgress {
   isMaxRank: boolean;
 }
 
-export const POINTS_PER_BATTLE_WIN = 10;
-export const POINTS_PER_ZONE_CLEAR = 50;
+export const POINTS_PER_BATTLE_WIN = 5;
+export const POINTS_PER_ZONE_CLEAR = 100;
 
 export const TAMER_RANK_TIERS: TamerRankTier[] = [
   {
@@ -52,14 +52,14 @@ export const TAMER_RANK_TIERS: TamerRankTier[] = [
   {
     rank: 2,
     title: 'Bronze Tamer',
-    minScore: 50,
+    minScore: 150,
     badge: '🛡️',
     accentClass: 'text-amber-300',
     borderClass: 'border-amber-500/50',
     bgClass: 'bg-amber-950/60',
     barClass: 'bg-amber-400',
     unlockSummary: [
-      'Shop: Prime Sirloin (2x Meat) & Trail Ration Crate',
+      'Shop: Prime Sirloin (90 Bits) & Trail Ration Crate (180 Bits)',
       'Room Theme: Ancient Digi-Ruins',
       'Furniture: Sacred Crest Banner',
     ],
@@ -67,14 +67,14 @@ export const TAMER_RANK_TIERS: TamerRankTier[] = [
   {
     rank: 3,
     title: 'Silver Tamer',
-    minScore: 150,
+    minScore: 450,
     badge: '⚔️',
     accentClass: 'text-cyan-300',
     borderClass: 'border-cyan-500/50',
     bgClass: 'bg-cyan-950/60',
     barClass: 'bg-cyan-400',
     unlockSummary: [
-      'Shop: Gym Mastery Chip (+RPG Stats & EXP)',
+      'Shop: Gym Mastery Chip (550 Bits · +RPG Stats & EXP)',
       'Room Theme: Cyber Neon Dojo',
       'Furniture: Holo-Arcade Cabinet',
     ],
@@ -82,14 +82,14 @@ export const TAMER_RANK_TIERS: TamerRankTier[] = [
   {
     rank: 4,
     title: 'Gold Tamer',
-    minScore: 320,
+    minScore: 950,
     badge: '👑',
     accentClass: 'text-yellow-300',
     borderClass: 'border-yellow-400/55',
     bgClass: 'bg-yellow-950/55',
     barClass: 'bg-yellow-400',
     unlockSummary: [
-      'Shop: Royal Miracle Elixir (Full Recovery + DP)',
+      'Shop: Royal Miracle Elixir (750 Bits · Full Recovery + DP)',
       'Room Theme: Celestial Cloud Sanctuary',
       'Furniture: Royal Knight Statue',
     ],
@@ -97,14 +97,14 @@ export const TAMER_RANK_TIERS: TamerRankTier[] = [
   {
     rank: 5,
     title: 'Master Tamer',
-    minScore: 550,
+    minScore: 1650,
     badge: '🌟',
     accentClass: 'text-purple-300',
     borderClass: 'border-purple-400/55',
     bgClass: 'bg-purple-950/60',
     barClass: 'bg-purple-400',
     unlockSummary: [
-      'Shop: Sovereign Data Core (+12 All Stats & +100 EXP)',
+      'Shop: Sovereign Data Core (1,450 Bits · +12 All Stats & +100 EXP)',
       'Room Theme: Sovereign Gold Citadel',
       'Furniture: Sovereign Data Throne',
     ],
@@ -112,7 +112,7 @@ export const TAMER_RANK_TIERS: TamerRankTier[] = [
   {
     rank: 6,
     title: 'Sovereign Tamer',
-    minScore: 850,
+    minScore: 2600,
     badge: '💠',
     accentClass: 'text-fuchsia-300',
     borderClass: 'border-fuchsia-400/60',

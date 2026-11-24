@@ -1557,21 +1557,30 @@ export default function App() {
       return;
     }
 
-    if (pet.digiBits < cost) {
+    const itemMinPrices: Partial<Record<ShopItemId, number>> = {
+      sirloin: 90,
+      forage_basket: 180,
+      training_chip: 550,
+      miracle_elixir: 750,
+      sovereign_core: 1450,
+    };
+    const effectiveCost = Math.max(cost, itemMinPrices[itemId] ?? 0);
+
+    if (pet.digiBits < effectiveCost) {
       sound.playAlert();
       showNotification('Not enough DigiBits! Win Colosseum battles or train in mini-games!');
       return;
     }
 
-    let purchaseMessage = `Purchased item from Bazaar! 🪙 (-${cost} Bits)`;
+    let purchaseMessage = `Purchased item from Bazaar! 🪙 (-${effectiveCost} Bits)`;
     if (itemId === 'forage_basket') {
-      purchaseMessage = 'Bought Trail Ration Crate! (+2 Digi-Mushrooms & +2 Digi-Berries)';
+      purchaseMessage = `Bought Trail Ration Crate! (-${effectiveCost} Bits · +2 Digi-Mushrooms & +2 Digi-Berries)`;
     } else if (itemId === 'training_chip') {
-      purchaseMessage = 'Installed Gym Mastery Chip! (+6 OFF/DEF, +4 SPD/BRN, +2 Effort, +25 EXP)';
+      purchaseMessage = `Installed Gym Mastery Chip! (-${effectiveCost} Bits · +6 OFF/DEF, +4 SPD/BRN, +2 Effort, +25 EXP)`;
     } else if (itemId === 'miracle_elixir') {
-      purchaseMessage = 'Applied Royal Miracle Elixir! (100% Hunger & Energy, Cured, +30 Happy, +15 DP)';
+      purchaseMessage = `Applied Royal Miracle Elixir! (-${effectiveCost} Bits · 100% Hunger & Energy, Cure, +30 Happy, +15 DP)`;
     } else if (itemId === 'sovereign_core') {
-      purchaseMessage = 'Merged Sovereign Data Core! (+12 All RPG Stats, +15 STR, +30 DP, +100 EXP)';
+      purchaseMessage = `Merged Sovereign Data Core! (-${effectiveCost} Bits · +12 All RPG Stats, +15 STR, +30 DP, +100 EXP)`;
     }
 
     setPet((prev) => {
@@ -1651,7 +1660,7 @@ export default function App() {
 
       return {
         ...prev,
-        digiBits: prev.digiBits - cost,
+        digiBits: prev.digiBits - effectiveCost,
         bigMeatStock,
         sirloinStock,
         mushroomStock,

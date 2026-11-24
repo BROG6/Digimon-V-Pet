@@ -421,12 +421,22 @@ VOICE & ROLEPLAY GUIDELINES:
 
   // Setup Vite middleware in development
   if (process.env.NODE_ENV !== 'production') {
+    app.get('/@vite-plugin-pwa/pwa-entry-point-loaded', (_req, res) => {
+      res.setHeader('Content-Type', 'application/javascript');
+      res.setHeader('Cache-Control', 'no-store');
+      res.end('export default function registerDevSW() {}\n');
+    });
+
+    const hmrDisabled = process.env.DISABLE_HMR === 'true';
     const vite = await createViteServer({
       server: {
         middlewareMode: true,
-        hmr: {
-          server: httpServer,
-        },
+        hmr: hmrDisabled
+          ? false
+          : {
+              server: httpServer,
+            },
+        ...(hmrDisabled ? { watch: null } : {}),
       },
       appType: 'spa',
     });

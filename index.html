@@ -19,14 +19,26 @@
       window.addEventListener('unhandledrejection', function(event) {
         var reason = event && (event.reason || event.detail);
         var msg = (reason && (reason.message || reason.stack || String(reason))) || '';
-        if (msg.indexOf('WebSocket') !== -1 || msg.indexOf('vite-hmr') !== -1 || msg.indexOf('closed without opened') !== -1) {
+        if (
+          msg.indexOf('WebSocket') !== -1 ||
+          msg.indexOf('vite-hmr') !== -1 ||
+          msg.indexOf('closed without opened') !== -1 ||
+          msg.indexOf('SendBeforeConnectError') !== -1 ||
+          msg.indexOf('send was called before connect') !== -1
+        ) {
           event.preventDefault();
           event.stopImmediatePropagation();
         }
       });
       window.addEventListener('error', function(event) {
         var msg = (event && (event.message || (event.error && event.error.message))) || '';
-        if (msg.indexOf('WebSocket') !== -1 || msg.indexOf('vite-hmr') !== -1 || msg.indexOf('closed without opened') !== -1) {
+        if (
+          msg.indexOf('WebSocket') !== -1 ||
+          msg.indexOf('vite-hmr') !== -1 ||
+          msg.indexOf('closed without opened') !== -1 ||
+          msg.indexOf('SendBeforeConnectError') !== -1 ||
+          msg.indexOf('send was called before connect') !== -1
+        ) {
           event.preventDefault();
           event.stopImmediatePropagation();
         }

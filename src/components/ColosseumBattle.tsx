@@ -9,6 +9,7 @@ import {
   getEquippedBattleMoves,
   getSpeciesElementType,
   mapMoveTypeToElement,
+  rollCriticalHit,
 } from '../data/battleTechniques';
 import { DigimonSprite } from './DigimonSprite';
 import { sound, triggerHaptic } from '../utils/audio';
@@ -133,13 +134,13 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
     const oppSpecies = DIGIMON_DATABASE[oppId] || DIGIMON_DATABASE['agumon'];
     const oppEl = getSpeciesElementType(oppSpecies);
 
-    const stageEasyFactor = pet.stage === 'fresh' || pet.stage === 'in-training' ? 0.72 : 0.82;
-    const hpVariance = stageEasyFactor + Math.random() * 0.08;
-    const oppHp = Math.max(Math.round(oppSpecies.baseHp * 0.75), Math.round(stats.maxHp * hpVariance));
-    const oppAtk = Math.round(Math.max(oppSpecies.baseAtk * 0.65, stats.offense * 0.58));
-    const oppDef = Math.round(Math.max(oppSpecies.baseDef * 0.6, stats.defense * 0.56));
+    const stageFactor = pet.stage === 'fresh' || pet.stage === 'in-training' ? 0.84 : 0.94;
+    const hpVariance = stageFactor + Math.random() * 0.1;
+    const oppHp = Math.max(Math.round(oppSpecies.baseHp * 0.85), Math.round(stats.maxHp * hpVariance));
+    const oppAtk = Math.round(Math.max(oppSpecies.baseAtk * 0.85, stats.offense * 0.78));
+    const oppDef = Math.round(Math.max(oppSpecies.baseDef * 0.72, stats.defense * 0.66));
     const scaledSigPower = Math.round(
-      Math.max(oppSpecies.signatureMove.power * 0.62, species.signatureMove.power * 0.58)
+      Math.max(oppSpecies.signatureMove.power * 0.82, species.signatureMove.power * 0.76)
     );
 
     const opponent: BattleFighter = {
@@ -215,22 +216,35 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
 
         const moveEl = mapMoveTypeToElement(opponentFighter.signatureMove, oppSpecies);
         const typeMult = getElementDamageMultiplier(moveEl, playerFighter.element || 'neutral');
+        const crit = rollCriticalHit({
+          attackerSpd: opponentFighter.spd,
+          defenderSpd: playerFighter.spd,
+          isSpecial: true,
+        });
         const rawDamage = Math.max(
-          7,
-          Math.floor((opponentFighter.signatureMove.power * 0.6 + opponentFighter.atk * 0.1 - defFactor) * typeMult)
+          9,
+          Math.floor(
+            (opponentFighter.signatureMove.power * 0.72 + opponentFighter.atk * 0.16 - defFactor) *
+              typeMult *
+              crit.multiplier
+          )
         );
-        const finalDamage = isDefending ? Math.max(3, Math.floor(rawDamage * 0.4)) : rawDamage;
+        const finalDamage = isDefending ? Math.max(4, Math.floor(rawDamage * 0.4)) : rawDamage;
 
         setOpponentFighter((prev) => (prev ? { ...prev, sp: prev.sp - 50 } : null));
 
         setTimeout(() => {
           setPlayerEffect('hit');
-          triggerScreenFlash('special');
+          triggerScreenFlash(crit.isCrit ? 'special' : 'special');
           triggerArenaShake();
           showDamagePopup(
             'player',
-            `${typeMult > 1 ? '1.5x ' : ''}-${finalDamage}!`,
-            isDefending ? 'text-cyan-300' : 'text-rose-400 font-extrabold'
+            `${crit.isCrit ? 'CRIT! ' : ''}${typeMult > 1 ? '1.5x ' : ''}-${finalDamage}!`,
+            crit.isCrit
+              ? 'text-yellow-300 font-black text-sm'
+              : isDefending
+              ? 'text-cyan-300'
+              : 'text-rose-400 font-extrabold'
           );
 
           setPlayerFighter((prev) =>
@@ -241,34 +255,44 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
         setBattleLogs((logs) => [
           {
             id: `opp-${Date.now()}`,
-            text: `${opponentFighter.name} unleashed ${opponentFighter.signatureMove.name} (${ATTACK_ELEMENT_META[moveEl].label}) for ${finalDamage} damage${typeMult > 1 ? ' [1.5x ADV!]' : ''}!`,
+            text: `${opponentFighter.name} unleashed ${opponentFighter.signatureMove.name} (${ATTACK_ELEMENT_META[moveEl].label}) for ${finalDamage} damage${crit.isCrit ? ' [CRITICAL HIT! 1.75x]' : ''}${typeMult > 1 ? ' [1.5x ADV!]' : ''}!`,
             type: 'special',
           },
           ...logs,
         ]);
       } else {
-        sound.playPunch();
-        triggerHaptic('medium');
-        setOpponentActionAnim('attack');
-        setOpponentEffect('lunge');
         const oppEl = opponentFighter.element || 'neutral';
         const typeMult = getElementDamageMultiplier(oppEl, playerFighter.element || 'neutral');
+        const crit = rollCriticalHit({
+          attackerSpd: opponentFighter.spd,
+          defenderSpd: playerFighter.spd,
+        });
+        if (crit.isCrit) sound.playBlast();
+        else sound.playPunch();
+        triggerHaptic(crit.isCrit ? 'heavy' : 'medium');
+        setOpponentActionAnim('attack');
+        setOpponentEffect('lunge');
+
         const rawDamage = Math.max(
-          5,
-          Math.floor((opponentFighter.atk * 0.56 - defFactor) * typeMult)
+          7,
+          Math.floor((opponentFighter.atk * 0.72 - defFactor) * typeMult * crit.multiplier)
         );
-        const finalDamage = isDefending ? Math.max(2, Math.floor(rawDamage * 0.4)) : rawDamage;
+        const finalDamage = isDefending ? Math.max(3, Math.floor(rawDamage * 0.4)) : rawDamage;
 
         setOpponentFighter((prev) => (prev ? { ...prev, sp: Math.min(100, prev.sp + 20) } : null));
 
         setTimeout(() => {
           setPlayerEffect('hit');
-          triggerScreenFlash('red');
+          triggerScreenFlash(crit.isCrit ? 'special' : 'red');
           triggerArenaShake();
           showDamagePopup(
             'player',
-            `${typeMult > 1 ? '1.5x ' : ''}-${finalDamage}`,
-            isDefending ? 'text-cyan-300' : 'text-rose-400 font-bold'
+            `${crit.isCrit ? 'CRIT! ' : ''}${typeMult > 1 ? '1.5x ' : ''}-${finalDamage}${crit.isCrit ? '!' : ''}`,
+            crit.isCrit
+              ? 'text-yellow-300 font-black'
+              : isDefending
+              ? 'text-cyan-300'
+              : 'text-rose-400 font-bold'
           );
 
           setPlayerFighter((prev) =>
@@ -279,8 +303,8 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
         setBattleLogs((logs) => [
           {
             id: `opp-${Date.now()}`,
-            text: `${opponentFighter.name} attacked for ${finalDamage} damage${typeMult > 1 ? ' [1.5x ADV]' : ''}.`,
-            type: 'damage',
+            text: `${opponentFighter.name} attacked for ${finalDamage} damage${crit.isCrit ? ' [CRITICAL HIT! 1.75x]' : ''}${typeMult > 1 ? ' [1.5x ADV]' : ''}.`,
+            type: crit.isCrit ? 'special' : 'damage',
           },
           ...logs,
         ]);
@@ -315,19 +339,26 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
   const handlePlayerAttack = () => {
     if (!isPlayerTurn || !playerFighter || !opponentFighter) return;
     setIsPlayerTurn(false);
-    sound.playPunch();
-    triggerHaptic('medium');
-    setPlayerActionAnim('attack');
-    setPlayerEffect('lunge');
 
     const chargeMult = isCharged ? 1.6 : 1.0;
     const typeMult = getElementDamageMultiplier(
       playerFighter.element || 'neutral',
       opponentFighter.element || 'neutral'
     );
+    const crit = rollCriticalHit({
+      attackerSpd: playerFighter.spd,
+      defenderSpd: opponentFighter.spd,
+      isCharged,
+    });
+    if (crit.isCrit) sound.playBlast();
+    else sound.playPunch();
+    triggerHaptic(crit.isCrit ? 'heavy' : 'medium');
+    setPlayerActionAnim('attack');
+    setPlayerEffect('lunge');
+
     const damage = Math.max(
       12,
-      Math.floor((playerFighter.atk * 0.92 * chargeMult - opponentFighter.def * 0.24) * typeMult)
+      Math.floor((playerFighter.atk * 0.92 * chargeMult - opponentFighter.def * 0.24) * typeMult * crit.multiplier)
     );
 
     setPlayerFighter((prev) =>
@@ -343,12 +374,16 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
 
     setTimeout(() => {
       setOpponentEffect('hit');
-      triggerScreenFlash('white');
+      triggerScreenFlash(crit.isCrit ? 'special' : 'white');
       triggerArenaShake();
       showDamagePopup(
         'opponent',
-        `${typeMult > 1 ? '1.5x ADV! ' : ''}-${damage}`,
-        typeMult > 1 ? 'text-emerald-300 font-extrabold' : 'text-amber-300 font-bold'
+        `${crit.isCrit ? 'CRIT! ' : ''}${typeMult > 1 ? '1.5x ADV! ' : ''}-${damage}${crit.isCrit ? '!' : ''}`,
+        crit.isCrit
+          ? 'text-yellow-300 font-black text-sm'
+          : typeMult > 1
+          ? 'text-emerald-300 font-extrabold'
+          : 'text-amber-300 font-bold'
       );
 
       setOpponentFighter((prev) =>
@@ -359,8 +394,8 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
     setBattleLogs((logs) => [
       {
         id: `pl-${Date.now()}`,
-        text: `${playerFighter.name} struck for ${damage} damage (+8 MP)${typeMult > 1 ? ' [1.5x Type Advantage!]' : ''}!`,
-        type: 'damage',
+        text: `${playerFighter.name} struck for ${damage} damage (+8 MP)${crit.isCrit ? ' [CRITICAL HIT! 1.75x]' : ''}${typeMult > 1 ? ' [1.5x Type Advantage!]' : ''}!`,
+        type: crit.isCrit ? 'special' : 'damage',
       },
       ...logs,
     ]);
@@ -384,11 +419,18 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
     const typeMult = getElementDamageMultiplier(moveEl, opponentFighter.element || 'neutral');
     const chargeMult = isCharged ? 1.75 : 1.3;
     const brainsBonus = Math.floor((playerFighter.brains || 20) * 0.12);
+    const crit = rollCriticalHit({
+      attackerSpd: playerFighter.spd,
+      defenderSpd: opponentFighter.spd,
+      isCharged,
+      isSpecial: true,
+    });
     const damage = Math.max(
       26,
       Math.floor(
         (playerFighter.signatureMove.power * chargeMult + playerFighter.atk * 0.3 + brainsBonus - opponentFighter.def * 0.24) *
-          typeMult
+          typeMult *
+          crit.multiplier
       )
     );
 
@@ -401,8 +443,12 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
       triggerArenaShake();
       showDamagePopup(
         'opponent',
-        `${typeMult > 1 ? '1.5x ADV! ' : ''}-${damage}!`,
-        typeMult > 1 ? 'text-emerald-300 font-extrabold text-sm' : 'text-orange-400 font-extrabold text-sm'
+        `${crit.isCrit ? 'CRIT! ' : ''}${typeMult > 1 ? '1.5x ADV! ' : ''}-${damage}!`,
+        crit.isCrit
+          ? 'text-yellow-300 font-black text-base'
+          : typeMult > 1
+          ? 'text-emerald-300 font-extrabold text-sm'
+          : 'text-orange-400 font-extrabold text-sm'
       );
 
       setOpponentFighter((prev) =>
@@ -413,7 +459,7 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
     setBattleLogs((logs) => [
       {
         id: `pl-${Date.now()}`,
-        text: `SIGNATURE: ${playerFighter.name} fired ${playerFighter.signatureMove.name} (${ATTACK_ELEMENT_META[moveEl].label}) for ${damage} damage${typeMult > 1 ? ' [1.5x ADV!]' : ''}!`,
+        text: `SIGNATURE: ${playerFighter.name} fired ${playerFighter.signatureMove.name} (${ATTACK_ELEMENT_META[moveEl].label}) for ${damage} damage${crit.isCrit ? ' [CRITICAL HIT! 1.75x]' : ''}${typeMult > 1 ? ' [1.5x ADV!]' : ''}!`,
         type: 'special',
       },
       ...logs,
@@ -432,18 +478,28 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
     if (currentMp < move.mpCost) return;
 
     setIsPlayerTurn(false);
-    if (move.soundType === 'punch') sound.playPunch();
-    else sound.playBlast();
+    const typeMult = getElementDamageMultiplier(move.element, opponentFighter.element || 'neutral');
+    const chargeMult = isCharged ? 1.55 : 1.0;
+    const brainsBonus = Math.floor((playerFighter.brains || 20) * 0.16);
+    const crit = rollCriticalHit({
+      attackerSpd: playerFighter.spd,
+      defenderSpd: opponentFighter.spd,
+      isCharged,
+      isSpecial: true,
+    });
+    if (crit.isCrit || move.soundType !== 'punch') sound.playBlast();
+    else sound.playPunch();
     triggerHaptic('heavy');
     setPlayerActionAnim('attack');
     setPlayerEffect('lunge');
 
-    const typeMult = getElementDamageMultiplier(move.element, opponentFighter.element || 'neutral');
-    const chargeMult = isCharged ? 1.55 : 1.0;
-    const brainsBonus = Math.floor((playerFighter.brains || 20) * 0.16);
     const damage = Math.max(
       18,
-      Math.floor((move.power * 1.15 * chargeMult + playerFighter.atk * 0.4 + brainsBonus - opponentFighter.def * 0.22) * typeMult)
+      Math.floor(
+        (move.power * 1.15 * chargeMult + playerFighter.atk * 0.4 + brainsBonus - opponentFighter.def * 0.22) *
+          typeMult *
+          crit.multiplier
+      )
     );
 
     setPlayerFighter((prev) =>
@@ -459,12 +515,16 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
 
     setTimeout(() => {
       setOpponentEffect('hit');
-      triggerScreenFlash(typeMult > 1 ? 'special' : 'white');
+      triggerScreenFlash(crit.isCrit || typeMult > 1 ? 'special' : 'white');
       triggerArenaShake();
       showDamagePopup(
         'opponent',
-        `${typeMult > 1 ? '1.5x ADV! ' : ''}-${damage}!`,
-        typeMult > 1 ? 'text-emerald-300 font-extrabold text-sm' : 'text-cyan-300 font-bold'
+        `${crit.isCrit ? 'CRIT! ' : ''}${typeMult > 1 ? '1.5x ADV! ' : ''}-${damage}!`,
+        crit.isCrit
+          ? 'text-yellow-300 font-black text-sm'
+          : typeMult > 1
+          ? 'text-emerald-300 font-extrabold text-sm'
+          : 'text-cyan-300 font-bold'
       );
 
       setOpponentFighter((prev) =>
@@ -475,8 +535,8 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
     setBattleLogs((logs) => [
       {
         id: `pl-tech-${Date.now()}`,
-        text: `${playerFighter.name} cast ${move.name} (${ATTACK_ELEMENT_META[move.element].label}, -${move.mpCost} MP) for ${damage} damage${typeMult > 1 ? ' [1.5x ADV!]' : ''}!`,
-        type: typeMult > 1 ? 'special' : 'damage',
+        text: `${playerFighter.name} cast ${move.name} (${ATTACK_ELEMENT_META[move.element].label}, -${move.mpCost} MP) for ${damage} damage${crit.isCrit ? ' [CRITICAL HIT! 1.75x]' : ''}${typeMult > 1 ? ' [1.5x ADV!]' : ''}!`,
+        type: crit.isCrit || typeMult > 1 ? 'special' : 'damage',
       },
       ...logs,
     ]);

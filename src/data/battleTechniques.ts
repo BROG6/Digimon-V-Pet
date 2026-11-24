@@ -1301,3 +1301,36 @@ export function calculateTrainingOutcome(
     prefLabel,
   };
 }
+
+export const CRIT_DAMAGE_MULTIPLIER = 1.75;
+
+export interface CriticalHitRoll {
+  isCrit: boolean;
+  multiplier: number;
+  critChance: number;
+}
+
+export function rollCriticalHit(params: {
+  attackerSpd?: number;
+  defenderSpd?: number;
+  isCharged?: boolean;
+  isSpecial?: boolean;
+  bonusChance?: number;
+  rng?: () => number;
+}): CriticalHitRoll {
+  const atkSpd = params.attackerSpd ?? 20;
+  const defSpd = params.defenderSpd ?? 20;
+  const speedEdge = Math.max(-0.04, Math.min(0.08, (atkSpd - defSpd) * 0.0015));
+  const chargeBonus = params.isCharged ? 0.08 : 0;
+  const specialBonus = params.isSpecial ? 0.04 : 0;
+  const extra = params.bonusChance ?? 0;
+  const critChance = Math.max(0.09, Math.min(0.35, 0.13 + speedEdge + chargeBonus + specialBonus + extra));
+  const roll = (params.rng ?? Math.random)();
+  const isCrit = roll < critChance;
+  return {
+    isCrit,
+    multiplier: isCrit ? CRIT_DAMAGE_MULTIPLIER : 1.0,
+    critChance,
+  };
+}
+

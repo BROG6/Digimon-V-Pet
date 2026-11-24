@@ -25,6 +25,7 @@ import {
   getEquippedBattleMoves,
   getSpeciesElementType,
   mapMoveTypeToElement,
+  rollCriticalHit,
 } from '../data/battleTechniques';
 import { DigimonSprite } from './DigimonSprite';
 import {
@@ -626,6 +627,8 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
       const shouldUseSpecial = canUseSpecial && Math.random() < specialChance;
       const oppSpecies = DIGIMON_DATABASE[opponentFighter.speciesId];
 
+      const enemyBossCritBonus = activeWave.waveNumber >= 6 ? 0.06 : activeWave.waveNumber >= 4 ? 0.03 : 0;
+
       if (shouldUseSpecial) {
         sound.playBlast();
         triggerHaptic('heavy');
@@ -634,6 +637,12 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
 
         const moveEl = mapMoveTypeToElement(opponentFighter.signatureMove, oppSpecies);
         const typeMult = getElementDamageMultiplier(moveEl, playerFighter.element || 'neutral');
+        const crit = rollCriticalHit({
+          attackerSpd: opponentFighter.spd,
+          defenderSpd: playerFighter.spd,
+          isSpecial: true,
+          bonusChance: enemyBossCritBonus,
+        });
         const movePower = Math.round(
           opponentFighter.signatureMove.power * (0.72 + activeWave.statMultiplier * 0.22)
         );
@@ -641,7 +650,7 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
           9,
           Math.floor((movePower - (isDefending ? playerFighter.def * 0.78 : playerFighter.def * 0.34)) * typeMult)
         );
-        const tierScaled = Math.round(baseDmg * stageMods.enemyDamageMult);
+        const tierScaled = Math.round(baseDmg * stageMods.enemyDamageMult * crit.multiplier);
         const finalDamage = isDefending ? Math.max(4, Math.floor(tierScaled * 0.4)) : tierScaled;
 
         setOpponentFighter((prev) => (prev ? { ...prev, sp: prev.sp - 50 } : null));
@@ -652,8 +661,12 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
           triggerArenaShake();
           showDamagePopup(
             'player',
-            `${typeMult > 1 ? '1.5x ' : ''}-${finalDamage}!`,
-            isDefending ? 'text-cyan-300' : 'text-rose-400 font-extrabold'
+            `${crit.isCrit ? 'CRIT! ' : ''}${typeMult > 1 ? '1.5x ' : ''}-${finalDamage}!`,
+            crit.isCrit
+              ? 'text-yellow-300 font-black'
+              : isDefending
+              ? 'text-cyan-300'
+              : 'text-rose-400 font-extrabold'
           );
           setPlayerFighter((prev) =>
             prev ? { ...prev, currentHp: Math.max(0, prev.currentHp - finalDamage) } : null
@@ -663,24 +676,30 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
         setBattleLogs((logs) => [
           {
             id: `opp-${Date.now()}`,
-            text: `${opponentFighter.name} fired ${opponentFighter.signatureMove.name} (${ATTACK_ELEMENT_META[moveEl].label}) for ${finalDamage} damage${typeMult > 1 ? ' [1.5x ADV!]' : ''}!`,
+            text: `${opponentFighter.name} fired ${opponentFighter.signatureMove.name} (${ATTACK_ELEMENT_META[moveEl].label}) for ${finalDamage} damage${crit.isCrit ? ' [CRITICAL HIT! 1.75x]' : ''}${typeMult > 1 ? ' [1.5x ADV!]' : ''}!`,
             type: 'special',
           },
           ...logs,
         ]);
       } else {
-        sound.playPunch();
-        triggerHaptic('medium');
+        const oppEl = opponentFighter.element || 'neutral';
+        const typeMult = getElementDamageMultiplier(oppEl, playerFighter.element || 'neutral');
+        const crit = rollCriticalHit({
+          attackerSpd: opponentFighter.spd,
+          defenderSpd: playerFighter.spd,
+          bonusChance: enemyBossCritBonus,
+        });
+        if (crit.isCrit) sound.playBlast();
+        else sound.playPunch();
+        triggerHaptic(crit.isCrit ? 'heavy' : 'medium');
         setOpponentActionAnim('attack');
         setOpponentEffect('lunge');
 
-        const oppEl = opponentFighter.element || 'neutral';
-        const typeMult = getElementDamageMultiplier(oppEl, playerFighter.element || 'neutral');
         const baseDmg = Math.max(
           7,
           Math.floor((opponentFighter.atk * 0.72 - (isDefending ? playerFighter.def * 0.68 : playerFighter.def * 0.3)) * typeMult)
         );
-        const tierScaled = Math.round(baseDmg * stageMods.enemyDamageMult);
+        const tierScaled = Math.round(baseDmg * stageMods.enemyDamageMult * crit.multiplier);
         const finalDamage = isDefending ? Math.max(3, Math.floor(tierScaled * 0.4)) : tierScaled;
 
         setOpponentFighter((prev) =>
@@ -689,12 +708,16 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
 
         setTimeout(() => {
           setPlayerEffect('hit');
-          triggerScreenFlash('red');
+          triggerScreenFlash(crit.isCrit ? 'special' : 'red');
           triggerArenaShake();
           showDamagePopup(
             'player',
-            `${typeMult > 1 ? '1.5x ' : ''}-${finalDamage}`,
-            isDefending ? 'text-cyan-300' : 'text-rose-400 font-bold'
+            `${crit.isCrit ? 'CRIT! ' : ''}${typeMult > 1 ? '1.5x ' : ''}-${finalDamage}${crit.isCrit ? '!' : ''}`,
+            crit.isCrit
+              ? 'text-yellow-300 font-black'
+              : isDefending
+              ? 'text-cyan-300'
+              : 'text-rose-400 font-bold'
           );
           setPlayerFighter((prev) =>
             prev ? { ...prev, currentHp: Math.max(0, prev.currentHp - finalDamage) } : null
@@ -704,8 +727,8 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
         setBattleLogs((logs) => [
           {
             id: `opp-${Date.now()}`,
-            text: `${opponentFighter.name} attacked for ${finalDamage} damage${typeMult > 1 ? ' [1.5x ADV]' : ''}.`,
-            type: 'damage',
+            text: `${opponentFighter.name} attacked for ${finalDamage} damage${crit.isCrit ? ' [CRITICAL HIT! 1.75x]' : ''}${typeMult > 1 ? ' [1.5x ADV]' : ''}.`,
+            type: crit.isCrit ? 'special' : 'damage',
           },
           ...logs,
         ]);
@@ -823,10 +846,6 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
   const handlePlayerAttack = () => {
     if (!isPlayerTurn || !playerFighter || !opponentFighter || !activeWave) return;
     setIsPlayerTurn(false);
-    sound.playPunch();
-    triggerHaptic('medium');
-    setPlayerActionAnim('attack');
-    setPlayerEffect('lunge');
 
     const stageMods = getStageTierCombatModifiers(pet.stage, activeWave.stageLabel);
     const chargeMult = isCharged ? 1.6 : 1.0;
@@ -834,9 +853,20 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
       playerFighter.element || 'neutral',
       opponentFighter.element || 'neutral'
     );
+    const crit = rollCriticalHit({
+      attackerSpd: playerFighter.spd,
+      defenderSpd: opponentFighter.spd,
+      isCharged,
+    });
+    if (crit.isCrit) sound.playBlast();
+    else sound.playPunch();
+    triggerHaptic(crit.isCrit ? 'heavy' : 'medium');
+    setPlayerActionAnim('attack');
+    setPlayerEffect('lunge');
+
     const rawDamage = Math.max(
       12,
-      Math.floor((playerFighter.atk * 0.96 * chargeMult - opponentFighter.def * 0.28) * typeMult)
+      Math.floor((playerFighter.atk * 0.96 * chargeMult - opponentFighter.def * 0.28) * typeMult * crit.multiplier)
     );
     const damage = Math.max(3, Math.floor(rawDamage * stageMods.playerDamageMult));
 
@@ -853,12 +883,16 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
 
     setTimeout(() => {
       setOpponentEffect('hit');
-      triggerScreenFlash('white');
+      triggerScreenFlash(crit.isCrit ? 'special' : 'white');
       triggerArenaShake();
       showDamagePopup(
         'opponent',
-        `${typeMult > 1 ? '1.5x ADV! ' : ''}-${damage}`,
-        typeMult > 1 ? 'text-emerald-300 font-extrabold' : 'text-amber-300 font-bold'
+        `${crit.isCrit ? 'CRIT! ' : ''}${typeMult > 1 ? '1.5x ADV! ' : ''}-${damage}${crit.isCrit ? '!' : ''}`,
+        crit.isCrit
+          ? 'text-yellow-300 font-black'
+          : typeMult > 1
+          ? 'text-emerald-300 font-extrabold'
+          : 'text-amber-300 font-bold'
       );
       setOpponentFighter((prev) =>
         prev ? { ...prev, currentHp: Math.max(0, prev.currentHp - damage) } : null
@@ -868,8 +902,8 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
     setBattleLogs((logs) => [
       {
         id: `pl-${Date.now()}`,
-        text: `${playerFighter.name} struck ${opponentFighter.name} for ${damage} damage (+8 MP)${typeMult > 1 ? ' [1.5x ADV!]' : ''}!`,
-        type: 'damage',
+        text: `${playerFighter.name} struck ${opponentFighter.name} for ${damage} damage (+8 MP)${crit.isCrit ? ' [CRITICAL HIT! 1.75x]' : ''}${typeMult > 1 ? ' [1.5x ADV!]' : ''}!`,
+        type: crit.isCrit ? 'special' : 'damage',
       },
       ...logs,
     ]);
@@ -894,9 +928,19 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
     const typeMult = getElementDamageMultiplier(moveEl, opponentFighter.element || 'neutral');
     const mult = isCharged ? 1.65 : 1.25;
     const brainsBonus = Math.floor((playerFighter.brains || 20) * 0.14);
+    const crit = rollCriticalHit({
+      attackerSpd: playerFighter.spd,
+      defenderSpd: opponentFighter.spd,
+      isCharged,
+      isSpecial: true,
+    });
     const rawDamage = Math.max(
       24,
-      Math.floor((playerFighter.signatureMove.power * mult + playerFighter.atk * 0.35 + brainsBonus - opponentFighter.def * 0.35) * typeMult)
+      Math.floor(
+        (playerFighter.signatureMove.power * mult + playerFighter.atk * 0.35 + brainsBonus - opponentFighter.def * 0.35) *
+          typeMult *
+          crit.multiplier
+      )
     );
     const damage = Math.max(6, Math.floor(rawDamage * stageMods.playerDamageMult));
 
@@ -909,8 +953,12 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
       triggerArenaShake();
       showDamagePopup(
         'opponent',
-        `${typeMult > 1 ? '1.5x ADV! ' : ''}-${damage}!`,
-        typeMult > 1 ? 'text-emerald-300 font-extrabold' : 'text-orange-400 font-extrabold'
+        `${crit.isCrit ? 'CRIT! ' : ''}${typeMult > 1 ? '1.5x ADV! ' : ''}-${damage}!`,
+        crit.isCrit
+          ? 'text-yellow-300 font-black'
+          : typeMult > 1
+          ? 'text-emerald-300 font-extrabold'
+          : 'text-orange-400 font-extrabold'
       );
       setOpponentFighter((prev) =>
         prev ? { ...prev, currentHp: Math.max(0, prev.currentHp - damage) } : null
@@ -920,7 +968,7 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
     setBattleLogs((logs) => [
       {
         id: `pl-${Date.now()}`,
-        text: `${playerFighter.name} unleashed ${playerFighter.signatureMove.name} (${ATTACK_ELEMENT_META[moveEl].label}) for ${damage} damage${typeMult > 1 ? ' [1.5x ADV!]' : ''}!`,
+        text: `${playerFighter.name} unleashed ${playerFighter.signatureMove.name} (${ATTACK_ELEMENT_META[moveEl].label}) for ${damage} damage${crit.isCrit ? ' [CRITICAL HIT! 1.75x]' : ''}${typeMult > 1 ? ' [1.5x ADV!]' : ''}!`,
         type: 'special',
       },
       ...logs,
@@ -939,19 +987,29 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
     if (currentMp < move.mpCost) return;
 
     setIsPlayerTurn(false);
-    if (move.soundType === 'punch') sound.playPunch();
-    else sound.playBlast();
-    triggerHaptic('heavy');
-    setPlayerActionAnim('attack');
-    setPlayerEffect('lunge');
-
     const stageMods = getStageTierCombatModifiers(pet.stage, activeWave.stageLabel);
     const typeMult = getElementDamageMultiplier(move.element, opponentFighter.element || 'neutral');
     const chargeMult = isCharged ? 1.55 : 1.0;
     const brainsBonus = Math.floor((playerFighter.brains || 20) * 0.16);
+    const crit = rollCriticalHit({
+      attackerSpd: playerFighter.spd,
+      defenderSpd: opponentFighter.spd,
+      isCharged,
+      isSpecial: true,
+    });
+    if (crit.isCrit || move.soundType !== 'punch') sound.playBlast();
+    else sound.playPunch();
+    triggerHaptic('heavy');
+    setPlayerActionAnim('attack');
+    setPlayerEffect('lunge');
+
     const rawDamage = Math.max(
       18,
-      Math.floor((move.power * 1.15 * chargeMult + playerFighter.atk * 0.42 + brainsBonus - opponentFighter.def * 0.25) * typeMult)
+      Math.floor(
+        (move.power * 1.15 * chargeMult + playerFighter.atk * 0.42 + brainsBonus - opponentFighter.def * 0.25) *
+          typeMult *
+          crit.multiplier
+      )
     );
     const damage = Math.max(5, Math.floor(rawDamage * stageMods.playerDamageMult));
 
@@ -968,12 +1026,16 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
 
     setTimeout(() => {
       setOpponentEffect('hit');
-      triggerScreenFlash(typeMult > 1 ? 'special' : 'white');
+      triggerScreenFlash(crit.isCrit || typeMult > 1 ? 'special' : 'white');
       triggerArenaShake();
       showDamagePopup(
         'opponent',
-        `${typeMult > 1 ? '1.5x ADV! ' : ''}-${damage}!`,
-        typeMult > 1 ? 'text-emerald-300 font-extrabold' : 'text-cyan-300 font-bold'
+        `${crit.isCrit ? 'CRIT! ' : ''}${typeMult > 1 ? '1.5x ADV! ' : ''}-${damage}!`,
+        crit.isCrit
+          ? 'text-yellow-300 font-black'
+          : typeMult > 1
+          ? 'text-emerald-300 font-extrabold'
+          : 'text-cyan-300 font-bold'
       );
       setOpponentFighter((prev) =>
         prev ? { ...prev, currentHp: Math.max(0, prev.currentHp - damage) } : null
@@ -983,8 +1045,8 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
     setBattleLogs((logs) => [
       {
         id: `pl-tech-${Date.now()}`,
-        text: `${playerFighter.name} cast ${move.name} (${ATTACK_ELEMENT_META[move.element].label}, -${move.mpCost} MP) for ${damage} damage${typeMult > 1 ? ' [1.5x ADV!]' : ''}!`,
-        type: typeMult > 1 ? 'special' : 'damage',
+        text: `${playerFighter.name} cast ${move.name} (${ATTACK_ELEMENT_META[move.element].label}, -${move.mpCost} MP) for ${damage} damage${crit.isCrit ? ' [CRITICAL HIT! 1.75x]' : ''}${typeMult > 1 ? ' [1.5x ADV!]' : ''}!`,
+        type: crit.isCrit || typeMult > 1 ? 'special' : 'damage',
       },
       ...logs,
     ]);

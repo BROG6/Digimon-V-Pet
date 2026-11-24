@@ -343,9 +343,12 @@ VOICE & ROLEPLAY GUIDELINES:
         : `${playerContextPrefix}${userPrompt}`;
 
       let lastErr: any = null;
-      const modelsToTry = ['gemini-3.1-flash-lite', 'gemini-2.5-flash'];
+      const modelsToTry: Array<{ model: string; thinkingLevel: ThinkingLevel }> = [
+        { model: 'gemini-4-hydrogen', thinkingLevel: ThinkingLevel.LOW },
+        { model: 'gemini-3.1-flash-lite', thinkingLevel: ThinkingLevel.MINIMAL },
+      ];
       for (let attempt = 0; attempt < modelsToTry.length; attempt++) {
-        const modelName = modelsToTry[attempt];
+        const { model: modelName, thinkingLevel } = modelsToTry[attempt];
         try {
           const response = await Promise.race([
             ai.models.generateContent({
@@ -354,7 +357,7 @@ VOICE & ROLEPLAY GUIDELINES:
               config: {
                 systemInstruction,
                 thinkingConfig: {
-                  thinkingLevel: ThinkingLevel.MINIMAL,
+                  thinkingLevel,
                 },
               },
             }),
@@ -380,13 +383,16 @@ VOICE & ROLEPLAY GUIDELINES:
           const status = err?.status || err?.code;
           const msg = String(err?.message || '');
           const isTransient =
+            status === 400 ||
             status === 404 ||
             status === 429 ||
             status === 503 ||
             status === 500 ||
+            msg.includes('400') ||
             msg.includes('404') ||
             msg.includes('NOT_FOUND') ||
             msg.includes('not found') ||
+            msg.includes('no longer available') ||
             msg.includes('503') ||
             msg.includes('UNAVAILABLE') ||
             msg.includes('429') ||

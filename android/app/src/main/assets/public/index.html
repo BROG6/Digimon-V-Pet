@@ -12,14 +12,26 @@
       window.addEventListener('unhandledrejection', function(event) {
         var reason = event && (event.reason || event.detail);
         var msg = (reason && (reason.message || reason.stack || String(reason))) || '';
-        if (msg.indexOf('WebSocket') !== -1 || msg.indexOf('vite-hmr') !== -1 || msg.indexOf('closed without opened') !== -1) {
+        if (
+          msg.indexOf('WebSocket') !== -1 ||
+          msg.indexOf('vite-hmr') !== -1 ||
+          msg.indexOf('closed without opened') !== -1 ||
+          msg.indexOf('SendBeforeConnectError') !== -1 ||
+          msg.indexOf('send was called before connect') !== -1
+        ) {
           event.preventDefault();
           event.stopImmediatePropagation();
         }
       });
       window.addEventListener('error', function(event) {
         var msg = (event && (event.message || (event.error && event.error.message))) || '';
-        if (msg.indexOf('WebSocket') !== -1 || msg.indexOf('vite-hmr') !== -1 || msg.indexOf('closed without opened') !== -1) {
+        if (
+          msg.indexOf('WebSocket') !== -1 ||
+          msg.indexOf('vite-hmr') !== -1 ||
+          msg.indexOf('closed without opened') !== -1 ||
+          msg.indexOf('SendBeforeConnectError') !== -1 ||
+          msg.indexOf('send was called before connect') !== -1
+        ) {
           event.preventDefault();
           event.stopImmediatePropagation();
         }
@@ -41,9 +53,9 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;600;700&family=Press+Start+2P&family=Silkscreen:wght@400;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <script type="module" crossorigin src="/assets/index-BjEhePnu.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-CJtUM6Ix.css">
-  <link rel="manifest" href="/manifest.webmanifest"><script id="vite-plugin-pwa:register-sw" src="/registerSW.js"></script></head>
+    <script type="module" crossorigin src="/assets/index-DYVleqZq.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-DRC09q8R.css">
+  <link rel="manifest" href="/manifest.webmanifest"></head>
   <body class="bg-slate-950 text-slate-100 antialiased overflow-hidden select-none">
     <div id="root"></div>
   </body>

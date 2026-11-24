@@ -269,6 +269,8 @@ export interface PetState {
   battleStats?: BattleStats;
   learnedAttackIds?: string[];
   equippedAttackIds?: string[];
+  battleHistory?: BattleHistoryEntry[];
+  currentWinStreak?: number;
 }
 
 export interface AdventureWave {
@@ -319,6 +321,8 @@ export interface AdventureBattleResult {
   meatUsed: number;
   vitaminsUsed: number;
   isFirstClearOfWave: boolean;
+  opponentName?: string;
+  opponentSpeciesId?: string;
 }
 
 export interface BattleFighter {
@@ -346,4 +350,13 @@ export interface BattleLogEntry {
   id: string;
   text: string;
   type: 'action' | 'damage' | 'special' | 'win' | 'flee';
+}
+
+export interface BattleHistoryEntry {
+  id: string;
+  opponentName: string;
+  opponentSpeciesId?: string;
+  outcome: 'win' | 'loss';
+  mode?: 'colosseum' | 'adventure';
+  timestamp: number;
 }

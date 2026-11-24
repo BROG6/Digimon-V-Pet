@@ -8,6 +8,7 @@ import {
   DigimonStage,
   SpecialItemId,
   AdventureBattleResult,
+  BattleHistoryEntry,
   TrainingStatKey,
   ShopItemId
 } from './types/digimon';
@@ -182,6 +183,8 @@ export default function App() {
           berryStock: 0,
           ...parsed,
           lifetimeBattlesWon: Math.max(parsed.lifetimeBattlesWon ?? 0, parsed.battlesWon ?? 0),
+          battleHistory: Array.isArray(parsed.battleHistory) ? parsed.battleHistory.slice(0, 10) : [],
+          currentWinStreak: typeof parsed.currentWinStreak === 'number' ? Math.max(0, parsed.currentWinStreak) : 0,
           activeRoomTheme: syncedTheme,
           stageEnteredAt: parsed.stageEnteredAt || Date.now(),
           lastHungerDropAt: parsed.lastHungerDropAt || parsed.lastCareCheck || Date.now(),
@@ -242,6 +245,8 @@ export default function App() {
       neglectTicks: 0,
       adventureClearedWave: {},
       battleExp: 0,
+      battleHistory: [],
+      currentWinStreak: 0,
       unlockedSpeciesIds: loadUnlockedSpeciesIds(),
     };
   });
@@ -1381,7 +1386,12 @@ export default function App() {
     showNotification(`🎖️ TAMER RANK UP! Reached Rank ${newRank} (${newTitle}) — New Shop & Room unlocks!`);
   };
 
-  const handleBattleEnd = (won: boolean, coinsReward: number, dpReward: number) => {
+  const handleBattleEnd = (
+    won: boolean,
+    coinsReward: number,
+    dpReward: number,
+    opponentInfo?: { name: string; speciesId?: string }
+  ) => {
     const prevRank = computeTamerRankProgress(pet).rank;
     const nextLifetimeWins = won ? getLifetimeBattlesWon(pet) + 1 : getLifetimeBattlesWon(pet);
     const nextRankProgress = computeTamerRankProgress({
@@ -1389,6 +1399,14 @@ export default function App() {
       lifetimeBattlesWon: nextLifetimeWins,
       adventureClearedWave: pet.adventureClearedWave,
     });
+    const newEntry: BattleHistoryEntry = {
+      id: `col-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      opponentName: opponentInfo?.name || 'Colosseum Rival',
+      opponentSpeciesId: opponentInfo?.speciesId,
+      outcome: won ? 'win' : 'loss',
+      mode: 'colosseum',
+      timestamp: Date.now(),
+    };
 
     setPet((prev) => ({
       ...prev,
@@ -1400,6 +1418,8 @@ export default function App() {
       digiBits: prev.digiBits + coinsReward,
       dpPoints: prev.dpPoints + dpReward,
       energy: Math.max(10, prev.energy - 15),
+      battleHistory: [newEntry, ...(prev.battleHistory || [])].slice(0, 10),
+      currentWinStreak: won ? (prev.currentWinStreak ?? 0) + 1 : 0,
     }));
 
     if (won && nextRankProgress.rank > prevRank) {
@@ -1440,6 +1460,15 @@ export default function App() {
       const unlockedRelicInfo = result.unlockedRelicId ? SPECIAL_ITEMS[result.unlockedRelicId] : undefined;
       const shouldAutoEquip = unlockedRelicInfo && prev.eggId === unlockedRelicInfo.eggId;
 
+      const newEntry: BattleHistoryEntry = {
+        id: `adv-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        opponentName: result.opponentName || `Wave ${result.waveNumber} Opponent`,
+        opponentSpeciesId: result.opponentSpeciesId,
+        outcome: result.won ? 'win' : 'loss',
+        mode: 'adventure',
+        timestamp: Date.now(),
+      };
+
       return {
         ...prev,
         battlesTotal: prev.battlesTotal + 1,
@@ -1464,6 +1493,8 @@ export default function App() {
           ...(prev.adventureClearedWave || {}),
           [result.zoneId]: updatedWave,
         },
+        battleHistory: [newEntry, ...(prev.battleHistory || [])].slice(0, 10),
+        currentWinStreak: result.won ? (prev.currentWinStreak ?? 0) + 1 : 0,
       };
     });
 
@@ -1831,6 +1862,8 @@ export default function App() {
       equippedAttackIds: undefined,
       adventureClearedWave: prev.adventureClearedWave || {},
       battleExp: prev.battleExp ?? 0,
+      battleHistory: prev.battleHistory || [],
+      currentWinStreak: prev.currentWinStreak ?? 0,
       unlockedSpeciesIds: loadUnlockedSpeciesIds(prev.unlockedSpeciesIds || []),
     }));
     setIsEggModalOpen(false);
@@ -3066,6 +3099,8 @@ export default function App() {
                 berryStock: 0,
                 ...parsed,
                 lifetimeBattlesWon: Math.max(parsed.lifetimeBattlesWon ?? 0, parsed.battlesWon ?? 0),
+                battleHistory: Array.isArray(parsed.battleHistory) ? parsed.battleHistory.slice(0, 10) : [],
+                currentWinStreak: typeof parsed.currentWinStreak === 'number' ? Math.max(0, parsed.currentWinStreak) : 0,
                 stageEnteredAt: parsed.stageEnteredAt || Date.now(),
                 lastHungerDropAt: parsed.lastHungerDropAt || parsed.lastCareCheck || Date.now(),
                 lastPoopAt: parsed.lastPoopAt || parsed.lastCareCheck || Date.now(),

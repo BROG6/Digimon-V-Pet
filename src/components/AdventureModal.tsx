@@ -798,6 +798,8 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
         meatUsed,
         vitaminsUsed,
         isFirstClearOfWave,
+        opponentName: opponentFighter.name,
+        opponentSpeciesId: opponentFighter.speciesId,
       };
 
       setLastResult(result);
@@ -822,6 +824,8 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
         meatUsed,
         vitaminsUsed,
         isFirstClearOfWave: false,
+        opponentName: opponentFighter.name,
+        opponentSpeciesId: opponentFighter.speciesId,
       };
 
       rerollZoneWaves(selectedZone.id);

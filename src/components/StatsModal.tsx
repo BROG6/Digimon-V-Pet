@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
 import { PetState, DigimonSpecies, DigiEggInfo, SpecialItemId } from '../types/digimon';
-import { SPECIAL_ITEMS } from '../data/digidex';
+import { DIGIMON_DATABASE, SPECIAL_ITEMS } from '../data/digidex';
 import {
   checkEvolutionEligibility,
   computeNaturalEvoTiming,
@@ -36,6 +36,8 @@ import {
   Brain,
   Droplets,
   Check,
+  Swords,
+  History,
 } from 'lucide-react';
 import { computeTamerRankProgress } from '../utils/tamerRank';
 import { sound } from '../utils/audio';
@@ -578,6 +580,101 @@ export const StatsModal: React.FC<StatsModalProps> = ({
               <p className="text-[10px] text-slate-400 font-chakra">
                 Digimon start with 1 attack and learn more from their evolution line by training Brains at the Blackboard.
               </p>
+            </div>
+
+            {/* Battle Log (Last 10 Results) */}
+            <div className="p-3.5 rounded-2xl bg-slate-950/85 border border-slate-800 space-y-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-1.5">
+                  <History className="w-4 h-4 text-amber-400 shrink-0" />
+                  <span className="text-xs font-pixel text-amber-300">
+                    BATTLE LOG
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`px-2 py-0.5 rounded-lg border font-pixel text-[9px] tabular-nums flex items-center gap-1 ${
+                      (pet.currentWinStreak ?? 0) > 0
+                        ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
+                        : 'bg-slate-900 text-slate-400 border-slate-700'
+                    }`}
+                  >
+                    <Flame className="w-3 h-3 shrink-0" />
+                    <span>WIN STREAK: {pet.currentWinStreak ?? 0}</span>
+                  </span>
+                  <span className="text-[10px] font-chakra font-semibold text-slate-400 tabular-nums">
+                    Last {(pet.battleHistory || []).slice(0, 10).length}/10 Matches
+                  </span>
+                </div>
+              </div>
+
+              {(!pet.battleHistory || pet.battleHistory.length === 0) ? (
+                <div className="p-4 rounded-xl bg-slate-900/70 border border-slate-800/80 border-dashed text-center text-xs font-chakra text-slate-400">
+                  No battle results recorded yet. Challenge rivals in the Colosseum or Adventure Zones to populate your Battle Log!
+                </div>
+              ) : (
+                <div className="max-h-56 overflow-y-auto pr-1 space-y-2">
+                  {pet.battleHistory.slice(0, 10).map((entry) => {
+                    const oppSpecies = entry.opponentSpeciesId
+                      ? DIGIMON_DATABASE[entry.opponentSpeciesId]
+                      : undefined;
+                    const isWin = entry.outcome === 'win';
+                    const formattedDate = new Intl.DateTimeFormat(undefined, {
+                      month: 'short',
+                      day: 'numeric',
+                      year: 'numeric',
+                      hour: 'numeric',
+                      minute: '2-digit',
+                    }).format(new Date(entry.timestamp));
+
+                    return (
+                      <div
+                        key={entry.id}
+                        className={`p-2.5 rounded-xl border flex items-center justify-between gap-3 ${
+                          isWin
+                            ? 'bg-emerald-950/20 border-emerald-500/25'
+                            : 'bg-rose-950/20 border-rose-500/25'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="w-9 h-9 rounded-lg bg-slate-900 border border-slate-800 flex items-center justify-center shrink-0 overflow-hidden">
+                            {oppSpecies ? (
+                              <DigimonSprite species={oppSpecies} action="idle" scale={0.34} />
+                            ) : (
+                              <Swords className="w-4 h-4 text-slate-400" />
+                            )}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-chakra font-bold text-white text-xs sm:text-sm truncate">
+                                vs {entry.opponentName}
+                              </span>
+                              {entry.mode && (
+                                <span className="px-1.5 py-0.5 rounded bg-slate-800/90 text-slate-300 font-pixel text-[8px] uppercase shrink-0">
+                                  {entry.mode === 'adventure' ? 'ADV' : 'COL'}
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[11px] font-chakra text-slate-400 tabular-nums truncate">
+                              {formattedDate}
+                            </div>
+                          </div>
+                        </div>
+
+                        <span
+                          className={`px-2.5 py-1 rounded-lg font-pixel text-[9px] font-bold uppercase shrink-0 border ${
+                            isWin
+                              ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
+                              : 'bg-rose-500/20 text-rose-300 border-rose-500/40'
+                          }`}
+                        >
+                          {isWin ? 'VICTORY' : 'DEFEAT'}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           </div>
         )}

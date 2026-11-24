@@ -30,7 +30,12 @@ interface ColosseumBattleProps {
   species?: DigimonSpecies;
   isOpen: boolean;
   onClose: () => void;
-  onBattleEnd: (won: boolean, coinsReward: number, dpReward: number) => void;
+  onBattleEnd: (
+    won: boolean,
+    coinsReward: number,
+    dpReward: number,
+    opponentInfo?: { name: string; speciesId?: string }
+  ) => void;
   onOpenAdventure?: () => void;
 }
 
@@ -612,7 +617,10 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
 
   const handleClaimVictory = () => {
     sound.playEvolution();
-    onBattleEnd(true, 100, 30);
+    onBattleEnd(true, 100, 30, {
+      name: opponentFighter?.name || 'Colosseum Rival',
+      speciesId: opponentFighter?.speciesId,
+    });
     setMatchState('lobby');
     setPlayerFighter(null);
     setOpponentFighter(null);
@@ -621,7 +629,10 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
 
   const handleClaimDefeat = () => {
     sound.playButton();
-    onBattleEnd(false, 25, 8);
+    onBattleEnd(false, 25, 8, {
+      name: opponentFighter?.name || 'Colosseum Rival',
+      speciesId: opponentFighter?.speciesId,
+    });
     setMatchState('lobby');
     setPlayerFighter(null);
     setOpponentFighter(null);
@@ -630,7 +641,15 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
 
   const handleRematch = () => {
     sound.playButton();
-    onBattleEnd(matchState === 'victory', matchState === 'victory' ? 100 : 25, matchState === 'victory' ? 30 : 8);
+    onBattleEnd(
+      matchState === 'victory',
+      matchState === 'victory' ? 100 : 25,
+      matchState === 'victory' ? 30 : 8,
+      {
+        name: opponentFighter?.name || 'Colosseum Rival',
+        speciesId: opponentFighter?.speciesId,
+      }
+    );
     setMatchState('lobby');
     setPlayerFighter(null);
     setOpponentFighter(null);

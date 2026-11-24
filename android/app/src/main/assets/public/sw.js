@@ -87,7 +87,7 @@ define(['./workbox-7e5eb42b'], (function (workbox) { 'use strict';
     "revision": "0f91946c21b614e53df9372f8800f6da"
   }, {
     "url": "index.html",
-    "revision": "c5113447c2b75425dc822c0d14ed292f"
+    "revision": "7d64b392cd30ac687dc1143af8282732"
   }, {
     "url": "favicon.ico",
     "revision": "e5f0b7b8e60c9d5775a98f3991047ef0"
@@ -107,10 +107,10 @@ define(['./workbox-7e5eb42b'], (function (workbox) { 'use strict';
     "url": "assets/koromon_transparent.png",
     "revision": null
   }, {
-    "url": "assets/index-DYVleqZq.js",
+    "url": "assets/index-L4Gzr99d.js",
     "revision": null
   }, {
-    "url": "assets/index-DRC09q8R.css",
+    "url": "assets/index-BWLMQi-p.css",
     "revision": null
   }, {
     "url": "assets/greymon_transparent.png",

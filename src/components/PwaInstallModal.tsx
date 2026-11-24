@@ -395,7 +395,7 @@ class FloatingDigimonService : Service() {
                 We have added <code className="text-indigo-300 bg-slate-900 px-1.5 py-0.5 rounded border border-indigo-500/30">.github/workflows/build-apk.yml</code> directly to your codebase.
               </p>
               <p className="leading-relaxed text-slate-300">
-                Every time you make a change or push to GitHub, a virtual Ubuntu cloud runner equipped with <strong className="text-white">Android SDK & JDK 17</strong> automatically runs, builds the project with Capacitor, compiles the native <strong className="text-emerald-400">app-debug.apk</strong>, and attaches it for instant download!
+                Every time you make a change or push to GitHub, a virtual Ubuntu cloud runner equipped with <strong className="text-white">Android SDK &amp; JDK 21</strong> automatically runs, builds the project with Capacitor, compiles the signed release <strong className="text-emerald-400">digipet-latest.apk</strong>, and attaches it for instant download!
               </p>
             </div>
 
@@ -419,7 +419,7 @@ class FloatingDigimonService : Service() {
                   Scroll down to the bottom under <strong className="text-emerald-400">Artifacts</strong>.
                 </li>
                 <li>
-                  Click <strong className="text-emerald-300">"DigiPet-Native-Android-APK"</strong> to download the ready-to-install <strong className="text-white">app-debug.apk</strong> directly to your phone or computer!
+                  Click <strong className="text-emerald-300">"DigiPet-Native-Android-APK"</strong> to download the ready-to-install <strong className="text-white">digipet-latest.apk</strong> directly to your phone or computer!
                 </li>
               </ol>
             </div>

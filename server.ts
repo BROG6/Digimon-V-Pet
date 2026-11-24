@@ -105,8 +105,8 @@ function readGradleVersion(): { versionName: string; versionCode: number } {
       const candidates = [
         path.join(__dirname, 'public', 'assets', 'apk', 'digipet-latest.apk'),
         path.join(__dirname, 'public', 'digipet-latest.apk'),
-        path.join(__dirname, 'android', 'app', 'build', 'outputs', 'apk', 'debug', 'app-debug.apk'),
         path.join(__dirname, 'android', 'app', 'build', 'outputs', 'apk', 'release', 'app-release.apk'),
+        path.join(__dirname, 'android', 'app', 'build', 'outputs', 'apk', 'debug', 'app-debug.apk'),
       ];
 
       for (const apkPath of candidates) {

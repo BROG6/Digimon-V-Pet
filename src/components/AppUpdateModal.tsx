@@ -7,7 +7,6 @@ import {
   AlertTriangle, 
   CheckCircle2, 
   Sparkles, 
-  Smartphone, 
   X, 
   ExternalLink, 
   Settings, 
@@ -29,8 +28,6 @@ import {
   getLocalAppInfo, 
   checkForUpdate, 
   downloadAndInstallApk, 
-  checkInstallPermission, 
-  requestInstallPermission, 
   reloadLiveAssets, 
   openExternalUrl,
   resolveFullUrl,
@@ -76,7 +73,6 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
   const [isChecking, setIsChecking] = useState<boolean>(false);
   const [isDownloading, setIsDownloading] = useState<boolean>(false);
   const [downloadStep, setDownloadStep] = useState<string>('');
-  const [hasInstallPerm, setHasInstallPerm] = useState<boolean>(true);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   const [autoCheck, setAutoCheck] = useState<boolean>(true);
@@ -104,7 +100,6 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
     }
 
     getLocalAppInfo().then((info) => setAppInfo(info));
-    checkInstallPermission().then((perm) => setHasInstallPerm(perm));
     setAutoCheck(getAutoCheckEnabled());
     setCustomManifestUrl(getCustomUpdateUrl());
     setCustomApkUrlState(getCustomApkUrl());
@@ -114,16 +109,6 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
 
     // Perform fresh check if opened
     handleCheckUpdates(false);
-  }, [isOpen]);
-
-  // When window gains focus (e.g. user returned from Android Settings)
-  useEffect(() => {
-    if (!isOpen) return;
-    const handleFocus = () => {
-      checkInstallPermission().then((perm) => setHasInstallPerm(perm));
-    };
-    window.addEventListener('focus', handleFocus);
-    return () => window.removeEventListener('focus', handleFocus);
   }, [isOpen]);
 
   const handleCheckUpdates = async (playSfx: boolean = true, forceGitHub: boolean = false) => {
@@ -172,20 +157,6 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
     await handleCheckUpdates(true, true);
   };
 
-  const handleRequestPermission = async () => {
-    sound.playButton();
-    setErrorMsg(null);
-    try {
-      await requestInstallPermission();
-      setTimeout(async () => {
-        const granted = await checkInstallPermission();
-        setHasInstallPerm(granted);
-      }, 1500);
-    } catch (e: any) {
-      setErrorMsg('Permission error: ' + e.message);
-    }
-  };
-
   const handleStartDownload = async (directUrlOverride?: string | React.MouseEvent) => {
     sound.playButton();
     setErrorMsg(null);
@@ -193,44 +164,22 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
 
     const directUrl = typeof directUrlOverride === 'string' ? directUrlOverride : undefined;
 
-    // If native Android, check if unknown sources permission is granted first
-    if (Capacitor.isNativePlatform()) {
-      const perm = await checkInstallPermission();
-      if (!perm) {
-        setErrorMsg('Please toggle ON "Allow from this source" in Android Settings first.');
-        await requestInstallPermission();
-        return;
-      }
-    }
-
     setIsDownloading(true);
-    setDownloadStep('Connecting to download source...');
+    setDownloadStep('Opening trusted release download...');
 
     try {
       const targetApk = directUrl || customApkUrlState || manifest?.apkDownloadUrl || '/api/download-apk';
       const resolved = resolveFullUrl(targetApk);
       setCurrentResolvedUrl(resolved);
 
-      setTimeout(() => {
-        setDownloadStep('Downloading APK binary...');
-      }, 700);
-
-      const fileName = manifest?.apkFileName || `digipet-v${manifest?.versionName || '1.1.0'}.apk`;
+      const fileName = manifest?.apkFileName || `digipet-v${manifest?.versionName || '1.2.4'}.apk`;
       const res = await downloadAndInstallApk(targetApk, fileName);
 
-      if (res.needsPermission) {
-        setIsDownloading(false);
-        setErrorMsg('Android requires permission to install APK updates from this app.');
-        await requestInstallPermission();
-        return;
-      }
-
       if (res.success) {
-        setDownloadStep('Opening Android Package Installer...');
-        setSuccessMsg('Opening Android Installer... Tap "Install" or "Update" on your phone!');
+        setSuccessMsg('Download opened in your browser! Tap the finished APK notification to install the update.');
         onUpdateDownloaded?.();
       } else {
-        setErrorMsg(res.message || 'Could not complete APK download from server. Please check the APK URL.');
+        setErrorMsg(res.message || 'Could not open APK download URL in browser. Please check the APK URL.');
       }
     } catch (err: any) {
       setErrorMsg(err.message || 'Download failed');
@@ -446,26 +395,6 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
             )}
           </div>
 
-          {/* Android Unknown Sources Permission Warning (Android 8+) */}
-          {Capacitor.isNativePlatform() && !hasInstallPerm && isUpdateAvailable && (
-            <div className="p-3.5 bg-amber-500/15 border-2 border-amber-500/50 rounded-2xl space-y-2">
-              <div className="flex items-center gap-2 text-amber-300 font-chakra font-bold text-xs">
-                <AlertTriangle className="w-4 h-4 text-amber-400" />
-                <span>INSTALL PERMISSION REQUIRED</span>
-              </div>
-              <p className="text-slate-300 text-[11px] leading-relaxed">
-                Android requires permission to install APK updates directly from this app. Tap the button below to turn on <strong className="text-amber-300">"Allow from this source"</strong> in Settings.
-              </p>
-              <button
-                onClick={handleRequestPermission}
-                className="w-full py-2.5 px-3 bg-amber-500 hover:bg-amber-400 text-slate-950 font-pixel text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-md"
-              >
-                <Smartphone className="w-3.5 h-3.5 text-slate-950" />
-                <span>ALLOW INSTALLING UPDATES (OPEN SETTINGS)</span>
-              </button>
-            </div>
-          )}
-
           {/* One-time Signing Key Migration Notice for Legacy Builds (< v1.2.4) */}
           {needsLegacyKeyMigration && isUpdateAvailable && (
             <div className="p-3.5 bg-cyan-950/60 border-2 border-cyan-500/50 rounded-2xl space-y-2.5">
@@ -631,7 +560,7 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
 
               <button
                 onClick={() => {
-                  const directGhApk = `https://github.com/${githubRepoState}/releases/latest/download/app-debug.apk`;
+                  const directGhApk = `https://github.com/${githubRepoState}/releases/latest/download/digipet-latest.apk`;
                   handleStartDownload(directGhApk);
                 }}
                 className="py-2 px-2.5 bg-indigo-600 hover:bg-indigo-500 text-white font-pixel text-[9px] font-bold rounded-xl flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 shadow-md"

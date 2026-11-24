@@ -33,16 +33,8 @@ export interface AppInfo {
 
 export interface AppUpdatePluginInterface {
   getAppInfo(): Promise<AppInfo>;
-  checkInstallPermission(): Promise<{ granted: boolean }>;
-  requestInstallPermission(): Promise<{ success: boolean; prompted?: boolean }>;
   fetchManifest(options: { url?: string }): Promise<{ data: string }>;
   httpPost(options: { url: string; body: string }): Promise<{ ok: boolean; status: number; data: string }>;
-  downloadAndInstallApk(options: { apkUrl: string; fileName?: string }): Promise<{
-    success: boolean;
-    installed?: boolean;
-    needsPermission?: boolean;
-    message?: string;
-  }>;
   openExternalUrl(options: { url: string }): Promise<{ success: boolean }>;
   reloadWebAssets(): Promise<{ success: boolean }>;
 }
@@ -215,28 +207,6 @@ export async function getLocalAppInfo(): Promise<AppInfo> {
     ...DEFAULT_APP_INFO,
     isNative: Capacitor.isNativePlatform(),
   };
-}
-
-export async function checkInstallPermission(): Promise<boolean> {
-  if (!Capacitor.isNativePlatform()) return true;
-  try {
-    const res = await AppUpdatePlugin.checkInstallPermission();
-    return !!res?.granted;
-  } catch (e) {
-    console.warn('checkInstallPermission error:', e);
-    return true;
-  }
-}
-
-export async function requestInstallPermission(): Promise<boolean> {
-  if (!Capacitor.isNativePlatform()) return true;
-  try {
-    const res = await AppUpdatePlugin.requestInstallPermission();
-    return !!res?.success;
-  } catch (e) {
-    console.warn('requestInstallPermission error:', e);
-    return false;
-  }
 }
 
 // Parse semantic version core string to numerical array (e.g. "v1.2.3-beta.1+45" -> [1, 2, 3])
@@ -490,7 +460,7 @@ export async function fetchGitHubRelease(customRepo?: string): Promise<{ manifes
       const rawAssets = Array.isArray(apiData.assets) ? apiData.assets : [];
       const apkAsset = rawAssets.find((a: any) => typeof a.name === 'string' && a.name.toLowerCase().endsWith('.apk'));
 
-      const downloadUrl = apkAsset?.browser_download_url || `https://github.com/${cleanRepo}/releases/latest/download/app-debug.apk`;
+      const downloadUrl = apkAsset?.browser_download_url || `https://github.com/${cleanRepo}/releases/latest/download/digipet-latest.apk`;
       const fileName = apkAsset?.name || `digipet-${tag}.apk`;
       const fileSize = apkAsset?.size ? `${(apkAsset.size / (1024 * 1024)).toFixed(1)} MB` : '19.2 MB';
 
@@ -549,7 +519,7 @@ export async function fetchGitHubRelease(customRepo?: string): Promise<{ manifes
     if (rawData) {
       const normalized = normalizeManifest({
         ...rawData,
-        apkDownloadUrl: rawData.apkDownloadUrl || `https://github.com/${cleanRepo}/releases/latest/download/app-debug.apk`,
+        apkDownloadUrl: rawData.apkDownloadUrl || `https://github.com/${cleanRepo}/releases/latest/download/digipet-latest.apk`,
       });
       if (normalized) {
         return { manifest: normalized };
@@ -748,40 +718,23 @@ export async function checkForUpdate(optionsOrCustomUrl?: string | {
 
 export async function downloadAndInstallApk(
   apkUrl: string,
-  fileName: string = 'digipet-latest.apk'
-): Promise<{ success: boolean; needsPermission?: boolean; message?: string; resolvedUrl?: string }> {
+  _fileName: string = 'digipet-latest.apk'
+): Promise<{ success: boolean; openedInBrowser?: boolean; message?: string; resolvedUrl?: string }> {
   // If user configured a custom direct APK URL, prefer it
   const customApk = getCustomApkUrl();
   const rawUrl = customApk || apkUrl;
 
-  // Resolve to remote absolute URL, guaranteeing no localhost
+  // Resolve to remote absolute HTTPS URL, guaranteeing no localhost
   const fullUrl = resolveFullUrl(rawUrl);
 
-  if (Capacitor.isNativePlatform()) {
-    try {
-      const res = await AppUpdatePlugin.downloadAndInstallApk({
-        apkUrl: fullUrl,
-        fileName,
-      });
-      return {
-        ...res,
-        resolvedUrl: fullUrl,
-      };
-    } catch (err: any) {
-      console.warn('Native downloadAndInstallApk failed:', err);
-      return { 
-        success: false, 
-        message: err.message, 
-        resolvedUrl: fullUrl 
-      };
-    }
-  }
-
-  // Fallback in web browser: open download link
-  if (typeof window !== 'undefined') {
-    window.open(fullUrl, '_blank');
-  }
-  return { success: true, resolvedUrl: fullUrl };
+  // Delegate download to the user's trusted system browser rather than requesting REQUEST_INSTALL_PACKAGES
+  const opened = await openExternalUrl(fullUrl);
+  return {
+    success: opened,
+    openedInBrowser: opened,
+    resolvedUrl: fullUrl,
+    message: opened ? undefined : 'Could not open download link in browser.',
+  };
 }
 
 export async function openExternalUrl(url: string): Promise<boolean> {

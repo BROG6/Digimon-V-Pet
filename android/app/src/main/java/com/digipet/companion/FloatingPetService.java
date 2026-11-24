@@ -8,6 +8,7 @@ import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.ServiceInfo;
 import android.graphics.Color;
 import android.graphics.PixelFormat;
 import android.graphics.Typeface;
@@ -256,7 +257,11 @@ public class FloatingPetService extends Service {
         createNotificationChannel();
         Notification notification = buildForegroundNotification();
         try {
-            startForeground(NOTIF_ID, notification);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                startForeground(NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
+            } else {
+                startForeground(NOTIF_ID, notification);
+            }
         } catch (Exception e) {
             // Android 14 safe fallback
         }
@@ -537,10 +542,10 @@ public class FloatingPetService extends Service {
         webSettings.setJavaScriptEnabled(true);
         webSettings.setDomStorageEnabled(true);
         webSettings.setAllowFileAccess(true);
-        webSettings.setAllowContentAccess(true);
+        webSettings.setAllowContentAccess(false);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.JELLY_BEAN) {
-            webSettings.setAllowFileAccessFromFileURLs(true);
-            webSettings.setAllowUniversalAccessFromFileURLs(true);
+            webSettings.setAllowFileAccessFromFileURLs(false);
+            webSettings.setAllowUniversalAccessFromFileURLs(false);
         }
         webView.setVerticalScrollBarEnabled(false);
         webView.setHorizontalScrollBarEnabled(false);

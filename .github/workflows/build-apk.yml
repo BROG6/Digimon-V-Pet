@@ -75,16 +75,16 @@ jobs:
           test -f android/app/digipet-debug.keystore
           keytool -list -v -storetype PKCS12 -keystore android/app/digipet-debug.keystore -storepass android | grep -E "Alias name:|SHA256:"
 
-      - name: ⚙️ Compile Debug APK with Gradle
+      - name: ⚙️ Compile Signed Release APK with Gradle
         if: steps.prep_release.outputs.should_release == 'true' || github.event_name == 'pull_request'
         working-directory: android
         run: |
           if [ -f "./gradlew" ]; then
             chmod +x ./gradlew
-            ./gradlew assembleDebug --stacktrace
+            ./gradlew assembleRelease --stacktrace
           else
             echo "gradlew wrapper missing, building with system gradle..."
-            gradle assembleDebug --stacktrace
+            gradle assembleRelease --stacktrace
           fi
 
       - name: 📤 Upload Downloadable APK Artifact
@@ -92,24 +92,24 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: DigiPet-Native-Android-APK
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          path: android/app/build/outputs/apk/release/app-release.apk
           retention-days: 30
 
       - name: 📦 Prepare Release APK Filenames
         if: steps.prep_release.outputs.should_release == 'true'
         run: |
           VERSION="${{ steps.prep_release.outputs.version }}"
-          cp android/app/build/outputs/apk/debug/app-debug.apk android/app/build/outputs/apk/debug/digipet-latest.apk
-          cp android/app/build/outputs/apk/debug/app-debug.apk "android/app/build/outputs/apk/debug/digipet-v${VERSION}.apk"
+          cp android/app/build/outputs/apk/release/app-release.apk android/app/build/outputs/apk/release/digipet-latest.apk
+          cp android/app/build/outputs/apk/release/app-release.apk "android/app/build/outputs/apk/release/digipet-v${VERSION}.apk"
 
       - name: 🚀 Publish GitHub Release with APK Assets
         if: (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && steps.prep_release.outputs.should_release == 'true'
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            android/app/build/outputs/apk/debug/app-debug.apk
-            android/app/build/outputs/apk/debug/digipet-latest.apk
-            android/app/build/outputs/apk/debug/digipet-v*.apk
+            android/app/build/outputs/apk/release/app-release.apk
+            android/app/build/outputs/apk/release/digipet-latest.apk
+            android/app/build/outputs/apk/release/digipet-v*.apk
           tag_name: ${{ steps.prep_release.outputs.tag }}
           name: DigiPet ${{ steps.prep_release.outputs.tag }}
           body: |
@@ -119,8 +119,8 @@ jobs:
             ${{ steps.prep_release.outputs.notes }}
 
             ### 📲 How to Install:
-            1. Download `app-debug.apk` or `digipet-latest.apk` below on your Android phone.
-            2. Open the file to install or update without losing your pet progress!
+            1. Download `digipet-latest.apk` below on your Android phone.
+            2. Open the downloaded file to install or update without losing your pet progress!
           draft: false
           prerelease: false
           make_latest: true

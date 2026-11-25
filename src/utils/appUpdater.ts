@@ -1,4 +1,4 @@
-import { registerPlugin, Capacitor } from '@capacitor/core';
+import { registerPlugin, Capacitor, type PluginListenerHandle } from '@capacitor/core';
 
 export interface UpdateManifest {
   versionName: string;
@@ -31,12 +31,28 @@ export interface AppInfo {
   isNative: boolean;
 }
 
+export interface DownloadProgressEvent {
+  progress: number;
+  downloadedBytes: number;
+  totalBytes: number;
+}
+
 export interface AppUpdatePluginInterface {
   getAppInfo(): Promise<AppInfo>;
   fetchManifest(options: { url?: string }): Promise<{ data: string }>;
+  downloadAndInstall(options: { url: string; fileName?: string }): Promise<{
+    success: boolean;
+    needsPermission?: boolean;
+    installedPrompted?: boolean;
+    resolvedUrl?: string;
+  }>;
   httpPost(options: { url: string; body: string }): Promise<{ ok: boolean; status: number; data: string }>;
   openExternalUrl(options: { url: string }): Promise<{ success: boolean }>;
   reloadWebAssets(): Promise<{ success: boolean }>;
+  addListener(
+    eventName: 'downloadProgress',
+    listenerFunc: (data: DownloadProgressEvent) => void
+  ): Promise<PluginListenerHandle>;
 }
 
 export const AppUpdatePlugin = registerPlugin<AppUpdatePluginInterface>('AppUpdatePlugin');
@@ -718,8 +734,16 @@ export async function checkForUpdate(optionsOrCustomUrl?: string | {
 
 export async function downloadAndInstallApk(
   apkUrl: string,
-  _fileName: string = 'digipet-latest.apk'
-): Promise<{ success: boolean; openedInBrowser?: boolean; message?: string; resolvedUrl?: string }> {
+  fileName: string = 'digipet-latest.apk',
+  onProgress?: (event: DownloadProgressEvent) => void
+): Promise<{
+  success: boolean;
+  needsPermission?: boolean;
+  installedPrompted?: boolean;
+  openedInBrowser?: boolean;
+  message?: string;
+  resolvedUrl?: string;
+}> {
   // If user configured a custom direct APK URL, prefer it
   const customApk = getCustomApkUrl();
   const rawUrl = apkUrl || customApk;
@@ -727,7 +751,38 @@ export async function downloadAndInstallApk(
   // Resolve to remote absolute HTTPS URL, guaranteeing no localhost
   const fullUrl = resolveFullUrl(rawUrl);
 
-  // Delegate download to the user's trusted system browser rather than requesting REQUEST_INSTALL_PACKAGES
+  if (Capacitor.isNativePlatform()) {
+    let listener: PluginListenerHandle | null = null;
+    try {
+      if (onProgress) {
+        listener = await AppUpdatePlugin.addListener('downloadProgress', onProgress);
+      }
+      const res = await AppUpdatePlugin.downloadAndInstall({
+        url: fullUrl,
+        fileName,
+      });
+      return {
+        success: Boolean(res?.success),
+        needsPermission: Boolean(res?.needsPermission),
+        installedPrompted: Boolean(res?.installedPrompted),
+        resolvedUrl: res?.resolvedUrl || fullUrl,
+      };
+    } catch (err: any) {
+      return {
+        success: false,
+        resolvedUrl: fullUrl,
+        message: err?.message || 'In-app update download failed.',
+      };
+    } finally {
+      if (listener) {
+        try {
+          await listener.remove();
+        } catch {}
+      }
+    }
+  }
+
+  // Web fallback: open direct APK download link
   const opened = await openExternalUrl(fullUrl);
   return {
     success: opened,

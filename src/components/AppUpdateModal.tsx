@@ -72,6 +72,7 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
   const [manifest, setManifest] = useState<UpdateManifest | null>(initialManifest || null);
   const [isChecking, setIsChecking] = useState<boolean>(false);
   const [isDownloading, setIsDownloading] = useState<boolean>(false);
+  const [downloadProgress, setDownloadProgress] = useState<number>(-1);
   const [downloadStep, setDownloadStep] = useState<string>('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
@@ -165,7 +166,12 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
     const directUrl = typeof directUrlOverride === 'string' ? directUrlOverride : undefined;
 
     setIsDownloading(true);
-    setDownloadStep('Opening trusted release download...');
+    setDownloadProgress(-1);
+    setDownloadStep(
+      Capacitor.isNativePlatform()
+        ? 'Downloading update directly inside app...'
+        : 'Opening release download...'
+    );
 
     try {
       const targetApk = directUrl || customApkUrlState || manifest?.apkDownloadUrl || '/api/download-apk';
@@ -173,13 +179,31 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
       setCurrentResolvedUrl(resolved);
 
       const fileName = manifest?.apkFileName || `digipet-v${manifest?.versionName || '1.2.4'}.apk`;
-      const res = await downloadAndInstallApk(targetApk, fileName);
+      const res = await downloadAndInstallApk(targetApk, fileName, (prog) => {
+        if (typeof prog.progress === 'number') {
+          setDownloadProgress(prog.progress);
+          if (prog.progress >= 100) {
+            setDownloadStep('Launching Android installer...');
+          } else if (prog.progress >= 0) {
+            setDownloadStep(`Downloading update in-app... ${prog.progress}%`);
+          } else if (prog.downloadedBytes > 0) {
+            const mb = (prog.downloadedBytes / (1024 * 1024)).toFixed(1);
+            setDownloadStep(`Downloading update in-app... ${mb} MB`);
+          }
+        }
+      });
 
       if (res.success) {
-        setSuccessMsg('Download opened in your browser! Tap the finished APK notification to install the update.');
+        if (res.needsPermission) {
+          setSuccessMsg('Enable "Install unknown apps" for DigiPet in Android Settings — the installer will open automatically when you return!');
+        } else if (res.installedPrompted) {
+          setSuccessMsg('Update ready! Confirm the Android install prompt to finish updating in-place.');
+        } else {
+          setSuccessMsg('Download opened in your browser! Tap the finished APK file to install.');
+        }
         onUpdateDownloaded?.();
       } else {
-        setErrorMsg(res.message || 'Could not open APK download URL in browser. Please check the APK URL.');
+        setErrorMsg(res.message || 'In-app update failed. Please check the APK URL or open in browser.');
       }
     } catch (err: any) {
       setErrorMsg(err.message || 'Download failed');
@@ -449,13 +473,18 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
 
           {/* Download Progress State */}
           {isDownloading && (
-            <div className="p-4 bg-slate-950 border-2 border-cyan-500/60 rounded-2xl space-y-2 text-center animate-pulse">
+            <div className="p-4 bg-slate-950 border-2 border-cyan-500/60 rounded-2xl space-y-2 text-center">
               <div className="flex items-center justify-center gap-2 text-cyan-300 font-pixel text-xs font-bold">
                 <Download className="w-4 h-4 animate-bounce" />
                 <span>{downloadStep || 'DOWNLOADING UPDATE...'}</span>
               </div>
-              <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
-                <div className="bg-gradient-to-r from-cyan-500 via-teal-400 to-emerald-400 h-full rounded-full animate-pulse w-3/4" />
+              <div className="w-full bg-slate-800 rounded-full h-2.5 overflow-hidden">
+                <div
+                  className={`bg-gradient-to-r from-cyan-500 via-teal-400 to-emerald-400 h-full rounded-full transition-all duration-150 ${
+                    downloadProgress < 0 ? 'animate-pulse w-3/4' : ''
+                  }`}
+                  style={downloadProgress >= 0 ? { width: `${Math.min(100, Math.max(4, downloadProgress))}%` } : undefined}
+                />
               </div>
               <p className="text-[10px] text-slate-400">
                 Target server: <span className="font-mono text-cyan-300 truncate">{currentResolvedUrl}</span>

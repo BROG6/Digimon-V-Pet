@@ -108,6 +108,38 @@
   100% { transform: translateX(0) scale(1); }
 }
 
+@keyframes battleMeleeRight {
+  0% { transform: translateX(0) translateY(0) scale(1); }
+  16% { transform: translateX(-10px) translateY(2px) scale(0.95, 1.05); }
+  40% { transform: translateX(var(--battle-dash, 175px)) translateY(-6px) scale(1.14); }
+  56% { transform: translateX(calc(var(--battle-dash, 175px) * 0.92)) translateY(-2px) scale(1.08); }
+  100% { transform: translateX(0) translateY(0) scale(1); }
+}
+
+@keyframes battleMeleeLeft {
+  0% { transform: translateX(0) translateY(0) scale(1); }
+  16% { transform: translateX(10px) translateY(2px) scale(0.95, 1.05); }
+  40% { transform: translateX(calc(var(--battle-dash, 175px) * -1)) translateY(-6px) scale(1.14); }
+  56% { transform: translateX(calc(var(--battle-dash, 175px) * -0.92)) translateY(-2px) scale(1.08); }
+  100% { transform: translateX(0) translateY(0) scale(1); }
+}
+
+@keyframes battleCastRight {
+  0% { transform: translateX(0) translateY(0) scale(1); }
+  25% { transform: translateX(-10px) translateY(-3px) scale(0.95, 1.07); }
+  45% { transform: translateX(14px) translateY(0) scale(1.09, 0.96); }
+  72% { transform: translateX(-4px) translateY(0) scale(1.02); }
+  100% { transform: translateX(0) translateY(0) scale(1); }
+}
+
+@keyframes battleCastLeft {
+  0% { transform: translateX(0) translateY(0) scale(1); }
+  25% { transform: translateX(10px) translateY(-3px) scale(0.95, 1.07); }
+  45% { transform: translateX(-14px) translateY(0) scale(1.09, 0.96); }
+  72% { transform: translateX(4px) translateY(0) scale(1.02); }
+  100% { transform: translateX(0) translateY(0) scale(1); }
+}
+
 @keyframes battleShakeHit {
   0% { transform: translate(0, 0) rotate(0deg); filter: brightness(1); }
   15% { transform: translate(-10px, -4px) rotate(-4deg); filter: brightness(2) contrast(1.5) drop-shadow(0 0 10px rgba(239, 68, 68, 0.9)); }
@@ -167,6 +199,22 @@
 
 .battle-lunge-left {
   animation: battleLungeLeft 0.45s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.battle-melee-right {
+  animation: battleMeleeRight 0.62s cubic-bezier(0.22, 0.85, 0.26, 1);
+}
+
+.battle-melee-left {
+  animation: battleMeleeLeft 0.62s cubic-bezier(0.22, 0.85, 0.26, 1);
+}
+
+.battle-cast-right {
+  animation: battleCastRight 0.64s cubic-bezier(0.22, 0.85, 0.26, 1);
+}
+
+.battle-cast-left {
+  animation: battleCastLeft 0.64s cubic-bezier(0.22, 0.85, 0.26, 1);
 }
 
 .battle-shake-hit {

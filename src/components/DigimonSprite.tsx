@@ -14,6 +14,8 @@ export type DigimonPose =
   | 'walking' 
   | 'sitting' 
   | 'training' 
+  | 'attack_melee'
+  | 'attack_ranged'
   | 'pooping' 
   | 'eating' 
   | 'sleeping' 
@@ -25,7 +27,22 @@ export type DigimonPose =
 interface DigimonSpriteProps {
   species?: DigimonSpecies;
   egg?: DigiEggInfo;
-  action?: 'idle' | 'walk' | 'eat' | 'sleep' | 'sick' | 'attack' | 'happy' | 'cheer' | 'sit' | 'poop' | 'train' | 'hatch' | 'dead';
+  action?:
+    | 'idle'
+    | 'walk'
+    | 'eat'
+    | 'sleep'
+    | 'sick'
+    | 'attack'
+    | 'attack_melee'
+    | 'attack_ranged'
+    | 'happy'
+    | 'cheer'
+    | 'sit'
+    | 'poop'
+    | 'train'
+    | 'hatch'
+    | 'dead';
   pose?: DigimonPose;
   eatItem?: 'meat' | 'vitamin' | 'sirloin' | 'mushroom' | 'berry';
   isCracking?: boolean;
@@ -103,6 +120,95 @@ const PixelMoodIcon: React.FC<{ mood: MoodKind }> = ({ mood }) => {
   );
 };
 
+function sampleEvenly<T>(items: T[], maxCount: number): T[] {
+  if (items.length <= maxCount) return items;
+  if (maxCount <= 1) return items.slice(0, 1);
+  const picked: T[] = [];
+  for (let i = 0; i < maxCount; i++) {
+    const idx = Math.min(items.length - 1, Math.round((i / (maxCount - 1)) * (items.length - 1)));
+    picked.push(items[idx]);
+  }
+  return picked;
+}
+
+function resolvePoseFrames(
+  config: NonNullable<ReturnType<typeof getEffectiveSpriteConfig>>,
+  activePose: DigimonPose
+): SpriteFrame[] {
+  const standing = config.frames.standing || [];
+  const walking = config.frames.walking || standing;
+  const training = config.frames.training || standing;
+
+  if (activePose === 'attack_melee') {
+    const baseW = config.stageWidth || standing[0]?.w || training[0]?.w || 48;
+    const baseH = config.stageHeight || standing[0]?.h || training[0]?.h || 48;
+    const compactTrain = training.filter((f) => {
+      const rot = f.rotate === 90 || f.rotate === -90 || f.rotate === 270;
+      const fw = rot ? f.h : f.w;
+      const fh = rot ? f.w : f.h;
+      return fw <= baseW * 1.48 && fh <= baseH * 1.75;
+    });
+    const meleeSource =
+      compactTrain.length >= 3
+        ? compactTrain
+        : training.slice(0, Math.max(3, Math.ceil(training.length * 0.45)));
+
+    const dashFrames =
+      walking.length >= 3
+        ? [
+            walking[0],
+            walking[Math.floor(walking.length * 0.45)],
+            walking[walking.length - 1],
+          ]
+        : walking.slice(0, 2);
+
+    const strikeSample = sampleEvenly(meleeSource, 5);
+    const peakIdx = Math.max(0, strikeSample.length - 2);
+    const peakStrike = strikeSample[peakIdx] || strikeSample[0];
+    const settleFrame = standing[0] || meleeSource[0];
+    const sequence = [
+      ...dashFrames,
+      ...strikeSample,
+      ...(peakStrike ? [peakStrike] : []),
+      ...(settleFrame ? [settleFrame] : []),
+    ].filter(Boolean);
+    return sequence.length > 0 ? sequence : standing;
+  }
+
+  if (activePose === 'attack_ranged') {
+    if (training.length <= 1) return training.length > 0 ? training : standing;
+    const splitIdx = Math.max(2, Math.floor(training.length * 0.35));
+    const windupPart = sampleEvenly(training.slice(0, splitIdx), 3);
+    const castPart = sampleEvenly(training.slice(splitIdx), 6);
+    // Find widest/most-extended emission frame to emphasize ranged release
+    let widestFrame = castPart[0] || training[training.length - 1];
+    let widestW = 0;
+    for (const f of castPart) {
+      const rot = f.rotate === 90 || f.rotate === -90 || f.rotate === 270;
+      const fw = rot ? f.h : f.w;
+      if (fw >= widestW) {
+        widestW = fw;
+        widestFrame = f;
+      }
+    }
+    const sequence = [
+      ...windupPart,
+      ...castPart.slice(0, Math.max(1, castPart.length - 1)),
+      widestFrame,
+      castPart[castPart.length - 1] || standing[0],
+    ].filter(Boolean);
+    return sequence.length > 0 ? sequence : standing;
+  }
+
+  const poseKey =
+    activePose === 'pooping'
+      ? 'sitting'
+      : activePose === 'hatching' || activePose === 'dead'
+      ? 'standing'
+      : activePose;
+  return config.frames[poseKey] || standing;
+}
+
 export const DigimonSprite: React.FC<DigimonSpriteProps> = ({
   species,
   egg,
@@ -125,7 +231,9 @@ export const DigimonSprite: React.FC<DigimonSpriteProps> = ({
     action === 'eat' ? 'eating' :
     action === 'sleep' ? 'sleeping' :
     action === 'sick' ? 'sick' :
-    action === 'attack' || action === 'train' ? 'training' :
+    action === 'attack_melee' ? 'attack_melee' :
+    action === 'attack_ranged' || action === 'attack' ? 'attack_ranged' :
+    action === 'train' ? 'training' :
     action === 'happy' || action === 'cheer' ? 'happy' :
     action === 'sit' ? 'sitting' :
     action === 'poop' ? 'pooping' :
@@ -210,30 +318,34 @@ export const DigimonSprite: React.FC<DigimonSpriteProps> = ({
     const spriteLookupId = species?.spriteId || species?.id;
     const config = spriteLookupId ? getEffectiveSpriteConfig(spriteLookupId) : undefined;
     if (config) {
-      const poseKey =
-        activePose === 'pooping'
-          ? 'sitting'
-          : activePose === 'hatching' || activePose === 'dead'
-          ? 'standing'
-          : activePose;
-      const frames = config.frames[poseKey] || config.frames.standing || [];
+      const frames = resolvePoseFrames(config, activePose);
       count = Math.max(1, frames.length);
       hasSharedStage = Boolean(config.stageWidth && config.stageHeight);
     }
 
     if (count <= 1) return;
 
-    // Per digimon-up-sprites writeup: faint (used for sleeping & sick) plays once and stays on its last frame.
-    // idle, walking, and attack loop continuously.
-    const isPlayOncePose = activePose === 'sleeping' || activePose === 'sick';
+    // Faint (sleeping/sick) and battle attacks play through cleanly once per trigger and settle on last frame.
+    const isPlayOncePose =
+      activePose === 'sleeping' ||
+      activePose === 'sick' ||
+      activePose === 'attack_melee' ||
+      activePose === 'attack_ranged';
 
-    // Curated eating animation uses 210 ms per sub-beat (syncs cleanly with 420 ms chomp beats);
-    // Baked digimon-up-sprites animations (idle, walking, attack, faint) run at exact 62.5 ms (16 fps).
-    const intervalTime = activePose === 'eating'
-      ? 210
-      : (hasSharedStage || count >= 8)
-      ? 62.5
-      : (activePose === 'walking' ? 140 : activePose === 'training' ? 150 : 320);
+    const intervalTime =
+      activePose === 'eating'
+        ? 210
+        : activePose === 'attack_melee'
+        ? 52
+        : activePose === 'attack_ranged'
+        ? 58
+        : hasSharedStage || count >= 8
+        ? 62.5
+        : activePose === 'walking'
+        ? 140
+        : activePose === 'training'
+        ? 150
+        : 320;
 
     const timer = setInterval(() => {
       setFrameIndex((prev) => {
@@ -471,14 +583,11 @@ export const DigimonSprite: React.FC<DigimonSpriteProps> = ({
   const spriteLookupId = species.spriteId || species.id;
   const newConfig = getEffectiveSpriteConfig(spriteLookupId);
   if (newConfig) {
-    const poseKey =
-      activePose === 'pooping'
-        ? 'sitting'
-        : activePose === 'hatching'
-        ? 'standing'
-        : activePose;
-    const poseFrames = newConfig.frames[poseKey] || newConfig.frames.standing || [];
-    const currentFrame: SpriteFrame = poseFrames[frameIndex % poseFrames.length] || poseFrames[0] || { x: 0, y: 0, w: 32, h: 32 };
+    const poseFrames = resolvePoseFrames(newConfig, activePose);
+    const currentFrame: SpriteFrame =
+      poseFrames[Math.min(frameIndex, poseFrames.length - 1)] ||
+      poseFrames[0] ||
+      { x: 0, y: 0, w: 32, h: 32 };
 
     // Stage-based authentic pixel scale (tuned for crisp sizing across all stages)
     let stageMultiplier = 1.35;
@@ -696,6 +805,22 @@ export const DigimonSprite: React.FC<DigimonSpriteProps> = ({
                   : eatBeat === 3
                   ? { x: 0, y: -4, scaleX: 1, scaleY: 1, rotate: 0 }
                   : { x: 0, y: 0, scaleX: 1, scaleY: 1, rotate: 0 })
+              : activePose === 'attack_melee'
+              ? {
+                  x: [0, 5, 10, 4, 0],
+                  y: [0, -3, -2, 0, 0],
+                  scaleX: [1, 1.07, 1.12, 0.96, 1],
+                  scaleY: [1, 0.95, 0.93, 1.04, 1],
+                  rotate: [0, 7, 10, -2, 0],
+                }
+              : activePose === 'attack_ranged'
+              ? {
+                  x: [0, -6, 4, -2, 0],
+                  y: [0, -2, -1, 0, 0],
+                  scaleX: [1, 0.93, 1.08, 1, 1],
+                  scaleY: [1, 1.06, 0.95, 1, 1],
+                  rotate: [0, -6, 3, 0, 0],
+                }
               : activePose === 'sleeping'
               ? { x: 0, y: 0, scaleX: [1, 1.035, 1], scaleY: [1, 1.045, 1], rotate: 0 }
               : { x: 0, y: 0, scaleX: 1, scaleY: 1, rotate: 0 };
@@ -706,6 +831,10 @@ export const DigimonSprite: React.FC<DigimonSpriteProps> = ({
                 transition={
                   activePose === 'sleeping'
                     ? { repeat: Infinity, duration: 2.6, ease: 'easeInOut' }
+                    : activePose === 'attack_melee'
+                    ? { duration: 0.56, ease: 'easeOut' }
+                    : activePose === 'attack_ranged'
+                    ? { duration: 0.62, ease: 'easeOut' }
                     : { duration: activePose === 'eating' ? 0.14 : 0.08, ease: 'easeOut' }
                 }
                 className="relative overflow-visible pixel-art"
@@ -779,15 +908,35 @@ export const DigimonSprite: React.FC<DigimonSpriteProps> = ({
                       scaleX: 1,
                       scaleY: 1,
                     }
+                  : activePose === 'attack_melee'
+                  ? {
+                      x: [0, 5, 10, 4, 0],
+                      y: [effectiveGroundOffsetY, effectiveGroundOffsetY - 3, effectiveGroundOffsetY, effectiveGroundOffsetY],
+                      scaleX: [1, 1.07, 1.12, 1],
+                      scaleY: [1, 0.95, 0.94, 1],
+                      rotate: [0, 7, 10, 0],
+                    }
+                  : activePose === 'attack_ranged'
+                  ? {
+                      x: [0, -6, 4, -2, 0],
+                      y: [effectiveGroundOffsetY, effectiveGroundOffsetY - 2, effectiveGroundOffsetY, effectiveGroundOffsetY],
+                      scaleX: [1, 0.93, 1.08, 1],
+                      scaleY: [1, 1.06, 0.95, 1],
+                      rotate: [0, -6, 3, 0],
+                    }
                   : activePose === 'training'
-                  ? { x: [0, -2, 4, 0], y: effectiveGroundOffsetY, scaleX: 1, scaleY: 1 }
+                  ? { x: [0, -2, 4, 0], y: effectiveGroundOffsetY, scaleX: 1, scaleY: 1, rotate: 0 }
                   : activePose === 'sleeping'
-                  ? { x: 0, y: 0, scaleX: [1, 1.035, 1], scaleY: [1, 1.045, 1] }
-                  : { x: 0, y: effectiveGroundOffsetY, scaleX: 1, scaleY: 1 }
+                  ? { x: 0, y: 0, scaleX: [1, 1.035, 1], scaleY: [1, 1.045, 1], rotate: 0 }
+                  : { x: 0, y: effectiveGroundOffsetY, scaleX: 1, scaleY: 1, rotate: 0 }
               }
               transition={
                 activePose === 'walking'
                   ? { repeat: Infinity, duration: 0.56, ease: 'easeInOut' }
+                  : activePose === 'attack_melee'
+                  ? { duration: 0.56, ease: 'easeOut' }
+                  : activePose === 'attack_ranged'
+                  ? { duration: 0.62, ease: 'easeOut' }
                   : activePose === 'training'
                   ? { repeat: Infinity, duration: 0.6 }
                   : activePose === 'sleeping'
@@ -851,16 +1000,22 @@ export const DigimonSprite: React.FC<DigimonSpriteProps> = ({
       <motion.div
         animate={
           activePose === 'walking'
-            ? { y: [0, -3, 0], x: 0, scaleX: 1, scaleY: 1 }
+            ? { y: [0, -3, 0], x: 0, scaleX: 1, scaleY: 1, rotate: 0 }
+            : activePose === 'attack_melee'
+            ? { x: [0, 6, 10, 0], y: [0, -4, 0, 0], rotate: [0, 8, 10, 0], scaleX: [1, 1.1, 1], scaleY: [1, 0.94, 1] }
+            : activePose === 'attack_ranged'
+            ? { x: [0, -6, 3, 0], y: 0, rotate: [0, -6, 3, 0], scaleX: [1, 0.92, 1.08, 1], scaleY: [1, 1.06, 0.95, 1] }
             : activePose === 'training'
-            ? { x: [0, -3, 6, 0], y: 0, scaleX: 1, scaleY: 1 }
+            ? { x: [0, -3, 6, 0], y: 0, scaleX: 1, scaleY: 1, rotate: 0 }
             : activePose === 'sleeping'
-            ? { x: 0, y: 0, scaleX: [1, 1.035, 1], scaleY: [1, 1.045, 1] }
-            : { y: [0, -2, 0], x: 0, scaleX: 1, scaleY: 1 }
+            ? { x: 0, y: 0, scaleX: [1, 1.035, 1], scaleY: [1, 1.045, 1], rotate: 0 }
+            : { y: [0, -2, 0], x: 0, scaleX: 1, scaleY: 1, rotate: 0 }
         }
         transition={
           activePose === 'sleeping'
             ? { repeat: Infinity, duration: 2.6, ease: 'easeInOut' }
+            : activePose === 'attack_melee' || activePose === 'attack_ranged'
+            ? { duration: 0.56, ease: 'easeOut' }
             : { duration: 0.3 }
         }
         style={{ transformOrigin: 'bottom center' }}

@@ -1334,3 +1334,170 @@ export function rollCriticalHit(params: {
   };
 }
 
+export type AttackMotionKind = 'melee' | 'ranged';
+
+export type AttackVfxVariant =
+  | 'slash'
+  | 'punch'
+  | 'fireball'
+  | 'beam'
+  | 'bolt'
+  | 'ice'
+  | 'leaf'
+  | 'holy'
+  | 'dark'
+  | 'missile'
+  | 'filth';
+
+export interface AttackVisualSpec {
+  motion: AttackMotionKind;
+  element: AttackElement;
+  variant: AttackVfxVariant;
+  colorHex: string;
+  glowHex: string;
+}
+
+const ELEMENT_VISUAL_PALETTE: Record<AttackElement, { colorHex: string; glowHex: string }> = {
+  fire: { colorHex: '#fb923c', glowHex: '#ef4444' },
+  nature: { colorHex: '#4ade80', glowHex: '#16a34a' },
+  air: { colorHex: '#fde047', glowHex: '#38bdf8' },
+  ice: { colorHex: '#67e8f9', glowHex: '#0284c7' },
+  holy: { colorHex: '#fef08a', glowHex: '#f59e0b' },
+  dark: { colorHex: '#c084fc', glowHex: '#7e22ce' },
+  hand: { colorHex: '#fca5a5', glowHex: '#f97316' },
+  weapon: { colorHex: '#7dd3fc', glowHex: '#2563eb' },
+  filth: { colorHex: '#bef264', glowHex: '#65a30d' },
+  neutral: { colorHex: '#e2e8f0', glowHex: '#38bdf8' },
+};
+
+const RANGED_MOVE_REGEX =
+  /blast|beam|ray|cannon|shot|fire|flame|inferno|ember|spit|bubble|wave|surge|torrent|ice|frost|freeze|blizzard|hail|spear|lance|javelin|bolt|thunder|lightning|spark|shock|storm|tempest|wind|twister|gale|leaf|thorn|seed|petal|vine|ivy|star|nova|ring|orb|missile|rocket|bullet|laser|gun|arrow|dart|kunai|shuriken|rock|boulder|toss|splash|cloud|haze|howl|roar|shout|sonic|ultrasonic|symphony|serenade|dance|rite|breath|meteor|ball|flare|corona|pulse|jihad|heavens|mandala|dust|powder|flash|arrow/i;
+
+const MELEE_MOVE_REGEX =
+  /punch|fist|knuckle|claw|nail|scratch|fang|bite|kick|knee|elbow|tackle|headbutt|rush|smash|crash|slam|stomp|hammer|lariat|paw|rend|scissors|slash|sword|blade|cutter|sting|horn|tail|whip|spin|drill|strike/i;
+
+const PURE_PROJECTILE_REGEX =
+  /bubble|dust|powder|ring|shot|spit|rock|shuriken|kunai|dart|arrow|seed|thorn|toss|splash|cannon|missile|beam|ray|laser|wave|storm|orb|star|nova|blast/i;
+
+const BEAM_MOVE_REGEX =
+  /beam|ray|laser|cannon|lance|javelin|impulse|force|prominence|aurora|flash|buster|infinity|giga|mega flame/i;
+
+const SLASH_MOVE_REGEX =
+  /claw|nail|scratch|slash|sword|blade|cutter|scissors|rend|horn|fang|sting|wing/i;
+
+function pickRangedVariant(element: AttackElement, moveName: string, soundType?: string): AttackVfxVariant {
+  if (BEAM_MOVE_REGEX.test(moveName)) {
+    return 'beam';
+  }
+  if (soundType === 'laser' && (element === 'holy' || element === 'weapon' || element === 'fire' || element === 'neutral')) {
+    return 'beam';
+  }
+  switch (element) {
+    case 'fire':
+      return 'fireball';
+    case 'ice':
+      return 'ice';
+    case 'air':
+      return 'bolt';
+    case 'nature':
+      return 'leaf';
+    case 'holy':
+      return 'holy';
+    case 'dark':
+      return 'dark';
+    case 'weapon':
+      return 'missile';
+    case 'filth':
+      return 'filth';
+    case 'hand':
+    case 'neutral':
+    default:
+      return soundType === 'laser' ? 'beam' : 'fireball';
+  }
+}
+
+export function getBasicAttackVisual(
+  element: AttackElement = 'neutral',
+  species?: DigimonSpecies
+): AttackVisualSpec {
+  const palette = ELEMENT_VISUAL_PALETTE[element] || ELEMENT_VISUAL_PALETTE.neutral;
+  const sigName = species?.signatureMove?.name || '';
+  const speciesHint = `${species?.type || ''} ${sigName}`.toLowerCase();
+  const isSlash =
+    element === 'weapon' ||
+    element === 'dark' ||
+    element === 'nature' ||
+    SLASH_MOVE_REGEX.test(speciesHint) ||
+    /dramon|greymon|garurumon|leomon|bird|eagle|hawk|insect|kabuterimon|kuwagamon|knight|ninja/i.test(
+      species?.name || ''
+    );
+
+  return {
+    motion: 'melee',
+    element,
+    variant: isSlash ? 'slash' : 'punch',
+    colorHex: palette.colorHex,
+    glowHex: palette.glowHex,
+  };
+}
+
+export function getRangedVolleyVisual(
+  element: AttackElement = 'neutral',
+  moveName = 'Energy Shot'
+): AttackVisualSpec {
+  const palette = ELEMENT_VISUAL_PALETTE[element] || ELEMENT_VISUAL_PALETTE.neutral;
+  return {
+    motion: 'ranged',
+    element,
+    variant: pickRangedVariant(element, moveName, 'blast'),
+    colorHex: palette.colorHex,
+    glowHex: palette.glowHex,
+  };
+}
+
+export function classifyAttackVisual(
+  move?: {
+    name: string;
+    type?: AttackMove['type'];
+    element?: AttackElement;
+    soundType?: AttackMove['soundType'];
+  },
+  species?: DigimonSpecies
+): AttackVisualSpec {
+  if (!move) {
+    return getBasicAttackVisual(getSpeciesElementType(species), species);
+  }
+
+  const element = move.element || mapMoveTypeToElement({ type: move.type || 'physical', element: move.element }, species);
+  const palette = ELEMENT_VISUAL_PALETTE[element] || ELEMENT_VISUAL_PALETTE.neutral;
+  const name = move.name || '';
+  const soundType = move.soundType || 'blast';
+
+  let motion: AttackMotionKind;
+  if (soundType === 'punch') {
+    motion = PURE_PROJECTILE_REGEX.test(name) ? 'ranged' : 'melee';
+  } else {
+    const looksMelee = MELEE_MOVE_REGEX.test(name) && !RANGED_MOVE_REGEX.test(name);
+    motion = looksMelee ? 'melee' : 'ranged';
+  }
+
+  if (motion === 'melee') {
+    return {
+      motion: 'melee',
+      element,
+      variant: SLASH_MOVE_REGEX.test(name) || element === 'weapon' ? 'slash' : 'punch',
+      colorHex: palette.colorHex,
+      glowHex: palette.glowHex,
+    };
+  }
+
+  return {
+    motion: 'ranged',
+    element,
+    variant: pickRangedVariant(element, name, soundType),
+    colorHex: palette.colorHex,
+    glowHex: palette.glowHex,
+  };
+}
+
+

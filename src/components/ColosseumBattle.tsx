@@ -4,14 +4,19 @@ import { PetState, DigimonSpecies, BattleFighter, BattleLogEntry, BattleMove } f
 import { DIGIMON_DATABASE } from '../data/digidex';
 import {
   ATTACK_ELEMENT_META,
+  AttackVisualSpec,
+  classifyAttackVisual,
+  getBasicAttackVisual,
   getEffectiveBattleStats,
   getElementDamageMultiplier,
   getEquippedBattleMoves,
+  getRangedVolleyVisual,
   getSpeciesElementType,
   mapMoveTypeToElement,
   rollCriticalHit,
 } from '../data/battleTechniques';
 import { DigimonSprite } from './DigimonSprite';
+import { BattleAttackVfx, ActiveBattleVfx } from './BattleAttackVfx';
 import { sound, triggerHaptic } from '../utils/audio';
 import confetti from 'canvas-confetti';
 import {
@@ -53,16 +58,32 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
   const [opponentFighter, setOpponentFighter] = useState<BattleFighter | null>(null);
   const [battleLogs, setBattleLogs] = useState<BattleLogEntry[]>([]);
   const [isPlayerTurn, setIsPlayerTurn] = useState<boolean>(true);
-  const [playerActionAnim, setPlayerActionAnim] = useState<'idle' | 'attack' | 'happy' | 'sick'>('idle');
-  const [opponentActionAnim, setOpponentActionAnim] = useState<'idle' | 'attack' | 'happy' | 'sick'>('idle');
+  const [playerActionAnim, setPlayerActionAnim] = useState<'idle' | 'attack' | 'attack_melee' | 'attack_ranged' | 'happy' | 'sick'>('idle');
+  const [opponentActionAnim, setOpponentActionAnim] = useState<'idle' | 'attack' | 'attack_melee' | 'attack_ranged' | 'happy' | 'sick'>('idle');
   const [isDefending, setIsDefending] = useState<boolean>(false);
   const [isCharged, setIsCharged] = useState<boolean>(false);
 
-  const [playerEffect, setPlayerEffect] = useState<'none' | 'lunge' | 'hit' | 'shield' | 'charge'>('none');
-  const [opponentEffect, setOpponentEffect] = useState<'none' | 'lunge' | 'hit'>('none');
+  const [playerEffect, setPlayerEffect] = useState<'none' | 'lunge' | 'melee_rush' | 'ranged_cast' | 'hit' | 'shield' | 'charge'>('none');
+  const [opponentEffect, setOpponentEffect] = useState<'none' | 'lunge' | 'melee_rush' | 'ranged_cast' | 'hit'>('none');
+  const [activeVfx, setActiveVfx] = useState<ActiveBattleVfx | null>(null);
   const [arenaShake, setArenaShake] = useState<boolean>(false);
   const [screenFlash, setScreenFlash] = useState<'none' | 'white' | 'red' | 'special'>('none');
   const [damagePopups, setDamagePopups] = useState<{ id: number; target: 'player' | 'opponent'; text: string; color: string }[]>([]);
+
+  const triggerAttackVfx = (
+    attacker: 'player' | 'opponent',
+    spec: AttackVisualSpec,
+    opts?: { isCrit?: boolean; isSuperEffective?: boolean; moveName?: string }
+  ) => {
+    setActiveVfx({
+      id: Date.now() + Math.random(),
+      attacker,
+      spec,
+      isCrit: opts?.isCrit,
+      isSuperEffective: opts?.isSuperEffective,
+      moveName: opts?.moveName,
+    });
+  };
 
   const showDamagePopup = (target: 'player' | 'opponent', text: string, color: string) => {
     const id = Date.now() + Math.random();
@@ -95,6 +116,7 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
       setOpponentActionAnim('idle');
       setPlayerEffect('none');
       setOpponentEffect('none');
+      setActiveVfx(null);
       setArenaShake(false);
       setScreenFlash('none');
       setDamagePopups([]);
@@ -214,11 +236,6 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
       const defFactor = isDefending ? playerFighter.def * 0.68 : playerFighter.def * 0.3;
 
       if (shouldUseSpecial) {
-        sound.playBlast();
-        triggerHaptic('heavy');
-        setOpponentActionAnim('attack');
-        setOpponentEffect('lunge');
-
         const moveEl = mapMoveTypeToElement(opponentFighter.signatureMove, oppSpecies);
         const typeMult = getElementDamageMultiplier(moveEl, playerFighter.element || 'neutral');
         const crit = rollCriticalHit({
@@ -226,6 +243,18 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
           defenderSpd: playerFighter.spd,
           isSpecial: true,
         });
+        const oppSpec = classifyAttackVisual(opponentFighter.signatureMove, oppSpecies);
+        if (oppSpec.motion === 'melee' && !crit.isCrit) sound.playPunch();
+        else sound.playBlast();
+        triggerHaptic('heavy');
+        setOpponentActionAnim(oppSpec.motion === 'melee' ? 'attack_melee' : 'attack_ranged');
+        setOpponentEffect(oppSpec.motion === 'melee' ? 'melee_rush' : 'ranged_cast');
+        triggerAttackVfx('opponent', oppSpec, {
+          isCrit: crit.isCrit,
+          isSuperEffective: typeMult > 1,
+          moveName: opponentFighter.signatureMove.name,
+        });
+
         const rawDamage = Math.max(
           9,
           Math.floor(
@@ -255,7 +284,7 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
           setPlayerFighter((prev) =>
             prev ? { ...prev, currentHp: Math.max(0, prev.currentHp - finalDamage) } : null
           );
-        }, 180);
+        }, 250);
 
         setBattleLogs((logs) => [
           {
@@ -272,11 +301,21 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
           attackerSpd: opponentFighter.spd,
           defenderSpd: playerFighter.spd,
         });
-        if (crit.isCrit) sound.playBlast();
+        const sigSpec = classifyAttackVisual(opponentFighter.signatureMove, oppSpecies);
+        const useRangedBasic = sigSpec.motion === 'melee' && Math.random() < 0.42;
+        const atkSpec = useRangedBasic
+          ? getRangedVolleyVisual(oppEl, `${opponentFighter.name} Bolt`)
+          : getBasicAttackVisual(oppEl, oppSpecies);
+
+        if (crit.isCrit || atkSpec.motion === 'ranged') sound.playBlast();
         else sound.playPunch();
         triggerHaptic(crit.isCrit ? 'heavy' : 'medium');
-        setOpponentActionAnim('attack');
-        setOpponentEffect('lunge');
+        setOpponentActionAnim(atkSpec.motion === 'melee' ? 'attack_melee' : 'attack_ranged');
+        setOpponentEffect(atkSpec.motion === 'melee' ? 'melee_rush' : 'ranged_cast');
+        triggerAttackVfx('opponent', atkSpec, {
+          isCrit: crit.isCrit,
+          isSuperEffective: typeMult > 1,
+        });
 
         const rawDamage = Math.max(
           7,
@@ -303,12 +342,12 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
           setPlayerFighter((prev) =>
             prev ? { ...prev, currentHp: Math.max(0, prev.currentHp - finalDamage) } : null
           );
-        }, 160);
+        }, 240);
 
         setBattleLogs((logs) => [
           {
             id: `opp-${Date.now()}`,
-            text: `${opponentFighter.name} attacked for ${finalDamage} damage${crit.isCrit ? ' [CRITICAL HIT! 1.75x]' : ''}${typeMult > 1 ? ' [1.5x ADV]' : ''}.`,
+            text: `${opponentFighter.name} ${useRangedBasic ? 'fired an energy shot' : 'attacked'} for ${finalDamage} damage${crit.isCrit ? ' [CRITICAL HIT! 1.75x]' : ''}${typeMult > 1 ? ' [1.5x ADV]' : ''}.`,
             type: crit.isCrit ? 'special' : 'damage',
           },
           ...logs,
@@ -320,8 +359,9 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
         setOpponentActionAnim('idle');
         setOpponentEffect('none');
         setPlayerEffect('none');
+        setActiveVfx(null);
         setIsPlayerTurn(true);
-      }, 720);
+      }, 760);
     }, 1050);
 
     return () => clearTimeout(timer);
@@ -355,11 +395,16 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
       defenderSpd: opponentFighter.spd,
       isCharged,
     });
+    const atkSpec = getBasicAttackVisual(playerFighter.element || 'neutral', species);
     if (crit.isCrit) sound.playBlast();
     else sound.playPunch();
     triggerHaptic(crit.isCrit ? 'heavy' : 'medium');
-    setPlayerActionAnim('attack');
-    setPlayerEffect('lunge');
+    setPlayerActionAnim('attack_melee');
+    setPlayerEffect('melee_rush');
+    triggerAttackVfx('player', atkSpec, {
+      isCrit: crit.isCrit,
+      isSuperEffective: typeMult > 1,
+    });
 
     const damage = Math.max(
       12,
@@ -394,7 +439,7 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
       setOpponentFighter((prev) =>
         prev ? { ...prev, currentHp: Math.max(0, prev.currentHp - damage) } : null
       );
-    }, 160);
+    }, 240);
 
     setBattleLogs((logs) => [
       {
@@ -409,16 +454,13 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
       setPlayerActionAnim('idle');
       setPlayerEffect('none');
       setOpponentEffect('none');
-    }, 680);
+      setActiveVfx(null);
+    }, 740);
   };
 
   const handlePlayerSpecial = () => {
     if (!isPlayerTurn || !playerFighter || !opponentFighter || playerFighter.sp < 50) return;
     setIsPlayerTurn(false);
-    sound.playBlast();
-    triggerHaptic('heavy');
-    setPlayerActionAnim('attack');
-    setPlayerEffect('lunge');
 
     const moveEl = mapMoveTypeToElement(playerFighter.signatureMove, species);
     const typeMult = getElementDamageMultiplier(moveEl, opponentFighter.element || 'neutral');
@@ -430,6 +472,18 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
       isCharged,
       isSpecial: true,
     });
+    const moveSpec = classifyAttackVisual(playerFighter.signatureMove, species);
+    if (moveSpec.motion === 'melee' && !crit.isCrit) sound.playPunch();
+    else sound.playBlast();
+    triggerHaptic('heavy');
+    setPlayerActionAnim(moveSpec.motion === 'melee' ? 'attack_melee' : 'attack_ranged');
+    setPlayerEffect(moveSpec.motion === 'melee' ? 'melee_rush' : 'ranged_cast');
+    triggerAttackVfx('player', moveSpec, {
+      isCrit: crit.isCrit,
+      isSuperEffective: typeMult > 1,
+      moveName: playerFighter.signatureMove.name,
+    });
+
     const damage = Math.max(
       26,
       Math.floor(
@@ -459,12 +513,12 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
       setOpponentFighter((prev) =>
         prev ? { ...prev, currentHp: Math.max(0, prev.currentHp - damage) } : null
       );
-    }, 180);
+    }, 260);
 
     setBattleLogs((logs) => [
       {
         id: `pl-${Date.now()}`,
-        text: `SIGNATURE: ${playerFighter.name} fired ${playerFighter.signatureMove.name} (${ATTACK_ELEMENT_META[moveEl].label}) for ${damage} damage${crit.isCrit ? ' [CRITICAL HIT! 1.75x]' : ''}${typeMult > 1 ? ' [1.5x ADV!]' : ''}!`,
+        text: `SIGNATURE: ${playerFighter.name} ${moveSpec.motion === 'melee' ? 'unleashed' : 'fired'} ${playerFighter.signatureMove.name} (${ATTACK_ELEMENT_META[moveEl].label}) for ${damage} damage${crit.isCrit ? ' [CRITICAL HIT! 1.75x]' : ''}${typeMult > 1 ? ' [1.5x ADV!]' : ''}!`,
         type: 'special',
       },
       ...logs,
@@ -474,7 +528,8 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
       setPlayerActionAnim('idle');
       setPlayerEffect('none');
       setOpponentEffect('none');
-    }, 760);
+      setActiveVfx(null);
+    }, 780);
   };
 
   const handleUseLearnedTechnique = (move: BattleMove) => {
@@ -492,11 +547,17 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
       isCharged,
       isSpecial: true,
     });
-    if (crit.isCrit || move.soundType !== 'punch') sound.playBlast();
+    const moveSpec = classifyAttackVisual(move, species);
+    if (crit.isCrit || moveSpec.motion === 'ranged') sound.playBlast();
     else sound.playPunch();
     triggerHaptic('heavy');
-    setPlayerActionAnim('attack');
-    setPlayerEffect('lunge');
+    setPlayerActionAnim(moveSpec.motion === 'melee' ? 'attack_melee' : 'attack_ranged');
+    setPlayerEffect(moveSpec.motion === 'melee' ? 'melee_rush' : 'ranged_cast');
+    triggerAttackVfx('player', moveSpec, {
+      isCrit: crit.isCrit,
+      isSuperEffective: typeMult > 1,
+      moveName: move.name,
+    });
 
     const damage = Math.max(
       18,
@@ -535,12 +596,12 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
       setOpponentFighter((prev) =>
         prev ? { ...prev, currentHp: Math.max(0, prev.currentHp - damage) } : null
       );
-    }, 170);
+    }, 250);
 
     setBattleLogs((logs) => [
       {
         id: `pl-tech-${Date.now()}`,
-        text: `${playerFighter.name} cast ${move.name} (${ATTACK_ELEMENT_META[move.element].label}, -${move.mpCost} MP) for ${damage} damage${crit.isCrit ? ' [CRITICAL HIT! 1.75x]' : ''}${typeMult > 1 ? ' [1.5x ADV!]' : ''}!`,
+        text: `${playerFighter.name} ${moveSpec.motion === 'melee' ? 'executed' : 'cast'} ${move.name} (${ATTACK_ELEMENT_META[move.element].label}, -${move.mpCost} MP) for ${damage} damage${crit.isCrit ? ' [CRITICAL HIT! 1.75x]' : ''}${typeMult > 1 ? ' [1.5x ADV!]' : ''}!`,
         type: crit.isCrit || typeMult > 1 ? 'special' : 'damage',
       },
       ...logs,
@@ -550,7 +611,8 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
       setPlayerActionAnim('idle');
       setPlayerEffect('none');
       setOpponentEffect('none');
-    }, 720);
+      setActiveVfx(null);
+    }, 760);
   };
 
   const handlePlayerDefend = () => {
@@ -776,7 +838,7 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
           <div className="flex flex-col space-y-3 py-2">
             {/* Arena Battle Stage */}
             <div
-              className={`relative w-full h-56 sm:h-64 bg-gradient-to-b from-indigo-950 via-slate-900 to-slate-950 rounded-2xl border border-slate-700 p-3.5 sm:p-4 flex justify-between items-center overflow-hidden scanlines transition-transform ${
+              className={`relative w-full h-56 sm:h-64 bg-gradient-to-b from-indigo-950 via-slate-900 to-slate-950 rounded-2xl border border-slate-700 p-3.5 sm:p-4 flex justify-between items-center overflow-hidden scanlines transition-transform [--battle-dash:125px] sm:[--battle-dash:260px] ${
                 arenaShake ? 'battle-arena-shake' : ''
               }`}
             >
@@ -792,12 +854,14 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
                 />
               )}
 
+              <BattleAttackVfx activeVfx={activeVfx} />
+
               <div className="absolute top-2 left-1/2 -translate-x-1/2 px-3 py-1 bg-slate-950/90 border border-slate-700 rounded-lg font-chakra text-xs font-semibold text-amber-300 z-20 whitespace-nowrap">
                 {isPlayerTurn ? 'Your Turn — Select Command' : `${opponentFighter.name} Acting...`}
               </div>
 
               {/* Player Fighter Side */}
-              <div className="flex flex-col items-center z-10 relative">
+              <div className={`flex flex-col items-center relative ${playerEffect === 'melee_rush' ? 'z-20' : 'z-10'}`}>
                 <div className="w-32 sm:w-40 bg-slate-950/90 border border-cyan-500/40 rounded-xl p-2 mb-2 text-xs font-chakra tabular-nums">
                   <div className="flex justify-between items-center text-cyan-200 font-bold gap-1">
                     <span className="truncate">{playerFighter.name}</span>
@@ -833,7 +897,11 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
 
                 <div
                   className={`relative flex items-center justify-center ${
-                    playerEffect === 'lunge'
+                    playerEffect === 'melee_rush'
+                      ? 'battle-melee-right'
+                      : playerEffect === 'ranged_cast'
+                      ? 'battle-cast-right'
+                      : playerEffect === 'lunge'
                       ? 'battle-lunge-right'
                       : playerEffect === 'hit'
                       ? 'battle-shake-hit'
@@ -877,7 +945,7 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
               </div>
 
               {/* Opponent Fighter Side */}
-              <div className="flex flex-col items-center z-10 relative">
+              <div className={`flex flex-col items-center relative ${opponentEffect === 'melee_rush' ? 'z-20' : 'z-10'}`}>
                 <div className="w-32 sm:w-40 bg-slate-950/90 border border-rose-500/40 rounded-xl p-2 mb-2 text-xs font-chakra tabular-nums">
                   <div className="flex justify-between items-center text-rose-200 font-bold gap-1">
                     <span className="truncate">{opponentFighter.name}</span>
@@ -905,7 +973,11 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
 
                 <div
                   className={`relative flex items-center justify-center ${
-                    opponentEffect === 'lunge'
+                    opponentEffect === 'melee_rush'
+                      ? 'battle-melee-left'
+                      : opponentEffect === 'ranged_cast'
+                      ? 'battle-cast-left'
+                      : opponentEffect === 'lunge'
                       ? 'battle-lunge-left'
                       : opponentEffect === 'hit'
                       ? 'battle-shake-hit'

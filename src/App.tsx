@@ -60,10 +60,9 @@ import { getHideGalleryButtonPref, syncOverridesToRepository } from './utils/cus
 import { Capacitor } from '@capacitor/core';
 import { 
   checkOverlayPermission, 
-  requestOverlayPermission, 
   startNativeFloatingOverlay, 
-  stopNativeFloatingOverlay, 
   departNativeOverlayForBattle,
+  getNativeOverlayStatus,
   isNativeOverlayActive,
   onNativeOverlayStateChanged,
   consumeNativeOverlayEvolution,
@@ -288,6 +287,7 @@ export default function App() {
   const [updateManifest, setUpdateManifest] = useState<UpdateManifest | null>(null);
   const [hasUpdateAvailable, setHasUpdateAvailable] = useState<boolean>(false);
   const [isFloatOverlayActive, setIsFloatOverlayActive] = useState<boolean>(false);
+  const [overlayPermGranted, setOverlayPermGranted] = useState<boolean>(() => !Capacitor.isNativePlatform());
   const [holdFloatHiddenForBattle, setHoldFloatHiddenForBattle] = useState<boolean>(false);
 
   useEffect(() => {
@@ -459,65 +459,7 @@ export default function App() {
     setTimeout(() => setStatusNotification(null), 3000);
   };
 
-  // Check Android overlay permission on native startup and inform user if needed
-  useEffect(() => {
-    if (Capacitor.isNativePlatform()) {
-      checkOverlayPermission().then((granted) => {
-        if (!granted) {
-          setStatusNotification('Tap "FLOAT OVER APPS" to enable Android Screen Overlay permission!');
-          setTimeout(() => setStatusNotification(null), 6000);
-        }
-      });
-    }
-  }, []);
-
-  // Android Native & Web Screen Overlay Launchers
-  const handleLaunchOverlay = async () => {
-    sound.playButton();
-    try {
-      if (Capacitor.isNativePlatform()) {
-        const hasPerm = await checkOverlayPermission();
-        if (!hasPerm) {
-          setStatusNotification('Android: Opening "Allow display over other apps" Settings...');
-          setTimeout(() => setStatusNotification(null), 5000);
-          await requestOverlayPermission();
-          setIsNativePipOpen(true);
-          return;
-        }
-
-        const active = await isNativeOverlayActive();
-        if (active) {
-          await stopNativeFloatingOverlay();
-          setIsFloatOverlayActive(false);
-          setStatusNotification('Floating screen overlay closed.');
-          setTimeout(() => setStatusNotification(null), 3000);
-          return;
-        }
-
-        const ok = await startNativeFloatingOverlay(
-          buildNativeOverlayPayload({
-            pet,
-            species: currentSpecies,
-          })
-        );
-
-        if (ok) {
-          setIsFloatOverlayActive(true);
-          setStatusNotification(`✓ ${currentSpecies?.name || 'Digimon'} is now floating over all apps! Drag to move.`);
-        } else {
-          setIsNativePipOpen(true);
-        }
-        setTimeout(() => setStatusNotification(null), 4000);
-        return;
-      }
-
-      // In web browser: Launch permission / overlay modal
-      setIsNativePipOpen(true);
-    } catch (err: any) {
-      console.warn('handleLaunchOverlay non-fatal error:', err);
-      setIsNativePipOpen(true);
-    }
-  };
+  // Overlay launcher opens the unified Display Over Other Apps controller without redundant alerts
 
   const handleLaunchFloatOverApps = async () => {
     sound.playButton();
@@ -526,16 +468,9 @@ export default function App() {
 
       if (Capacitor.isNativePlatform()) {
         const hasPerm = await checkOverlayPermission();
-        if (!hasPerm) {
-          // Immediately prompt Android's system overlay permission setting AND open modal!
-          await requestOverlayPermission();
-          setIsNativePipOpen(true);
-          showNotification('Android: Opening "Allow display over other apps" Settings...');
-          return;
-        }
+        setOverlayPermGranted(hasPerm);
       }
 
-      // Always pop up the Display Over Other Apps Permission & Controller modal
       setIsNativePipOpen(true);
     } catch (err: any) {
       console.error('handleLaunchFloatOverApps error:', err);
@@ -1006,9 +941,12 @@ export default function App() {
 
     let disposed = false;
     const syncOverlayStatus = async () => {
-      const active = await isNativeOverlayActive();
+      const status = await getNativeOverlayStatus();
       if (!disposed) {
-        setIsFloatOverlayActive((prev) => (prev === active ? prev : active));
+        setIsFloatOverlayActive((prev) => (prev === status.active ? prev : status.active));
+        setOverlayPermGranted((prev) =>
+          prev === status.permissionGranted ? prev : status.permissionGranted
+        );
       }
     };
 
@@ -1372,9 +1310,16 @@ export default function App() {
     showNotification(`Pet ${pet.nickname?.trim() || currentSpecies?.name || 'Digimon'}! ❤️ Filled with affection!`);
   };
 
+  const notificationTimerRef = useRef<number | null>(null);
   const showNotification = (msg: string) => {
     setStatusNotification(msg);
-    setTimeout(() => setStatusNotification(null), 3000);
+    if (notificationTimerRef.current !== null) {
+      window.clearTimeout(notificationTimerRef.current);
+    }
+    notificationTimerRef.current = window.setTimeout(() => {
+      setStatusNotification(null);
+      notificationTimerRef.current = null;
+    }, 3000);
   };
 
   // MINI-GAMES & BATTLE REWARDS
@@ -2114,19 +2059,66 @@ export default function App() {
 
         {/* Right: Quick Mobile Actions */}
         <div className="flex items-center gap-1.5 shrink-0">
-          {/* Float Pet Over Apps (Android System Alert / PiP) */}
-          <motion.button
-            whileTap={{ scale: 0.92 }}
-            onClick={() => {
-              triggerHaptic('medium');
-              handleLaunchFloatOverApps();
-            }}
-            className="px-2.5 py-1.5 rounded-xl font-pixel text-[9px] font-bold shadow-md flex items-center gap-1 cursor-pointer active:scale-95 transition-all bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white shadow-purple-500/25"
-            title="Float Digimon over all apps"
-          >
-            <span>📱</span>
-            <span>FLOAT</span>
-          </motion.button>
+          {/* Consolidated Persistent "Displaying Over Other Apps" State Indicator */}
+          {(() => {
+            const isOverlayOn = isFloatOverlayActive && !holdFloatHiddenForBattle;
+            const isOverlayAway = holdFloatHiddenForBattle;
+            const needsPerm = Capacitor.isNativePlatform() && !overlayPermGranted;
+            const stateTitle = isOverlayAway
+              ? 'Displaying over other apps: Away during battle'
+              : isOverlayOn
+              ? 'Displaying over other apps: Active (Tap to manage)'
+              : needsPerm
+              ? 'Display over other apps permission needed (Tap to enable)'
+              : 'Display over other apps: Ready (Tap to launch)';
+
+            return (
+              <motion.button
+                whileTap={{ scale: 0.92 }}
+                onClick={() => {
+                  triggerHaptic('medium');
+                  handleLaunchFloatOverApps();
+                }}
+                className={`px-2 py-1.5 rounded-xl font-pixel text-[8px] font-bold shadow-md border flex items-center gap-1.5 cursor-pointer active:scale-95 transition-all ${
+                  isOverlayAway
+                    ? 'bg-cyan-950/90 border-cyan-400/70 text-cyan-200 shadow-cyan-500/20'
+                    : isOverlayOn
+                    ? 'bg-emerald-950/90 border-emerald-400/70 text-emerald-200 shadow-emerald-500/20'
+                    : needsPerm
+                    ? 'bg-amber-950/90 border-amber-400/70 text-amber-200 shadow-amber-500/20'
+                    : 'bg-indigo-950/85 hover:bg-indigo-900/90 border-indigo-400/50 text-indigo-100 shadow-indigo-500/20'
+                }`}
+                title={stateTitle}
+                aria-label={stateTitle}
+              >
+                <span
+                  className={`w-2 h-2 rounded-full shrink-0 ${
+                    isOverlayAway
+                      ? 'bg-cyan-400'
+                      : isOverlayOn
+                      ? 'bg-emerald-400 animate-pulse'
+                      : needsPerm
+                      ? 'bg-amber-400'
+                      : 'bg-slate-400'
+                  }`}
+                />
+                <span>OVER APPS</span>
+                <span
+                  className={`px-1 py-0.5 rounded text-[7px] leading-none ${
+                    isOverlayAway
+                      ? 'bg-cyan-400/20 text-cyan-300'
+                      : isOverlayOn
+                      ? 'bg-emerald-400/20 text-emerald-300'
+                      : needsPerm
+                      ? 'bg-amber-400/20 text-amber-300'
+                      : 'bg-slate-700/80 text-slate-300'
+                  }`}
+                >
+                  {isOverlayAway ? 'AWAY' : isOverlayOn ? 'ON' : needsPerm ? 'PERM' : 'OFF'}
+                </span>
+              </motion.button>
+            );
+          })()}
 
           {/* Reset / Hatch New Egg */}
           <button
@@ -3165,6 +3157,10 @@ export default function App() {
         onOpenGridAlignment={() => {
           setIsNativePipOpen(false);
           setIsGridModalOpen(true);
+        }}
+        onOverlayStatusChange={({ active, permissionGranted }) => {
+          setIsFloatOverlayActive(active);
+          setOverlayPermGranted(permissionGranted);
         }}
       />
 

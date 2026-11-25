@@ -161,7 +161,11 @@ public class OverlayPlugin extends Plugin {
     public void startOverlay(PluginCall call) {
         Context ctx = getActivity() != null ? getActivity() : getContext();
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(ctx)) {
-            requestPermission(call);
+            if (Boolean.TRUE.equals(call.getBoolean("promptPermission", false))) {
+                requestPermission(call);
+            } else {
+                call.reject("Display over other apps permission not granted");
+            }
             return;
         }
 
@@ -271,18 +275,10 @@ public class OverlayPlugin extends Plugin {
         serviceIntent.putExtra("nextEvoPayloadJson", nextEvoPayloadJson != null ? nextEvoPayloadJson : "");
 
         try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                ctx.startForegroundService(serviceIntent);
-            } else {
-                ctx.startService(serviceIntent);
-            }
-        } catch (Exception e) {
-            try {
-                ctx.startService(serviceIntent);
-            } catch (Exception ex) {
-                call.reject("Failed to start overlay service: " + ex.getMessage());
-                return;
-            }
+            ctx.startService(serviceIntent);
+        } catch (Exception ex) {
+            call.reject("Failed to start overlay service: " + ex.getMessage());
+            return;
         }
 
         JSObject ret = new JSObject();
@@ -329,8 +325,14 @@ public class OverlayPlugin extends Plugin {
 
     @PluginMethod
     public void isOverlayActive(PluginCall call) {
+        Context ctx = getActivity() != null ? getActivity() : getContext();
+        boolean granted = true;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            granted = Settings.canDrawOverlays(ctx);
+        }
         JSObject ret = new JSObject();
         ret.put("active", FloatingPetService.isRunning);
+        ret.put("permissionGranted", granted);
         call.resolve(ret);
     }
 

@@ -40,7 +40,7 @@ export interface OverlayPluginInterface {
   startOverlay(options: OverlayLaunchParams): Promise<{ success: boolean }>;
   stopOverlay(): Promise<{ success: boolean }>;
   departForBattle(options?: { reason?: 'battle' | 'adventure' }): Promise<{ started: boolean }>;
-  isOverlayActive(): Promise<{ active: boolean }>;
+  isOverlayActive(): Promise<{ active: boolean; permissionGranted?: boolean }>;
   addListener(
     eventName: 'overlayStateChanged',
     listenerFunc: (event: { active: boolean }) => void
@@ -93,13 +93,17 @@ export async function requestOverlayPermission(): Promise<boolean> {
   }
 }
 
-export async function startNativeFloatingOverlay(params: OverlayLaunchParams): Promise<boolean> {
+export async function startNativeFloatingOverlay(
+  params: OverlayLaunchParams,
+  options?: { promptPermission?: boolean }
+): Promise<boolean> {
   if (!Capacitor.isNativePlatform()) return false;
   try {
-    // If permission is not granted, immediately ask for it
     const granted = await checkOverlayPermission();
     if (!granted) {
-      await requestOverlayPermission();
+      if (options?.promptPermission) {
+        await requestOverlayPermission();
+      }
       return false;
     }
     const res = await OverlayPlugin.startOverlay(params);
@@ -134,14 +138,28 @@ export async function departNativeOverlayForBattle(
   }
 }
 
-export async function isNativeOverlayActive(): Promise<boolean> {
-  if (!Capacitor.isNativePlatform()) return false;
+export async function getNativeOverlayStatus(): Promise<{ active: boolean; permissionGranted: boolean }> {
+  if (!Capacitor.isNativePlatform()) {
+    return { active: false, permissionGranted: true };
+  }
   try {
     const res = await OverlayPlugin.isOverlayActive();
-    return !!res?.active;
+    const permissionGranted =
+      typeof res?.permissionGranted === 'boolean'
+        ? res.permissionGranted
+        : await checkOverlayPermission();
+    return {
+      active: !!res?.active,
+      permissionGranted,
+    };
   } catch {
-    return false;
+    return { active: false, permissionGranted: false };
   }
+}
+
+export async function isNativeOverlayActive(): Promise<boolean> {
+  const status = await getNativeOverlayStatus();
+  return status.active;
 }
 
 export function onNativeOverlayStateChanged(listener: (active: boolean) => void): () => void {

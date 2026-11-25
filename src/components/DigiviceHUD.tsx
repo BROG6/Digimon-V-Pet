@@ -983,7 +983,7 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
                       {pet.isDead
                         ? 'STATUS: DECEASED'
                         : isHiddenOnFloat
-                        ? 'STATUS: FLOATING'
+                        ? 'STATUS: AWAY'
                         : pet.isFrozen
                         ? 'STATUS: FROZEN'
                         : pet.stage === 'egg'

@@ -8,7 +8,7 @@ import {
   requestOverlayPermission, 
   startNativeFloatingOverlay, 
   stopNativeFloatingOverlay, 
-  isNativeOverlayActive 
+  getNativeOverlayStatus,
 } from '../utils/nativeOverlay';
 import { getEffectiveSpriteConfig } from '../utils/customSpriteManager';
 import { DigimonSpriteConfig, SpriteFrame } from '../utils/newDigimonSprites';
@@ -31,6 +31,7 @@ interface NativePipOverlayProps {
   isOpen: boolean;
   onClose: () => void;
   onOpenGridAlignment?: () => void;
+  onOverlayStatusChange?: (status: { active: boolean; permissionGranted: boolean }) => void;
 }
 
 export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
@@ -39,6 +40,7 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
   isOpen,
   onClose,
   onOpenGridAlignment,
+  onOverlayStatusChange,
 }) => {
   const [isPipActive, setIsPipActive] = useState<boolean>(false);
   const [wakeLockActive, setWakeLockActive] = useState<boolean>(false);
@@ -126,18 +128,17 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
     };
   }, []);
 
-  // Check Android overlay permission and status
+  // Check Android overlay permission and status without firing unsolicited system prompts
   const checkPermStatus = async () => {
     setIsCheckingPerm(true);
     try {
       if (Capacitor.isNativePlatform()) {
-        const granted = await checkOverlayPermission();
-        setHasAndroidPermission(granted);
-        const isAct = await isNativeOverlayActive();
-        setIsPipActive(isAct);
-        return granted;
+        const status = await getNativeOverlayStatus();
+        setHasAndroidPermission(status.permissionGranted);
+        setIsPipActive(status.active);
+        onOverlayStatusChange?.(status);
+        return status.permissionGranted;
       } else {
-        // In web preview / browser
         setHasAndroidPermission(false);
         return false;
       }
@@ -150,19 +151,9 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
   };
 
   useEffect(() => {
-    let active = true;
     if (isOpen) {
-      checkPermStatus().then((granted) => {
-        if (!active) return;
-        // If on native platform and permission is not granted, trigger permission prompt immediately
-        if (Capacitor.isNativePlatform() && !granted) {
-          requestOverlayPermission().catch(() => {});
-        }
-      });
+      checkPermStatus();
     }
-    return () => {
-      active = false;
-    };
   }, [isOpen]);
 
   // Re-check permission and sync grid preset/ratios when window regains focus or grid changes
@@ -437,17 +428,19 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
     // Path 0: Native Android APK System Overlay (Floats over all apps)
     if (Capacitor.isNativePlatform()) {
       try {
-        const granted = await checkOverlayPermission();
-        if (!granted) {
-          setErrorMsg('Please switch ON "Allow display over other apps" in Android Settings.');
+        const status = await getNativeOverlayStatus();
+        setHasAndroidPermission(status.permissionGranted);
+        onOverlayStatusChange?.(status);
+
+        if (!status.permissionGranted) {
           await requestOverlayPermission();
           return;
         }
 
-        const active = await isNativeOverlayActive();
-        if (active) {
+        if (status.active) {
           await stopNativeFloatingOverlay();
           setIsPipActive(false);
+          onOverlayStatusChange?.({ active: false, permissionGranted: true });
           return;
         }
 
@@ -461,9 +454,10 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
 
         if (ok) {
           setIsPipActive(true);
+          onOverlayStatusChange?.({ active: true, permissionGranted: true });
           onClose();
         } else {
-          setErrorMsg('Please grant "Allow display over other apps" permission in Settings.');
+          setErrorMsg('Unable to start overlay. Verify "Display over other apps" in Settings.');
         }
       } catch (err: any) {
         console.warn('Native overlay invocation error:', err);
@@ -481,6 +475,7 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
         });
         pipWindowRef.current = pipWin;
         setIsPipActive(true);
+        onOverlayStatusChange?.({ active: true, permissionGranted: true });
 
         try {
           document.querySelectorAll('link[rel="stylesheet"], style').forEach((node) => {
@@ -519,6 +514,7 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
 
         pipWin.addEventListener('pagehide', () => {
           setIsPipActive(false);
+          onOverlayStatusChange?.({ active: false, permissionGranted: true });
           pipWindowRef.current = null;
         });
 
@@ -546,12 +542,15 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
         if (document.pictureInPictureElement) {
           await document.exitPictureInPicture();
           setIsPipActive(false);
+          onOverlayStatusChange?.({ active: false, permissionGranted: true });
         } else if ((video as any).requestPictureInPicture) {
           await video.requestPictureInPicture();
           setIsPipActive(true);
+          onOverlayStatusChange?.({ active: true, permissionGranted: true });
 
           video.addEventListener('leavepictureinpicture', () => {
             setIsPipActive(false);
+            onOverlayStatusChange?.({ active: false, permissionGranted: true });
           });
         } else {
           setErrorMsg('Picture-in-Picture is blocked in iframe preview or not supported.');
@@ -621,9 +620,11 @@ export const NativePipOverlay: React.FC<NativePipOverlayProps> = ({
                 <span>OVERLAY PERMISSION STATUS</span>
               </div>
               <span className={`text-[10px] font-pixel px-2 py-0.5 rounded-full font-bold ${
-                hasAndroidPermission ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' : 'bg-amber-500/20 text-amber-300 border border-amber-500/40 animate-pulse'
+                hasAndroidPermission
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+                  : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
               }`}>
-                {hasAndroidPermission ? '✓ GRANTED' : '⚠️ PERMISSION REQUIRED'}
+                {hasAndroidPermission ? '✓ GRANTED' : 'REQUIRED'}
               </span>
             </div>
 

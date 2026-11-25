@@ -1,14 +1,9 @@
 package com.digipet.companion;
 
-import android.app.Notification;
-import android.app.NotificationChannel;
-import android.app.NotificationManager;
-import android.app.PendingIntent;
 import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
-import android.content.pm.ServiceInfo;
 import android.graphics.Color;
 import android.graphics.PixelFormat;
 import android.graphics.Typeface;
@@ -38,15 +33,12 @@ import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
-import androidx.core.app.NotificationCompat;
 import java.util.Random;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
 public class FloatingPetService extends Service {
     public static boolean isRunning = false;
-    private static final String CHANNEL_ID = "digipet_overlay_channel";
-    private static final int NOTIF_ID = 1001;
     private static final int FRAME_MS = 33; // ~30 fps physics step
 
     private enum PetState {
@@ -261,18 +253,6 @@ public class FloatingPetService extends Service {
             return START_NOT_STICKY;
         }
 
-        createNotificationChannel();
-        Notification notification = buildForegroundNotification();
-        try {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                startForeground(NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
-            } else {
-                startForeground(NOTIF_ID, notification);
-            }
-        } catch (Exception e) {
-            // Android 14 safe fallback
-        }
-
         parseConfigFromIntent(intent);
 
         if (floatingView == null) {
@@ -287,7 +267,7 @@ public class FloatingPetService extends Service {
             physicsStarted = true;
             physicsHandler.postDelayed(physicsRunnable, 250);
         }
-        return START_STICKY;
+        return START_NOT_STICKY;
     }
 
     private void parseConfigFromIntent(Intent intent) {
@@ -467,57 +447,6 @@ public class FloatingPetService extends Service {
                 }
             }
         });
-    }
-
-    private void createNotificationChannel() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            NotificationChannel channel = new NotificationChannel(
-                CHANNEL_ID,
-                "DigiPet Overlay Companion",
-                NotificationManager.IMPORTANCE_LOW
-            );
-            channel.setDescription("Shows your floating Digimon pet on top of all apps");
-            channel.setSound(null, null);
-            channel.enableVibration(false);
-            channel.setShowBadge(false);
-            NotificationManager manager = getSystemService(NotificationManager.class);
-            if (manager != null) {
-                manager.createNotificationChannel(channel);
-            }
-        }
-    }
-
-    private Notification buildForegroundNotification() {
-        Intent openAppIntent = new Intent(this, MainActivity.class);
-        openAppIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-        PendingIntent pendingOpen = PendingIntent.getActivity(
-            this,
-            0,
-            openAppIntent,
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0
-        );
-
-        Intent stopIntent = new Intent(this, FloatingPetService.class);
-        stopIntent.setAction("STOP");
-        PendingIntent pendingStop = PendingIntent.getService(
-            this,
-            1,
-            stopIntent,
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0
-        );
-
-        NotificationCompat.Builder builder = new NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("DigiPet Companion Roaming")
-            .setContentText("Pet navigates your home screen. Tap 'Close Overlay' to dismiss.")
-            .setSmallIcon(android.R.drawable.ic_menu_compass)
-            .setPriority(NotificationCompat.PRIORITY_LOW)
-            .setSound(null)
-            .setVibrate(new long[]{0})
-            .setContentIntent(pendingOpen)
-            .addAction(android.R.drawable.ic_menu_close_clear_cancel, "✕ CLOSE OVERLAY", pendingStop)
-            .setOngoing(true);
-
-        return builder.build();
     }
 
     private void setupFloatingView(Intent intent) {
@@ -2271,10 +2200,12 @@ public class FloatingPetService extends Service {
             setChatBarVisible(false);
             hideNativeBubble();
             setDismissTargetVisible(false, false);
-            floatingView.setVisibility(View.INVISIBLE);
+            floatingView.setAlpha(0f);
+            floatingView.setVisibility(View.VISIBLE);
             params.flags |= WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
         } else {
             params.flags &= ~WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE;
+            floatingView.setAlpha(1f);
             floatingView.setVisibility(View.VISIBLE);
         }
         safeUpdateWindowLayout();

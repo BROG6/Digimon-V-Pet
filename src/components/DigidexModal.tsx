@@ -1,9 +1,210 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { CrestType, DigimonSpecies, DigimonStage, PetState } from '../types/digimon';
-import { DIGI_EGGS, DIGIMON_DATABASE, EGG_LINE_MATRIX } from '../data/digidex';
+import { DIGI_EGGS, DIGIMON_DATABASE, EGG_LINE_MATRIX, SPECIAL_ITEMS } from '../data/digidex';
 import { loadUnlockedSpeciesIds } from '../utils/evolutionEngine';
 import { DigimonSprite } from './DigimonSprite';
-import { BookOpen, X, Search, Shield, Lock } from 'lucide-react';
+import { BookOpen, X, Search, Shield, Lock, Info } from 'lucide-react';
+
+interface EvolutionRouteHint {
+  eggId: string;
+  eggLabel: string;
+  stageLabel: string;
+  branchLabel: string;
+  shortRule: string;
+  fullRule: string;
+  avoidTip: string;
+  badgeCls: string;
+}
+
+function buildBranchRule(
+  stage: 'fresh' | 'in-training' | 'rookie' | 'champion' | 'ultimate' | 'mega',
+  branch: 'baby1' | 'baby2' | 'vaccine' | 'data' | 'virus' | 'corrupted' | 'corruptedAlt' | 'armor',
+  opts?: { hasCorruptedAlt?: boolean; armorItemName?: string }
+): Omit<EvolutionRouteHint, 'eggId' | 'eggLabel' | 'stageLabel'> {
+  if (stage === 'fresh' || branch === 'baby1') {
+    return {
+      branchLabel: 'HATCH · BABY I',
+      shortRule: 'Hatch · 1m',
+      fullRule: 'Automatic hatch from Digitama after 1 minute.',
+      avoidTip: 'Choose a different Digi-Egg if aiming for another Baby line.',
+      badgeCls: 'text-cyan-300 border-cyan-500/40 bg-cyan-950/50',
+    };
+  }
+  if (stage === 'in-training' || branch === 'baby2') {
+    return {
+      branchLabel: 'GROWTH · BABY II',
+      shortRule: 'Auto · 10m',
+      fullRule: 'Automatic growth from Baby I after 10 minutes.',
+      avoidTip: 'Every Baby I on this Egg grows into this Baby II.',
+      badgeCls: 'text-cyan-300 border-cyan-500/40 bg-cyan-950/50',
+    };
+  }
+  if (stage === 'rookie') {
+    if (branch === 'vaccine') {
+      return {
+        branchLabel: 'VACCINE · 12H',
+        shortRule: 'CM ≤ 1 · EF < 7',
+        fullRule: 'From Baby II (12h): Care Mistakes ≤ 1, Effort < 7, Stage Battles < 8.',
+        avoidTip: 'Train Effort ≥ 7 (Data) or clear 8+ battles (Virus) before 12h to branch.',
+        badgeCls: 'text-sky-300 border-sky-500/40 bg-sky-950/50',
+      };
+    }
+    if (branch === 'data') {
+      return {
+        branchLabel: 'DATA · 12H',
+        shortRule: 'CM ≤ 1 · EF ≥ 7',
+        fullRule: 'From Baby II (12h): Care Mistakes ≤ 1 and Effort ≥ 7 (keep Heavy Weight + 8+ Battles off).',
+        avoidTip: 'Keep Effort below 7 for Vaccine or reach 8+ Battles for Virus.',
+        badgeCls: 'text-emerald-300 border-emerald-500/40 bg-emerald-950/50',
+      };
+    }
+    if (branch === 'virus') {
+      return {
+        branchLabel: 'VIRUS · 12H',
+        shortRule: 'CM ≤ 2 · TB ≥ 8',
+        fullRule: 'From Baby II (12h): Care Mistakes ≤ 2 and 8+ Stage Battles (without CM ≤ 1 + EF ≥ 7 non-Heavy).',
+        avoidTip: 'Stay under 8 Stage Battles or focus Effort ≥ 7 with CM ≤ 1.',
+        badgeCls: 'text-rose-300 border-rose-500/40 bg-rose-950/50',
+      };
+    }
+    return {
+      branchLabel: 'CORRUPTED · 12H',
+      shortRule: 'CM ≥ 3 (or CM 2 + WR < 40%)',
+      fullRule: 'From Baby II (12h): 3+ Care Mistakes, or 2 Care Mistakes with ≥1 Battle & Win Rate < 40%.',
+      avoidTip: 'Keep Care Mistakes ≤ 1 (or keep Win Rate ≥ 40%) to prevent corruption.',
+      badgeCls: 'text-purple-300 border-purple-500/40 bg-purple-950/50',
+    };
+  }
+
+  const prevWeightMap: Record<'champion' | 'ultimate' | 'mega', { normal: string; heavy: string; timer: string }> = {
+    champion: { normal: '22–36g', heavy: '>36g', timer: '24h' },
+    ultimate: { normal: '28–46g', heavy: '>46g', timer: '40h' },
+    mega: { normal: '34–56g', heavy: '>56g', timer: '48h' },
+  };
+  const info = prevWeightMap[stage];
+
+  if (branch === 'armor') {
+    const relic = opts?.armorItemName || 'Egg Armor Relic';
+    return {
+      branchLabel: 'ARMOR · 24H',
+      shortRule: `Equip ${relic}`,
+      fullRule: `From Rookie (24h): Equip ${relic} before the evolution timer completes.`,
+      avoidTip: 'Unequip the Armor Relic before evolution finishes to evolve normally.',
+      badgeCls: 'text-amber-300 border-amber-500/45 bg-amber-950/50',
+    };
+  }
+  if (branch === 'vaccine') {
+    return {
+      branchLabel: `VACCINE · ${info.timer.toUpperCase()}`,
+      shortRule: 'CM ≤ 1 · EF ≥ 6 · WR ≥ 60%',
+      fullRule: `After ${info.timer}: Care Mistakes ≤ 1, Effort ≥ 6, at least 1 Battle, and Win Rate ≥ 60%.`,
+      avoidTip: 'Avoid Vaccine by having 0 battles (or WR < 60%) with Normal Weight for Data, or Heavy Weight + 12+ Battles for Virus.',
+      badgeCls: 'text-sky-300 border-sky-500/40 bg-sky-950/50',
+    };
+  }
+  if (branch === 'data') {
+    return {
+      branchLabel: `DATA · ${info.timer.toUpperCase()}`,
+      shortRule: `CM ≤ 1 · EF ≥ 8 · WT ${info.normal}`,
+      fullRule: `After ${info.timer}: Care Mistakes ≤ 1, Effort ≥ 8, Normal Weight (${info.normal}), without triggering Vaccine (0 battles or WR < 60%).`,
+      avoidTip: 'Win 1+ battle with ≥ 60% WR for Vaccine, or raise Weight above Normal.',
+      badgeCls: 'text-emerald-300 border-emerald-500/40 bg-emerald-950/50',
+    };
+  }
+  if (branch === 'virus') {
+    return {
+      branchLabel: `VIRUS · ${info.timer.toUpperCase()}`,
+      shortRule: `CM 1–2 · TB ≥ 12 · WT ${info.heavy}`,
+      fullRule: `After ${info.timer}: 1–2 Care Mistakes, 12+ Stage Battles, and Heavy Weight (${info.heavy}).`,
+      avoidTip: 'Keep Weight at Normal or stay at 0 Care Mistakes to avoid the Virus branch.',
+      badgeCls: 'text-rose-300 border-rose-500/40 bg-rose-950/50',
+    };
+  }
+  if (branch === 'corruptedAlt') {
+    return {
+      branchLabel: `CORRUPTED ALT · ${info.timer.toUpperCase()}`,
+      shortRule: `CM ≥ 3 · ${info.heavy} or EF ≥ 5`,
+      fullRule: `After ${info.timer}: Corrupted care (CM ≥ 3, or CM 2 + WR < 40%) AND Heavy Weight (${info.heavy}) or Effort ≥ 5.`,
+      avoidTip: 'Keep Care Mistakes ≤ 1 to stay on Vaccine/Data/Virus; or keep Effort < 5 & non-Heavy Weight for primary Corrupted.',
+      badgeCls: 'text-purple-300 border-purple-500/40 bg-purple-950/50',
+    };
+  }
+  return {
+    branchLabel: `CORRUPTED · ${info.timer.toUpperCase()}`,
+    shortRule: opts?.hasCorruptedAlt ? 'CM ≥ 3 · EF < 5 · Not Heavy' : 'CM ≥ 3 (or CM 2 + WR < 40%)',
+    fullRule: opts?.hasCorruptedAlt
+      ? `After ${info.timer}: Corrupted care (CM ≥ 3, or CM 2 + WR < 40%) while Effort < 5 and Weight not Heavy.`
+      : `After ${info.timer}: 3+ Care Mistakes, or 2 Care Mistakes with ≥1 Battle & Win Rate < 40%.`,
+    avoidTip: 'Keep Care Mistakes ≤ 1 (flush poop, feed, cure sickness & turn lights off on time) to avoid corruption.',
+    badgeCls: 'text-purple-300 border-purple-500/40 bg-purple-950/50',
+  };
+}
+
+function getSpeciesEvolutionHints(speciesId: string): EvolutionRouteHint[] {
+  const hints: EvolutionRouteHint[] = [];
+  for (const egg of DIGI_EGGS) {
+    const matrix = EGG_LINE_MATRIX[egg.id];
+    if (!matrix) continue;
+    const eggLabel = `#${String(egg.eggNumber).padStart(2, '0')} ${egg.crestName}`;
+
+    if (matrix.baby1 === speciesId) {
+      hints.push({ eggId: egg.id, eggLabel, stageLabel: 'Baby I', ...buildBranchRule('fresh', 'baby1') });
+    }
+    if (matrix.baby2 === speciesId) {
+      hints.push({ eggId: egg.id, eggLabel, stageLabel: 'Baby II', ...buildBranchRule('in-training', 'baby2') });
+    }
+
+    const stageEntries: Array<{
+      stageKey: 'rookie' | 'champion' | 'ultimate' | 'mega';
+      stageLabel: string;
+      branches: typeof matrix.champion;
+    }> = [
+      { stageKey: 'rookie', stageLabel: 'Rookie', branches: matrix.rookie },
+      { stageKey: 'champion', stageLabel: 'Champion', branches: matrix.champion },
+      { stageKey: 'ultimate', stageLabel: 'Ultimate', branches: matrix.ultimate },
+      { stageKey: 'mega', stageLabel: 'Mega', branches: matrix.mega },
+    ];
+
+    for (const entry of stageEntries) {
+      const b = entry.branches;
+      if (b.vaccine === speciesId) {
+        hints.push({ eggId: egg.id, eggLabel, stageLabel: entry.stageLabel, ...buildBranchRule(entry.stageKey, 'vaccine') });
+      }
+      if (b.data === speciesId) {
+        hints.push({ eggId: egg.id, eggLabel, stageLabel: entry.stageLabel, ...buildBranchRule(entry.stageKey, 'data') });
+      }
+      if (b.virus === speciesId) {
+        hints.push({ eggId: egg.id, eggLabel, stageLabel: entry.stageLabel, ...buildBranchRule(entry.stageKey, 'virus') });
+      }
+      if (b.corrupted === speciesId) {
+        hints.push({
+          eggId: egg.id,
+          eggLabel,
+          stageLabel: entry.stageLabel,
+          ...buildBranchRule(entry.stageKey, 'corrupted', { hasCorruptedAlt: Boolean(b.corruptedAlt) }),
+        });
+      }
+      if (b.corruptedAlt === speciesId) {
+        hints.push({
+          eggId: egg.id,
+          eggLabel,
+          stageLabel: entry.stageLabel,
+          ...buildBranchRule(entry.stageKey, 'corruptedAlt'),
+        });
+      }
+      if (b.armor?.speciesId === speciesId) {
+        const relicName = SPECIAL_ITEMS[b.armor.itemId]?.shortName || egg.armorOption?.itemLabel || 'Armor Relic';
+        hints.push({
+          eggId: egg.id,
+          eggLabel,
+          stageLabel: 'Armor',
+          ...buildBranchRule(entry.stageKey, 'armor', { armorItemName: relicName }),
+        });
+      }
+    }
+  }
+  return hints;
+}
 
 interface DigidexModalProps {
   currentCrest: CrestType;
@@ -83,10 +284,12 @@ export const DigidexModal: React.FC<DigidexModalProps> = ({
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [stageFilter, setStageFilter] = useState<'all' | DigimonStage>('all');
   const [unlockFilter, setUnlockFilter] = useState<'all' | 'unlocked' | 'locked'>('all');
+  const [inspectedSpeciesId, setInspectedSpeciesId] = useState<string | null>(null);
 
   useEffect(() => {
     if (isOpen) {
       setSelectedEggId(defaultEgg.id);
+      setInspectedSpeciesId(null);
     }
   }, [isOpen, defaultEgg.id]);
 
@@ -167,12 +370,18 @@ export const DigidexModal: React.FC<DigidexModalProps> = ({
 
   const eggUnlockedCount = eggUniqueIds.filter((id) => unlockedSet.has(id)).length;
 
-  const renderTreeNode = (speciesId: string, tag?: string, badgeClass?: string) => {
+  const renderTreeNode = (
+    speciesId: string,
+    tag?: string,
+    badgeClass?: string,
+    ruleHint?: string
+  ) => {
     const sp = DIGIMON_DATABASE[speciesId];
     if (!sp) return null;
 
     const isUnlocked = unlockedSet.has(sp.id);
     const isCurrent = !pet?.isDead && pet?.stage !== 'egg' && currentSpeciesId === sp.id;
+    const isInspected = inspectedSpeciesId === sp.id;
 
     if (!isUnlocked) {
       return (
@@ -200,14 +409,18 @@ export const DigidexModal: React.FC<DigidexModalProps> = ({
     }
 
     return (
-      <div
+      <button
+        type="button"
+        onClick={() => setInspectedSpeciesId((prev) => (prev === sp.id ? null : sp.id))}
         key={`${tag || 'node'}-${sp.id}`}
-        className={`relative p-2 rounded-xl border transition-all flex flex-col items-center text-center ${
-          isCurrent
+        className={`relative w-full p-2 rounded-xl border transition-all flex flex-col items-center text-center cursor-pointer ${
+          isInspected
+            ? 'bg-cyan-950/60 border-cyan-400 ring-1 ring-cyan-400/60'
+            : isCurrent
             ? 'bg-emerald-950/70 border-emerald-400 ring-1 ring-emerald-400/50'
-            : 'bg-slate-950/85 border-slate-700/80'
+            : 'bg-slate-950/85 border-slate-700/80 hover:border-cyan-500/60'
         }`}
-        title={`${sp.name} (${sp.stage}) — ${sp.signatureMove.name}`}
+        title={`${sp.name} (${sp.stage}) — Tap for evolution stats & tips`}
       >
         {tag && (
           <span
@@ -232,7 +445,12 @@ export const DigidexModal: React.FC<DigidexModalProps> = ({
         <div className="font-pixel text-[8px] text-slate-400 tabular-nums">
           {sp.attribute} • {sp.signatureMove.power}P
         </div>
-      </div>
+        {ruleHint && (
+          <div className="mt-1 w-full px-1 py-0.5 rounded bg-slate-900/95 border border-slate-700/80 font-pixel text-[7px] leading-tight text-cyan-200 truncate">
+            {ruleHint}
+          </div>
+        )}
+      </button>
     );
   };
 
@@ -365,13 +583,17 @@ export const DigidexModal: React.FC<DigidexModalProps> = ({
                   <div className="w-0.5 h-4 bg-slate-600" />
 
                   {/* Baby I */}
-                  <div className="w-36">{renderTreeNode(matrix.baby1, 'BABY I · 10M')}</div>
+                  <div className="w-40">
+                    {renderTreeNode(matrix.baby1, 'BABY I · 10M', undefined, buildBranchRule('fresh', 'baby1').shortRule)}
+                  </div>
 
                   {/* Connector Line */}
                   <div className="w-0.5 h-4 bg-slate-600" />
 
                   {/* Baby II */}
-                  <div className="w-36">{renderTreeNode(matrix.baby2, 'BABY II · 12H')}</div>
+                  <div className="w-40">
+                    {renderTreeNode(matrix.baby2, 'BABY II · 12H', undefined, buildBranchRule('in-training', 'baby2').shortRule)}
+                  </div>
 
                   {/* Trunk Split down to 4 Archetype Branches */}
                   <div className="w-0.5 h-5 bg-slate-600" />
@@ -401,17 +623,24 @@ export const DigidexModal: React.FC<DigidexModalProps> = ({
                         const stageData = matrix[stageRow.key];
                         const primaryId = stageData[col.key];
                         const altId = col.key === 'corrupted' ? stageData.corruptedAlt : undefined;
+                        const primaryHint = buildBranchRule(stageRow.key, col.key, {
+                          hasCorruptedAlt: Boolean(stageData.corruptedAlt),
+                        }).shortRule;
+                        const altHint = altId
+                          ? buildBranchRule(stageRow.key, 'corruptedAlt').shortRule
+                          : undefined;
 
                         return (
                           <div key={`${col.key}-${stageRow.key}`} className="w-full flex flex-col items-center">
                             <div className={`w-0.5 h-4 ${col.lineCls}`} />
                             <div className="w-full space-y-1.5">
-                              {renderTreeNode(primaryId, `${col.short} · ${stageRow.label}`, col.headerCls)}
+                              {renderTreeNode(primaryId, `${col.short} · ${stageRow.label}`, col.headerCls, primaryHint)}
                               {altId &&
                                 renderTreeNode(
                                   altId,
                                   `${col.short} ALT · ${stageRow.label}`,
-                                  col.headerCls
+                                  col.headerCls,
+                                  altHint
                                 )}
                             </div>
                           </div>
@@ -428,11 +657,16 @@ export const DigidexModal: React.FC<DigidexModalProps> = ({
                       <Shield className="w-3.5 h-3.5" />
                       <span>ARMOR EVOLUTION BRANCH ({selectedEgg.armorOption?.itemLabel || 'RELIC'})</span>
                     </div>
-                    <div className="w-44">
+                    <div className="w-48">
                       {renderTreeNode(
                         matrix.champion.armor.speciesId,
                         `ARMOR (${selectedEgg.armorOption?.itemLabel || 'RELIC'})`,
-                        'text-amber-300 border-amber-500/50 bg-amber-950/60'
+                        'text-amber-300 border-amber-500/50 bg-amber-950/60',
+                        buildBranchRule('champion', 'armor', {
+                          armorItemName:
+                            SPECIAL_ITEMS[matrix.champion.armor.itemId]?.shortName ||
+                            selectedEgg.armorOption?.itemLabel,
+                        }).shortRule
                       )}
                     </div>
                   </div>
@@ -528,20 +762,28 @@ export const DigidexModal: React.FC<DigidexModalProps> = ({
                   );
                 }
 
+                const hints = getSpeciesEvolutionHints(mon.id);
+                const primaryHint = hints[0];
+                const isInspected = inspectedSpeciesId === mon.id;
+
                 return (
-                  <div
+                  <button
+                    type="button"
+                    onClick={() => setInspectedSpeciesId((prev) => (prev === mon.id ? null : mon.id))}
                     key={mon.id}
-                    className={`p-3 rounded-2xl border flex items-center justify-between gap-3 ${
-                      isActive
-                        ? 'bg-emerald-950/30 border-emerald-500/60'
-                        : 'bg-slate-950/85 border-slate-800'
+                    className={`p-3 rounded-2xl border flex items-center justify-between gap-3 text-left transition-colors cursor-pointer ${
+                      isInspected
+                        ? 'bg-cyan-950/40 border-cyan-400 ring-1 ring-cyan-400/50'
+                        : isActive
+                        ? 'bg-emerald-950/30 border-emerald-500/60 hover:border-emerald-400'
+                        : 'bg-slate-950/85 border-slate-800 hover:border-cyan-500/50'
                     }`}
                   >
-                    <div className="flex items-center gap-3 min-w-0">
+                    <div className="flex items-center gap-3 min-w-0 flex-1">
                       <div className="w-16 h-16 flex items-center justify-center bg-slate-900 rounded-xl border border-slate-800 shrink-0 overflow-hidden">
                         <DigimonSprite species={mon} scale={0.65} />
                       </div>
-                      <div className="min-w-0">
+                      <div className="min-w-0 flex-1">
                         <div className="font-chakra font-bold text-white text-sm truncate">
                           {mon.name}
                         </div>
@@ -556,6 +798,16 @@ export const DigidexModal: React.FC<DigidexModalProps> = ({
                         <div className="text-[10px] text-slate-400 truncate mt-1">
                           {mon.signatureMove.name} ({mon.signatureMove.power})
                         </div>
+                        {primaryHint ? (
+                          <div className="mt-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-900 border border-cyan-500/35 font-pixel text-[7px] text-cyan-200 max-w-full truncate">
+                            <Info className="w-2.5 h-2.5 text-cyan-400 shrink-0" />
+                            <span className="truncate">{primaryHint.shortRule}</span>
+                          </div>
+                        ) : (
+                          <div className="mt-1 font-pixel text-[7px] text-slate-500 truncate">
+                            Special / Encounter Digimon
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -564,12 +816,77 @@ export const DigidexModal: React.FC<DigidexModalProps> = ({
                         ACTIVE
                       </span>
                     )}
-                  </div>
+                  </button>
                 );
               })}
             </div>
           </div>
         )}
+
+        {/* Unlocked Species Evolution Requirements & Raise/Avoid Guide */}
+        {inspectedSpeciesId && DIGIMON_DATABASE[inspectedSpeciesId] && unlockedSet.has(inspectedSpeciesId) && (() => {
+          const sp = DIGIMON_DATABASE[inspectedSpeciesId];
+          const hints = getSpeciesEvolutionHints(sp.id);
+          return (
+            <div className="mt-2 pt-3 border-t border-slate-700/80 shrink-0">
+              <div className="p-3 rounded-2xl bg-slate-950/95 border border-cyan-500/45 shadow-lg space-y-2 max-h-44 overflow-y-auto">
+                <div className="flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <div className="w-10 h-10 rounded-xl bg-slate-900 border border-slate-700 flex items-center justify-center shrink-0">
+                      <DigimonSprite species={sp} scale={0.44} />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="font-chakra font-bold text-white text-sm truncate">
+                        {sp.name} — Evolution Requirements
+                      </div>
+                      <div className="font-pixel text-[8px] text-slate-400 uppercase">
+                        {sp.stage} · {sp.attribute} · {sp.type}
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setInspectedSpeciesId(null)}
+                    className="p-1 rounded-lg bg-slate-800 text-slate-400 hover:text-white cursor-pointer shrink-0"
+                    aria-label="Close requirements panel"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+
+                {hints.length > 0 ? (
+                  <div className="space-y-1.5">
+                    {hints.map((h, i) => (
+                      <div
+                        key={`${h.eggId}-${h.branchLabel}-${i}`}
+                        className="p-2 rounded-xl bg-slate-900/90 border border-slate-800 space-y-1 text-xs font-chakra"
+                      >
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          <span className="px-1.5 py-0.5 rounded bg-slate-800 text-amber-300 font-pixel text-[8px]">
+                            {h.eggLabel}
+                          </span>
+                          <span className={`px-1.5 py-0.5 rounded border font-pixel text-[8px] ${h.badgeCls}`}>
+                            {h.branchLabel}
+                          </span>
+                        </div>
+                        <div className="text-cyan-100 leading-snug">
+                          <span className="font-bold text-emerald-300">How to get:</span> {h.fullRule}
+                        </div>
+                        <div className="text-slate-300 leading-snug text-[11px]">
+                          <span className="font-bold text-amber-300">How to avoid:</span> {h.avoidTip}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="p-2 rounded-xl bg-slate-900/90 border border-slate-800 text-xs font-chakra text-slate-300">
+                    Encountered in the Colosseum / Adventure Roster (outside standard 15-Egg evolution branches).
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
       </div>
     </div>
   );

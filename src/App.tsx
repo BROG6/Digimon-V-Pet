@@ -63,7 +63,9 @@ import {
   requestOverlayPermission, 
   startNativeFloatingOverlay, 
   stopNativeFloatingOverlay, 
+  departNativeOverlayForBattle,
   isNativeOverlayActive,
+  onNativeOverlayStateChanged,
   consumeNativeOverlayEvolution,
   consumeNativeOverlayCareActions,
 } from './utils/nativeOverlay';
@@ -285,6 +287,8 @@ export default function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [updateManifest, setUpdateManifest] = useState<UpdateManifest | null>(null);
   const [hasUpdateAvailable, setHasUpdateAvailable] = useState<boolean>(false);
+  const [isFloatOverlayActive, setIsFloatOverlayActive] = useState<boolean>(false);
+  const [holdFloatHiddenForBattle, setHoldFloatHiddenForBattle] = useState<boolean>(false);
 
   useEffect(() => {
     const syncGridFlag = () => setIsGridCustom(hasCustomRowRatios(getSavedGridPreset()));
@@ -484,6 +488,7 @@ export default function App() {
         const active = await isNativeOverlayActive();
         if (active) {
           await stopNativeFloatingOverlay();
+          setIsFloatOverlayActive(false);
           setStatusNotification('Floating screen overlay closed.');
           setTimeout(() => setStatusNotification(null), 3000);
           return;
@@ -497,6 +502,7 @@ export default function App() {
         );
 
         if (ok) {
+          setIsFloatOverlayActive(true);
           setStatusNotification(`✓ ${currentSpecies?.name || 'Digimon'} is now floating over all apps! Drag to move.`);
         } else {
           setIsNativePipOpen(true);
@@ -996,7 +1002,52 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+
+    let disposed = false;
+    const syncOverlayStatus = async () => {
+      const active = await isNativeOverlayActive();
+      if (!disposed) {
+        setIsFloatOverlayActive((prev) => (prev === active ? prev : active));
+      }
+    };
+
+    syncOverlayStatus();
+    const unsubEvent = onNativeOverlayStateChanged((active) => {
+      if (!disposed) {
+        setIsFloatOverlayActive(active);
+      }
+    });
+    const statusInterval = window.setInterval(() => {
+      if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+        syncOverlayStatus();
+      }
+    }, 650);
+    window.addEventListener('focus', syncOverlayStatus);
+    document.addEventListener('visibilitychange', syncOverlayStatus);
+
+    return () => {
+      disposed = true;
+      unsubEvent();
+      window.clearInterval(statusInterval);
+      window.removeEventListener('focus', syncOverlayStatus);
+      document.removeEventListener('visibilitychange', syncOverlayStatus);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (holdFloatHiddenForBattle && !isColosseumOpen && !isAdventureOpen && !isFloatOverlayActive) {
+      setHoldFloatHiddenForBattle(false);
+    }
+  }, [holdFloatHiddenForBattle, isColosseumOpen, isAdventureOpen, isFloatOverlayActive]);
+
+  useEffect(() => {
     if (!Capacitor.isNativePlatform()) {
+      lastNativeSpeciesRef.current = pet.currentSpeciesId;
+      return;
+    }
+
+    if (holdFloatHiddenForBattle) {
       lastNativeSpeciesRef.current = pet.currentSpeciesId;
       return;
     }
@@ -1029,7 +1080,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [pet.currentSpeciesId, pet.playerName, pet.stage, pet.hunger, pet.happiness, pet.bigMeatStock, pet.vitaminStock, pet.lastHungerDropAt, pet.isSleeping, pet.lightsOff, pet.isFrozen, pet.evoGoalMetAt, pet.stageEnteredAt, pet.evolutionLocked, pet.isDead]);
+  }, [holdFloatHiddenForBattle, pet.currentSpeciesId, pet.playerName, pet.stage, pet.hunger, pet.happiness, pet.bigMeatStock, pet.vitaminStock, pet.lastHungerDropAt, pet.isSleeping, pet.lightsOff, pet.isFrozen, pet.evoGoalMetAt, pet.stageEnteredAt, pet.evolutionLocked, pet.isDead]);
 
   const requireAliveAndHatched = (): boolean => {
     if (pet.isDead) {
@@ -1048,6 +1099,31 @@ export default function App() {
       return false;
     }
     return true;
+  };
+
+  const handleOpenBattleMenu = (target: 'colosseum' | 'adventure' = 'colosseum') => {
+    if (!requireAliveAndHatched()) return;
+    sound.playButton();
+    triggerHaptic('light');
+    const reason = target === 'adventure' ? 'adventure' : 'battle';
+    if (isFloatOverlayActive) {
+      setHoldFloatHiddenForBattle(true);
+      departNativeOverlayForBattle(reason)
+        .then((started) => {
+          if (!started) {
+            isNativeOverlayActive().then((stillActive) => {
+              setIsFloatOverlayActive(stillActive);
+            });
+          }
+        })
+        .catch(() => {});
+    }
+    if (target === 'adventure') {
+      setIsColosseumOpen(false);
+      setIsAdventureOpen(true);
+    } else {
+      setIsColosseumOpen(true);
+    }
   };
 
   // CARE ACTIONS
@@ -2484,10 +2560,7 @@ export default function App() {
             if (!requireAliveAndHatched()) return;
             setIsTrainingOpen(true);
           }}
-          onOpenColosseum={() => {
-            if (!requireAliveAndHatched()) return;
-            setIsColosseumOpen(true);
-          }}
+          onOpenColosseum={() => handleOpenBattleMenu('colosseum')}
           onOpenRoom={() => setIsRoomOpen(true)}
           onOpenDigidex={() => setIsDigidexOpen(true)}
           onOpenStatsModal={() => setIsStatsOpen(true)}
@@ -2496,6 +2569,7 @@ export default function App() {
           onResetEgg={() => setIsEggModalOpen(true)}
           canEvolve={evolutionCheck.can && pet.stage !== 'egg'}
           isNightTime={isNightMode}
+          isFloatingActive={isFloatOverlayActive || holdFloatHiddenForBattle}
           externalAction={hudAction}
         />
 
@@ -2727,10 +2801,8 @@ export default function App() {
               <div className="grid grid-cols-2 gap-2 text-xs font-chakra font-bold">
                 <button
                   onClick={() => {
-                    if (!requireAliveAndHatched()) return;
-                    sound.playButton();
                     setIsMoreSheetOpen(false);
-                    setIsAdventureOpen(true);
+                    handleOpenBattleMenu('adventure');
                   }}
                   className="p-3 bg-slate-800 hover:bg-emerald-950/60 border border-emerald-500/40 rounded-2xl flex items-center gap-2.5 text-emerald-300 cursor-pointer"
                 >
@@ -2897,12 +2969,7 @@ export default function App() {
 
           {/* 2. BATTLE */}
           <button
-            onClick={() => {
-              if (!requireAliveAndHatched()) return;
-              sound.playButton();
-              triggerHaptic('light');
-              setIsColosseumOpen(true);
-            }}
+            onClick={() => handleOpenBattleMenu('colosseum')}
             className="flex flex-col items-center justify-center py-1 rounded-xl hover:bg-slate-800 active:scale-90 transition-transform cursor-pointer text-indigo-400"
           >
             <Swords className="w-4.5 h-4.5 text-indigo-400" />
@@ -3000,10 +3067,7 @@ export default function App() {
         isOpen={isColosseumOpen}
         onClose={() => setIsColosseumOpen(false)}
         onBattleEnd={handleBattleEnd}
-        onOpenAdventure={() => {
-          setIsColosseumOpen(false);
-          setIsAdventureOpen(true);
-        }}
+        onOpenAdventure={() => handleOpenBattleMenu('adventure')}
       />
 
       <AdventureModal
@@ -3049,10 +3113,7 @@ export default function App() {
           if (!requireAliveAndHatched()) return;
           setIsTrainingOpen(true);
         }}
-        onOpenColosseum={() => {
-          if (!requireAliveAndHatched()) return;
-          setIsColosseumOpen(true);
-        }}
+        onOpenColosseum={() => handleOpenBattleMenu('colosseum')}
         onOpenDigidex={() => setIsDigidexOpen(true)}
         onOpenTamerRank={() => setIsTamerRankOpen(true)}
         onEquipSpecialItem={handleEquipSpecialItem}
@@ -3075,10 +3136,7 @@ export default function App() {
         pet={pet}
         onOpenShop={() => setIsShopOpen(true)}
         onOpenRoom={() => setIsRoomOpen(true)}
-        onOpenAdventure={() => {
-          if (!requireAliveAndHatched()) return;
-          setIsAdventureOpen(true);
-        }}
+        onOpenAdventure={() => handleOpenBattleMenu('adventure')}
       />
 
       <InventoryModal

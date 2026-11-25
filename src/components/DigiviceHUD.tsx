@@ -45,6 +45,7 @@ interface DigiviceHUDProps {
   onResetEgg?: () => void;
   canEvolve: boolean;
   isNightTime?: boolean;
+  isFloatingActive?: boolean;
   externalAction?: { pose: DigimonPose | 'flushing'; nonce: number; eatItem?: 'meat' | 'vitamin' | 'sirloin' | 'mushroom' | 'berry' } | null;
 }
 
@@ -171,6 +172,7 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
   onResetEgg,
   canEvolve,
   isNightTime = false,
+  isFloatingActive = false,
   externalAction,
 }) => {
   const [shellIndex, setShellIndex] = useState<number>(0);
@@ -189,9 +191,11 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
   const evoElig = checkEvolutionEligibility(pet, species);
 
   // AUTONOMOUS MOVEMENT ENGINE INSIDE LCD SCREEN
+  const isHiddenOnFloat = Boolean(isFloatingActive && !pet.isDead && pet.stage !== 'egg');
   const [monX, setMonX] = useState<number>(50); // percentage 15% to 85%
   const [facing, setFacing] = useState<'left' | 'right'>('right');
   const [internalPose, setInternalPose] = useState<DigimonPose>('standing');
+  const [suppressLeftTransition, setSuppressLeftTransition] = useState<boolean>(false);
   const [activeEatItem, setActiveEatItem] = useState<'meat' | 'vitamin' | 'sirloin' | 'mushroom' | 'berry'>('meat');
   const [isFlushing, setIsFlushing] = useState<boolean>(false);
   const [flushKey, setFlushKey] = useState<number>(0);
@@ -200,6 +204,9 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
   const isMovingRef = useRef<boolean>(false);
   const isActionLockedRef = useRef<boolean>(false);
   const actionTimersRef = useRef<number[]>([]);
+  const walkInTimersRef = useRef<number[]>([]);
+  const wasHiddenOnFloatRef = useRef<boolean>(isHiddenOnFloat);
+  const walkInDeferredRef = useRef<boolean>(false);
 
   useEffect(() => {
     if (pet.poopCount > 0) {
@@ -279,8 +286,79 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
     }
   };
 
+  const clearWalkInTimers = () => {
+    walkInTimersRef.current.forEach((t) => window.clearTimeout(t));
+    walkInTimersRef.current = [];
+  };
+
+  const triggerWalkBackIn = () => {
+    clearWalkInTimers();
+    actionTimersRef.current.forEach((t) => window.clearTimeout(t));
+    actionTimersRef.current = [];
+
+    isActionLockedRef.current = true;
+    isMovingRef.current = true;
+    const enterFromLeft = Math.random() < 0.5;
+
+    setSuppressLeftTransition(true);
+    setMonX(enterFromLeft ? -26 : 126);
+    setFacing(enterFromLeft ? 'right' : 'left');
+    setInternalPose('walking');
+
+    const t1 = window.setTimeout(() => {
+      setSuppressLeftTransition(false);
+      setMonX(50);
+    }, 60);
+
+    const t2 = window.setTimeout(() => {
+      setInternalPose(pet.isSleeping || pet.lightsOff ? 'sleeping' : pet.isSick ? 'sick' : 'happy');
+    }, 1680);
+
+    const t3 = window.setTimeout(() => {
+      isActionLockedRef.current = false;
+      isMovingRef.current = false;
+      setInternalPose(pet.isSleeping || pet.lightsOff ? 'sleeping' : pet.isSick ? 'sick' : 'standing');
+    }, 2550);
+
+    walkInTimersRef.current.push(t1, t2, t3);
+  };
+
+  // Handle float overlay transitions: disappear from LCD while active, walk back in on dismiss
+  useEffect(() => {
+    const wasHidden = wasHiddenOnFloatRef.current;
+
+    if (isHiddenOnFloat) {
+      wasHiddenOnFloatRef.current = true;
+      walkInDeferredRef.current = false;
+      clearWalkInTimers();
+      isActionLockedRef.current = false;
+      isMovingRef.current = false;
+      setSuppressLeftTransition(false);
+      return;
+    }
+
+    if (wasHidden && !isHiddenOnFloat) {
+      wasHiddenOnFloatRef.current = false;
+      if (activeSubMenu !== 'screen') {
+        walkInDeferredRef.current = true;
+      } else {
+        triggerWalkBackIn();
+      }
+      return;
+    }
+
+    if (walkInDeferredRef.current && activeSubMenu === 'screen') {
+      walkInDeferredRef.current = false;
+      triggerWalkBackIn();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isHiddenOnFloat, activeSubMenu]);
+
   // Autonomous Digimon movement loop inside LCD
   useEffect(() => {
+    if (isHiddenOnFloat || isActionLockedRef.current) {
+      return;
+    }
     if (pet.isDead) {
       setMonX(50);
       setFacing('right');
@@ -350,7 +428,7 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
     }, 4200);
 
     return () => clearInterval(moveInterval);
-  }, [pet.isDead, pet.isFrozen, pet.stage, isHatchingEgg, pet.isSleeping, pet.lightsOff, pet.isSick, activeSubMenu, monX]);
+  }, [isHiddenOnFloat, pet.isDead, pet.isFrozen, pet.stage, isHatchingEgg, pet.isSleeping, pet.lightsOff, pet.isSick, activeSubMenu, monX]);
 
   // Button A: Cycle selection forward
   const handleNextMenu = () => {
@@ -380,6 +458,8 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
   };
 
   const playPoseSequence = (pose: DigimonPose | 'flushing', eatItem: 'meat' | 'vitamin' | 'sirloin' | 'mushroom' | 'berry' = 'meat') => {
+    clearWalkInTimers();
+    setSuppressLeftTransition(false);
     actionTimersRef.current.forEach((t) => clearTimeout(t));
     actionTimersRef.current = [];
     isActionLockedRef.current = true;
@@ -444,6 +524,7 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
   useEffect(() => {
     return () => {
       actionTimersRef.current.forEach((t) => clearTimeout(t));
+      clearWalkInTimers();
     };
   }, []);
 
@@ -838,49 +919,53 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
                     )}
                   </AnimatePresence>
 
-                  {/* Center stage: Digimon Sprite walking and moving across full LCD width */}
+                  {/* Center stage: Digimon Sprite walking and moving across full LCD width (hidden while float overlay is active) */}
                   <div className="relative flex-1 w-full pb-0.5">
-                    <div
-                      className="absolute bottom-0.5 transition-[left] duration-[1600ms] ease-linear flex flex-col items-center z-10"
-                      style={{
-                        left: `${pet.stage === 'egg' || pet.isDead ? 50 : monX}%`,
-                        transform: 'translateX(-50%)',
-                      }}
-                    >
-                      <DigimonSprite
-                        species={pet.stage === 'egg' || pet.isDead ? undefined : species}
-                        egg={pet.stage === 'egg' ? egg : undefined}
-                        pose={
-                          pet.isDead
-                            ? 'dead'
-                            : pet.stage === 'egg'
-                            ? isHatchingEgg
-                              ? 'hatching'
-                              : 'standing'
-                            : internalPose
-                        }
-                        isCracking={
-                          pet.stage === 'egg' &&
-                          !isHatchingEgg &&
-                          typeof evoRemainingMs === 'number' &&
-                          evoRemainingMs <= 10_000
-                        }
-                        eatItem={activeEatItem}
-                        facing={pet.stage === 'egg' || pet.isDead ? 'right' : facing}
-                        lcdMode={false}
-                        scale={0.92}
-                        hunger={pet.hunger}
-                        happiness={pet.happiness}
-                        showMoodIndicator={
-                          !pet.isDead &&
-                          !pet.isFrozen &&
-                          pet.stage !== 'egg' &&
-                          !pet.isSleeping &&
-                          !pet.lightsOff &&
-                          !pet.isSick
-                        }
-                      />
-                    </div>
+                    {!isHiddenOnFloat && (
+                      <div
+                        className={`absolute bottom-0.5 flex flex-col items-center z-10 ${
+                          suppressLeftTransition ? '' : 'transition-[left] duration-[1600ms] ease-linear'
+                        }`}
+                        style={{
+                          left: `${pet.stage === 'egg' || pet.isDead ? 50 : monX}%`,
+                          transform: 'translateX(-50%)',
+                        }}
+                      >
+                        <DigimonSprite
+                          species={pet.stage === 'egg' || pet.isDead ? undefined : species}
+                          egg={pet.stage === 'egg' ? egg : undefined}
+                          pose={
+                            pet.isDead
+                              ? 'dead'
+                              : pet.stage === 'egg'
+                              ? isHatchingEgg
+                                ? 'hatching'
+                                : 'standing'
+                              : internalPose
+                          }
+                          isCracking={
+                            pet.stage === 'egg' &&
+                            !isHatchingEgg &&
+                            typeof evoRemainingMs === 'number' &&
+                            evoRemainingMs <= 10_000
+                          }
+                          eatItem={activeEatItem}
+                          facing={pet.stage === 'egg' || pet.isDead ? 'right' : facing}
+                          lcdMode={false}
+                          scale={0.92}
+                          hunger={pet.hunger}
+                          happiness={pet.happiness}
+                          showMoodIndicator={
+                            !pet.isDead &&
+                            !pet.isFrozen &&
+                            pet.stage !== 'egg' &&
+                            !pet.isSleeping &&
+                            !pet.lightsOff &&
+                            !pet.isSick
+                          }
+                        />
+                      </div>
+                    )}
                   </div>
 
                   {/* Bottom LCD Telemetry Row (matching Bandai 25th photo) */}
@@ -897,6 +982,8 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
                     <span className="uppercase">
                       {pet.isDead
                         ? 'STATUS: DECEASED'
+                        : isHiddenOnFloat
+                        ? 'STATUS: FLOATING'
                         : pet.isFrozen
                         ? 'STATUS: FROZEN'
                         : pet.stage === 'egg'

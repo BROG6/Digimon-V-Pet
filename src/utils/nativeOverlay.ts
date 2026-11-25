@@ -1,4 +1,4 @@
-import { registerPlugin, Capacitor } from '@capacitor/core';
+import { registerPlugin, Capacitor, PluginListenerHandle } from '@capacitor/core';
 
 export interface OverlayLaunchParams {
   speciesName: string;
@@ -39,7 +39,12 @@ export interface OverlayPluginInterface {
   requestPermission(): Promise<{ success: boolean; prompted?: boolean }>;
   startOverlay(options: OverlayLaunchParams): Promise<{ success: boolean }>;
   stopOverlay(): Promise<{ success: boolean }>;
+  departForBattle(options?: { reason?: 'battle' | 'adventure' }): Promise<{ started: boolean }>;
   isOverlayActive(): Promise<{ active: boolean }>;
+  addListener(
+    eventName: 'overlayStateChanged',
+    listenerFunc: (event: { active: boolean }) => void
+  ): Promise<PluginListenerHandle>;
   consumePendingEvolution(): Promise<{ speciesId: string | null; evolvedAt: number }>;
   consumePendingCareActions(): Promise<{
     meatUsed: number;
@@ -116,6 +121,19 @@ export async function stopNativeFloatingOverlay(): Promise<boolean> {
   }
 }
 
+export async function departNativeOverlayForBattle(
+  reason: 'battle' | 'adventure' = 'battle'
+): Promise<boolean> {
+  if (!Capacitor.isNativePlatform()) return false;
+  try {
+    const res = await OverlayPlugin.departForBattle({ reason });
+    return !!res?.started;
+  } catch (err) {
+    console.warn('departNativeOverlayForBattle error:', err);
+    return false;
+  }
+}
+
 export async function isNativeOverlayActive(): Promise<boolean> {
   if (!Capacitor.isNativePlatform()) return false;
   try {
@@ -124,6 +142,34 @@ export async function isNativeOverlayActive(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+export function onNativeOverlayStateChanged(listener: (active: boolean) => void): () => void {
+  if (!Capacitor.isNativePlatform()) return () => {};
+  let disposed = false;
+  let handle: PluginListenerHandle | null = null;
+
+  OverlayPlugin.addListener('overlayStateChanged', (event) => {
+    if (!disposed) {
+      listener(Boolean(event?.active));
+    }
+  })
+    .then((h) => {
+      if (disposed) {
+        h.remove().catch(() => {});
+      } else {
+        handle = h;
+      }
+    })
+    .catch(() => {});
+
+  return () => {
+    disposed = true;
+    if (handle) {
+      handle.remove().catch(() => {});
+      handle = null;
+    }
+  };
 }
 
 export async function consumeNativeOverlayEvolution(): Promise<{ speciesId: string | null; evolvedAt: number }> {

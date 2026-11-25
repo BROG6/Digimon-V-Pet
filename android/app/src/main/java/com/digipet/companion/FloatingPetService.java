@@ -217,6 +217,8 @@ public class FloatingPetService extends Service {
     private String pendingForageKind = "meat"; // "meat" or "friends"
     private String carriedItem = "";
     private float hoverPhase = 0f;
+    private boolean isDepartingForBattle = false;
+    private long battleDepartWalkAtMs = 0L;
 
     // Visual sync tracking (avoid redundant evaluateJavascript calls)
     private String lastJsAnimMode = "";
@@ -249,6 +251,11 @@ public class FloatingPetService extends Service {
             return START_NOT_STICKY;
         }
 
+        if (intent != null && "DEPART_BATTLE".equals(intent.getAction())) {
+            startBattleDepartureSequence(intent.getStringExtra("reason"));
+            return START_NOT_STICKY;
+        }
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
             stopSelf();
             return START_NOT_STICKY;
@@ -275,6 +282,7 @@ public class FloatingPetService extends Service {
         }
 
         isRunning = true;
+        OverlayPlugin.notifyOverlayStateChanged(true);
         if (!physicsStarted) {
             physicsStarted = true;
             physicsHandler.postDelayed(physicsRunnable, 250);
@@ -1626,7 +1634,7 @@ public class FloatingPetService extends Service {
      * keeping the floating window open smoothly at its exact current position!
      */
     private void updateFloatingView(Intent intent) {
-        if (intent == null || webView == null) return;
+        if (intent == null || webView == null || isDepartingForBattle) return;
 
         // Clear any pending native-side evo marker since app pushed authoritative state
         getSharedPreferences("digipet_overlay_sync", MODE_PRIVATE)
@@ -1846,7 +1854,7 @@ public class FloatingPetService extends Service {
         if (isUserDragging) return;
 
         // Cold Mode (Fridge): pause roaming/evolution timer just like the Digivice
-        if (isPetFrozen) {
+        if (isPetFrozen && !isDepartingForBattle) {
             if (offScreenPhase == OffScreenPhase.HIDDEN) {
                 setOverlayHidden(false);
                 posX = Math.max(dpToPx(20), (screenW - viewW) * 0.5f);
@@ -1865,7 +1873,7 @@ public class FloatingPetService extends Service {
         }
 
         // Sleep state synced from Digivice: stay on-screen, stationary, and show sleeping animation + Zzz
-        if (isPetSleeping) {
+        if (isPetSleeping && !isDepartingForBattle) {
             if (offScreenPhase == OffScreenPhase.HIDDEN) {
                 refreshScreenMetrics();
                 setOverlayHidden(false);
@@ -1896,7 +1904,7 @@ public class FloatingPetService extends Service {
         }
 
         // Hold position steady while Care HUD or Chat Bar is open so buttons don't walk away
-        if (hudVisible || chatVisible) {
+        if ((hudVisible || chatVisible) && !isDepartingForBattle) {
             syncVisualState("idle", facingRight, carriedItem, null);
             return;
         }
@@ -2074,6 +2082,62 @@ public class FloatingPetService extends Service {
         facingRight = targetX >= posX;
     }
 
+    private void startBattleDepartureSequence(String reason) {
+        if (!isRunning || floatingView == null || params == null) {
+            stopSelf();
+            return;
+        }
+        if (isDepartingForBattle) {
+            return;
+        }
+        if (offScreenPhase == OffScreenPhase.HIDDEN || floatingView.getVisibility() != View.VISIBLE) {
+            stopSelf();
+            return;
+        }
+        isDepartingForBattle = true;
+        isUserDragging = false;
+        physicsHandler.removeCallbacks(singleTapRunnable);
+        physicsHandler.removeCallbacks(doubleTapRunnable);
+        tapCount = 0;
+        lastTapUpMs = 0L;
+        setHudVisible(false);
+        setChatBarVisible(false);
+        setDismissTargetVisible(false, false);
+
+        if (isPetSleeping) {
+            isPetSleeping = false;
+            applyWindowDimensionsForSleepState(false);
+        }
+
+        refreshScreenMetrics();
+        float centerX = posX + viewW * 0.5f;
+        exitToRight = centerX >= (screenW * 0.5f);
+        facingRight = exitToRight;
+        carriedItem = "";
+        clearItemAtMs = 0L;
+        petState = PetState.OFF_SCREEN;
+        offScreenPhase = OffScreenPhase.EXITING;
+        targetX = exitToRight ? (screenW + dpToPx(16)) : (-viewW - dpToPx(16));
+        battleDepartWalkAtMs = System.currentTimeMillis() + 550L;
+
+        String departMsg;
+        if ("adventure".equals(reason)) {
+            departMsg = random.nextBoolean()
+                ? "Going on an adventure! 🗺️"
+                : "Heading out on an adventure! ⚔️";
+        } else {
+            int pick = random.nextInt(3);
+            if (pick == 0) {
+                departMsg = "Going for a battle! ⚔️";
+            } else if (pick == 1) {
+                departMsg = "Going on an adventure! 🗺️";
+            } else {
+                departMsg = "Off for a battle! Wish me luck! ⚔️";
+            }
+        }
+        syncVisualState("idle", facingRight, "", departMsg);
+    }
+
     private void startOffScreenSequence(long nowMs) {
         cyclesSinceForage = 0;
         lastOffScreenAtMs = nowMs;
@@ -2092,15 +2156,26 @@ public class FloatingPetService extends Service {
         float speed = dpToPx(3);
         switch (offScreenPhase) {
             case EXITING: {
-                posX += exitToRight ? speed : -speed;
+                if (isDepartingForBattle && nowMs < battleDepartWalkAtMs) {
+                    syncVisualState("idle", exitToRight, "", null);
+                    break;
+                }
+                float exitSpeed = isDepartingForBattle ? dpToPx(4) : speed;
+                posX += exitToRight ? exitSpeed : -exitSpeed;
                 applyWindowPosition();
                 syncVisualState("walk", exitToRight, carriedItem, null);
                 boolean exitedRight = exitToRight && posX >= screenW + dpToPx(8);
                 boolean exitedLeft = !exitToRight && posX <= -viewW - dpToPx(8);
                 if (exitedRight || exitedLeft) {
-                    offScreenPhase = OffScreenPhase.HIDDEN;
-                    offScreenWakeMs = nowMs + 20000L + random.nextInt(15001);
-                    setOverlayHidden(true);
+                    if (isDepartingForBattle) {
+                        isDepartingForBattle = false;
+                        hideNativeBubble();
+                        stopSelf();
+                    } else {
+                        offScreenPhase = OffScreenPhase.HIDDEN;
+                        offScreenWakeMs = nowMs + 20000L + random.nextInt(15001);
+                        setOverlayHidden(true);
+                    }
                 }
                 break;
             }
@@ -2716,8 +2791,10 @@ public class FloatingPetService extends Service {
     public void onDestroy() {
         super.onDestroy();
         isRunning = false;
+        isDepartingForBattle = false;
         physicsStarted = false;
         physicsHandler.removeCallbacksAndMessages(null);
+        OverlayPlugin.notifyOverlayStateChanged(false);
         if (chatContainer != null && windowManager != null) {
             try {
                 windowManager.removeView(chatContainer);

@@ -12,6 +12,8 @@ import android.content.pm.PackageManager;
 import android.media.AudioAttributes;
 import android.net.Uri;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
 import android.provider.Settings;
 import android.util.Rational;
 import androidx.core.app.ActivityCompat;
@@ -22,21 +24,39 @@ import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.JSObject;
 import com.getcapacitor.annotation.CapacitorPlugin;
+import java.lang.ref.WeakReference;
 
 @CapacitorPlugin(name = "OverlayPlugin")
 public class OverlayPlugin extends Plugin {
     public static volatile boolean isAppInForeground = false;
+    private static WeakReference<OverlayPlugin> activeInstance = new WeakReference<>(null);
+
+    public static void notifyOverlayStateChanged(final boolean active) {
+        new Handler(Looper.getMainLooper()).post(new Runnable() {
+            @Override
+            public void run() {
+                OverlayPlugin plugin = activeInstance.get();
+                if (plugin != null) {
+                    JSObject data = new JSObject();
+                    data.put("active", active);
+                    plugin.notifyListeners("overlayStateChanged", data);
+                }
+            }
+        });
+    }
 
     @Override
     public void load() {
         super.load();
         isAppInForeground = true;
+        activeInstance = new WeakReference<>(this);
     }
 
     @Override
     protected void handleOnResume() {
         super.handleOnResume();
         isAppInForeground = true;
+        activeInstance = new WeakReference<>(this);
     }
 
     @Override
@@ -49,6 +69,7 @@ public class OverlayPlugin extends Plugin {
     protected void handleOnDestroy() {
         super.handleOnDestroy();
         isAppInForeground = false;
+        activeInstance.clear();
     }
 
     private long readLongOption(PluginCall call, String key, long fallback) {
@@ -278,6 +299,32 @@ public class OverlayPlugin extends Plugin {
         JSObject ret = new JSObject();
         ret.put("success", true);
         call.resolve(ret);
+    }
+
+    @PluginMethod
+    public void departForBattle(PluginCall call) {
+        Context ctx = getActivity() != null ? getActivity() : getContext();
+        if (!FloatingPetService.isRunning) {
+            JSObject ret = new JSObject();
+            ret.put("started", false);
+            call.resolve(ret);
+            return;
+        }
+        String reason = call.getString("reason", "battle");
+        Intent serviceIntent = new Intent(ctx, FloatingPetService.class);
+        serviceIntent.setAction("DEPART_BATTLE");
+        serviceIntent.putExtra("reason", reason != null ? reason : "battle");
+        try {
+            ctx.startService(serviceIntent);
+            JSObject ret = new JSObject();
+            ret.put("started", true);
+            call.resolve(ret);
+        } catch (Exception e) {
+            ctx.stopService(new Intent(ctx, FloatingPetService.class));
+            JSObject ret = new JSObject();
+            ret.put("started", false);
+            call.resolve(ret);
+        }
     }
 
     @PluginMethod

@@ -46,6 +46,10 @@ class SoundEngine {
     return this.ctx;
   }
 
+  public getAudioContext(): AudioContext | null {
+    return this.getContext();
+  }
+
   private trackSource(source: AudioScheduledSourceNode, gain?: GainNode) {
     const entry = { source, gain };
     this.activeNodes.add(entry);
@@ -60,6 +64,10 @@ class SoundEngine {
         } catch {}
       }
     };
+  }
+
+  public trackExternalNode(source: AudioScheduledSourceNode, gain?: GainNode) {
+    this.trackSource(source, gain);
   }
 
   public stopAll() {
@@ -79,11 +87,22 @@ class SoundEngine {
     this.activeNodes.clear();
   }
 
+  private emitMuteChanged() {
+    if (typeof window !== 'undefined') {
+      try {
+        window.dispatchEvent(
+          new CustomEvent('digipet-master-sound-changed', { detail: { muted: this.isMuted } })
+        );
+      } catch {}
+    }
+  }
+
   public setMuted(muted: boolean) {
     this.isMuted = muted;
     if (muted) {
       this.stopAll();
     }
+    this.emitMuteChanged();
   }
 
   public getMuted(): boolean {
@@ -95,6 +114,7 @@ class SoundEngine {
     if (this.isMuted) {
       this.stopAll();
     }
+    this.emitMuteChanged();
     return this.isMuted;
   }
 

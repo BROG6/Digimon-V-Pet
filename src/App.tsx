@@ -41,6 +41,7 @@ import { DigimonTalkModal } from './components/DigimonTalkModal';
 import { DigimonGallery } from './components/DigimonGallery';
 import { AppUpdateModal } from './components/AppUpdateModal';
 import { GridAlignmentModal } from './components/GridAlignmentModal';
+import { SettingsModal } from './components/SettingsModal';
 import {
   GRID_RATIOS_CHANGED_EVENT,
   getSavedGridPreset,
@@ -108,6 +109,7 @@ import {
 } from './utils/tamerRank';
 import confetti from 'canvas-confetti';
 import { sound, triggerHaptic } from './utils/audio';
+import { battleSoundLibrary, BATTLE_SFX_CHANGED_EVENT } from './utils/battleSoundLibrary';
 import { 
   Sparkles, 
   Home, 
@@ -139,7 +141,8 @@ import {
   Moon,
   Sun,
   Backpack,
-  Award
+  Award,
+  Settings
 } from 'lucide-react';
 
 const STORAGE_KEY = 'digipet_vpet_save_v1';
@@ -278,6 +281,7 @@ export default function App() {
   const [isGridModalOpen, setIsGridModalOpen] = useState<boolean>(false);
   const [isGridCustom, setIsGridCustom] = useState<boolean>(() => hasCustomRowRatios(getSavedGridPreset()));
   const [isUpdateModalOpen, setIsUpdateModalOpen] = useState<boolean>(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [updateManifest, setUpdateManifest] = useState<UpdateManifest | null>(null);
   const [hasUpdateAvailable, setHasUpdateAvailable] = useState<boolean>(false);
 
@@ -392,7 +396,33 @@ export default function App() {
   const eggHatchInProgressRef = useRef<boolean>(false);
 
   const [isMuted, setIsMuted] = useState<boolean>(sound.getMuted());
+  const [battleSfxEnabled, setBattleSfxEnabled] = useState<boolean>(() => battleSoundLibrary.isEnabled());
   const [alertsEnabled, setAlertsEnabled] = useState<boolean>(() => getCareAlertsEnabled());
+
+  useEffect(() => {
+    const onBattleSfxChanged = (e: Event) => {
+      const custom = e as CustomEvent<{ enabled?: boolean }>;
+      if (typeof custom.detail?.enabled === 'boolean') {
+        setBattleSfxEnabled(custom.detail.enabled);
+      } else {
+        setBattleSfxEnabled(battleSoundLibrary.isEnabled());
+      }
+    };
+    const onMasterSoundChanged = (e: Event) => {
+      const custom = e as CustomEvent<{ muted?: boolean }>;
+      if (typeof custom.detail?.muted === 'boolean') {
+        setIsMuted(custom.detail.muted);
+      } else {
+        setIsMuted(sound.getMuted());
+      }
+    };
+    window.addEventListener(BATTLE_SFX_CHANGED_EVENT, onBattleSfxChanged);
+    window.addEventListener('digipet-master-sound-changed', onMasterSoundChanged);
+    return () => {
+      window.removeEventListener(BATTLE_SFX_CHANGED_EVENT, onBattleSfxChanged);
+      window.removeEventListener('digipet-master-sound-changed', onMasterSoundChanged);
+    };
+  }, []);
   const [statusNotification, setStatusNotification] = useState<string | null>(null);
   const [hudAction, setHudAction] = useState<{
     pose: 'eating' | 'happy' | 'flushing';
@@ -1875,6 +1905,12 @@ export default function App() {
     setIsMuted(next);
   };
 
+  const toggleBattleSfx = () => {
+    sound.playButton();
+    const next = battleSoundLibrary.toggleEnabled();
+    setBattleSfxEnabled(next);
+  };
+
   const toggleCareAlerts = async () => {
     sound.playButton();
     const next = !alertsEnabled;
@@ -2041,6 +2077,19 @@ export default function App() {
             title={isMuted ? 'Unmute' : 'Mute'}
           >
             {isMuted ? <VolumeX className="w-3.5 h-3.5 text-rose-400" /> : <Volume2 className="w-3.5 h-3.5 text-cyan-400" />}
+          </button>
+
+          {/* Settings Menu Button */}
+          <button
+            onClick={() => {
+              sound.playButton();
+              setIsSettingsOpen(true);
+            }}
+            className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 hover:text-cyan-300 transition-colors cursor-pointer"
+            title="Settings & Audio Library"
+            aria-label="Open Settings"
+          >
+            <Settings className="w-3.5 h-3.5" />
           </button>
         </div>
       </header>
@@ -2760,6 +2809,18 @@ export default function App() {
                   onClick={() => {
                     sound.playButton();
                     setIsMoreSheetOpen(false);
+                    setIsSettingsOpen(true);
+                  }}
+                  className="p-3 bg-slate-800 hover:bg-cyan-950/60 border border-cyan-500/40 rounded-2xl flex items-center gap-2.5 text-cyan-200 cursor-pointer"
+                >
+                  <Settings className="w-5 h-5 text-cyan-400 shrink-0" />
+                  <span className="truncate">SETTINGS &amp; SFX</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    sound.playButton();
+                    setIsMoreSheetOpen(false);
                     setIsEggModalOpen(true);
                   }}
                   className="p-3 bg-slate-800 hover:bg-red-950/60 border border-red-500/40 rounded-2xl flex items-center gap-2.5 text-rose-300 cursor-pointer"
@@ -3111,6 +3172,24 @@ export default function App() {
             }
           } catch {}
         }}
+      />
+
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        isMuted={isMuted}
+        onToggleMasterSound={toggleSound}
+        battleSfxEnabled={battleSfxEnabled}
+        onToggleBattleSfx={toggleBattleSfx}
+        alertsEnabled={alertsEnabled}
+        onToggleCareAlerts={toggleCareAlerts}
+        dayNightPref={dayNightPref}
+        isNightMode={isNightMode}
+        onCycleDayNight={handleCycleDayNight}
+        extraTopPad={extraTopPad}
+        onToggleExtraTopPad={toggleExtraTopPad}
+        onOpenUpdates={() => setIsUpdateModalOpen(true)}
+        hasUpdateAvailable={Capacitor.isNativePlatform() && hasUpdateAvailable}
       />
 
     </div>

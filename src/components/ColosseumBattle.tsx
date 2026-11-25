@@ -18,6 +18,7 @@ import {
 import { DigimonSprite } from './DigimonSprite';
 import { BattleAttackVfx, ActiveBattleVfx } from './BattleAttackVfx';
 import { sound, triggerHaptic } from '../utils/audio';
+import { battleSoundLibrary } from '../utils/battleSoundLibrary';
 import confetti from 'canvas-confetti';
 import {
   Swords,
@@ -44,6 +45,171 @@ interface ColosseumBattleProps {
   onOpenAdventure?: () => void;
 }
 
+type ColosseumArenaId =
+  | 'cyber-dome'
+  | 'volcanic-ring'
+  | 'celestial-spire'
+  | 'dark-network'
+  | 'glacier-vault';
+
+interface ColosseumArenaTheme {
+  id: ColosseumArenaId;
+  name: string;
+  skyGradient: string;
+  borderClass: string;
+  floorGradient: string;
+  floorEdgeClass: string;
+  accentLineColor: string;
+}
+
+const COLOSSEUM_ARENAS: ColosseumArenaTheme[] = [
+  {
+    id: 'cyber-dome',
+    name: 'Cyber Dome',
+    skyGradient: 'from-indigo-950 via-slate-900 to-slate-950',
+    borderClass: 'border-indigo-500/45',
+    floorGradient: 'bg-gradient-to-b from-cyan-950/65 via-indigo-950/90 to-slate-950',
+    floorEdgeClass: 'border-t-2 border-cyan-400/50',
+    accentLineColor: 'rgba(34, 211, 238, 0.25)',
+  },
+  {
+    id: 'volcanic-ring',
+    name: 'Magma Core',
+    skyGradient: 'from-stone-950 via-red-950/85 to-orange-950/75',
+    borderClass: 'border-orange-500/45',
+    floorGradient: 'bg-gradient-to-b from-stone-900/90 via-red-950/90 to-stone-950',
+    floorEdgeClass: 'border-t-2 border-orange-500/60',
+    accentLineColor: 'rgba(249, 115, 22, 0.3)',
+  },
+  {
+    id: 'celestial-spire',
+    name: 'Sky Sanctum',
+    skyGradient: 'from-sky-950 via-indigo-900/80 to-amber-950/45',
+    borderClass: 'border-amber-400/45',
+    floorGradient: 'bg-gradient-to-b from-slate-700/60 via-indigo-950/85 to-slate-950',
+    floorEdgeClass: 'border-t-2 border-amber-300/55',
+    accentLineColor: 'rgba(252, 211, 77, 0.25)',
+  },
+  {
+    id: 'dark-network',
+    name: 'Dark Mainframe',
+    skyGradient: 'from-purple-950 via-fuchsia-950/70 to-slate-950',
+    borderClass: 'border-fuchsia-500/45',
+    floorGradient: 'bg-gradient-to-b from-purple-950/80 via-slate-950/95 to-black',
+    floorEdgeClass: 'border-t-2 border-fuchsia-400/55',
+    accentLineColor: 'rgba(232, 121, 249, 0.25)',
+  },
+  {
+    id: 'glacier-vault',
+    name: 'Glacier Vault',
+    skyGradient: 'from-slate-950 via-cyan-950/85 to-blue-950',
+    borderClass: 'border-sky-400/45',
+    floorGradient: 'bg-gradient-to-b from-sky-900/55 via-slate-900/90 to-slate-950',
+    floorEdgeClass: 'border-t-2 border-sky-300/60',
+    accentLineColor: 'rgba(125, 211, 252, 0.28)',
+  },
+];
+
+const ColosseumBackdropArt: React.FC<{ arena: ColosseumArenaTheme }> = ({ arena }) => (
+  <div className="absolute inset-0 pointer-events-none overflow-hidden">
+    {/* Stadium / Biome Midground Architecture */}
+    {arena.id === 'cyber-dome' && (
+      <>
+        <div className="absolute -top-10 left-[14%] w-24 h-44 bg-cyan-400/10 rotate-12 blur-md" />
+        <div className="absolute -top-10 right-[14%] w-24 h-44 bg-indigo-400/10 -rotate-12 blur-md" />
+        <div className="absolute top-6 left-1/2 -translate-x-1/2 w-56 h-24 rounded-full border border-cyan-400/20" />
+        <div className="absolute bottom-14 inset-x-0 h-20 flex items-end justify-around opacity-40 px-4">
+          <div className="w-10 h-16 bg-indigo-900/70 border-t border-cyan-400/35 rounded-t-sm" />
+          <div className="w-16 h-12 bg-slate-800/70 border-t border-indigo-400/30 rounded-t-sm" />
+          <div className="w-20 h-14 bg-indigo-950/80 border-t border-cyan-400/35 rounded-t-sm" />
+          <div className="w-16 h-12 bg-slate-800/70 border-t border-indigo-400/30 rounded-t-sm" />
+          <div className="w-10 h-16 bg-indigo-900/70 border-t border-cyan-400/35 rounded-t-sm" />
+        </div>
+      </>
+    )}
+
+    {arena.id === 'volcanic-ring' && (
+      <>
+        <div className="absolute -top-8 left-1/2 -translate-x-1/2 w-72 h-24 rounded-full bg-orange-500/15 blur-xl" />
+        <div className="absolute bottom-14 inset-x-0 h-24 flex items-end justify-around opacity-70 px-2">
+          <div className="w-0 h-0 border-l-[34px] border-r-[34px] border-b-[76px] border-l-transparent border-r-transparent border-b-stone-900/90" />
+          <div className="w-0 h-0 border-l-[46px] border-r-[46px] border-b-[96px] border-l-transparent border-r-transparent border-b-red-950/90" />
+          <div className="w-0 h-0 border-l-[38px] border-r-[38px] border-b-[82px] border-l-transparent border-r-transparent border-b-stone-900/90" />
+        </div>
+        <span className="absolute top-12 left-[20%] w-1.5 h-1.5 rounded-full bg-orange-400/80 animate-ping" />
+        <span className="absolute top-16 left-[72%] w-1.5 h-1.5 rounded-full bg-amber-300/80 animate-pulse" />
+        <span className="absolute top-9 left-[45%] w-1 h-1 rounded-full bg-rose-400/80 animate-pulse" />
+      </>
+    )}
+
+    {arena.id === 'celestial-spire' && (
+      <>
+        <div className="absolute -top-12 left-1/2 -translate-x-1/2 w-64 h-28 rounded-full bg-amber-300/15 blur-xl" />
+        <div className="absolute top-10 left-[14%] w-24 h-7 rounded-full bg-white/10 blur-[1px]" />
+        <div className="absolute top-14 right-[14%] w-28 h-8 rounded-full bg-amber-100/10 blur-[1px]" />
+        <div className="absolute bottom-14 inset-x-0 h-24 flex items-end justify-around opacity-55 px-6">
+          <div className="w-7 h-24 bg-slate-300/20 border-x border-t border-amber-200/35 rounded-t-sm" />
+          <div className="w-7 h-18 bg-slate-300/15 border-x border-t border-amber-200/30 rounded-t-sm" />
+          <div className="w-7 h-18 bg-slate-300/15 border-x border-t border-amber-200/30 rounded-t-sm" />
+          <div className="w-7 h-24 bg-slate-300/20 border-x border-t border-amber-200/35 rounded-t-sm" />
+        </div>
+      </>
+    )}
+
+    {arena.id === 'dark-network' && (
+      <>
+        <div className="absolute top-8 left-[22%] w-16 h-16 rotate-45 border border-fuchsia-400/25" />
+        <div className="absolute top-10 right-[22%] w-14 h-14 rotate-12 border border-purple-400/25" />
+        <div className="absolute bottom-14 inset-x-0 h-24 flex items-end justify-around opacity-55 px-4">
+          <div className="w-10 h-22 bg-purple-950/85 border border-fuchsia-500/35 flex flex-col justify-evenly p-1">
+            <span className="h-1 bg-fuchsia-400/45 rounded" />
+            <span className="h-1 bg-purple-400/40 rounded" />
+            <span className="h-1 bg-fuchsia-400/45 rounded" />
+          </div>
+          <div className="w-12 h-16 bg-slate-950/90 border border-purple-400/30" />
+          <div className="w-10 h-22 bg-purple-950/85 border border-fuchsia-500/35 flex flex-col justify-evenly p-1">
+            <span className="h-1 bg-fuchsia-400/45 rounded" />
+            <span className="h-1 bg-purple-400/40 rounded" />
+            <span className="h-1 bg-fuchsia-400/45 rounded" />
+          </div>
+        </div>
+        <span className="absolute top-12 left-[35%] w-1.5 h-1.5 rounded-full bg-fuchsia-400/75 animate-pulse" />
+        <span className="absolute top-16 left-[64%] w-1.5 h-1.5 rounded-full bg-violet-300/75 animate-ping" />
+      </>
+    )}
+
+    {arena.id === 'glacier-vault' && (
+      <>
+        <div className="absolute -top-6 inset-x-10 h-16 bg-gradient-to-r from-cyan-400/10 via-emerald-300/15 to-sky-400/10 blur-lg" />
+        <div className="absolute bottom-14 inset-x-0 h-24 flex items-end justify-around opacity-65 px-3">
+          <div className="w-0 h-0 border-l-[24px] border-r-[24px] border-b-[72px] border-l-transparent border-r-transparent border-b-sky-800/70" />
+          <div className="w-0 h-0 border-l-[34px] border-r-[34px] border-b-[92px] border-l-transparent border-r-transparent border-b-cyan-800/65" />
+          <div className="w-0 h-0 border-l-[22px] border-r-[22px] border-b-[64px] border-l-transparent border-r-transparent border-b-sky-700/65" />
+          <div className="w-0 h-0 border-l-[32px] border-r-[32px] border-b-[86px] border-l-transparent border-r-transparent border-b-cyan-900/70" />
+        </div>
+        <span className="absolute top-10 left-[22%] w-1.5 h-1.5 rounded-full bg-white/75 animate-pulse" />
+        <span className="absolute top-16 left-[52%] w-1.5 h-1.5 rounded-full bg-sky-200/75 animate-bounce" />
+        <span className="absolute top-9 left-[78%] w-1.5 h-1.5 rounded-full bg-cyan-200/75 animate-pulse" />
+      </>
+    )}
+
+    {/* Arena Floor Ring & Perspective Grid */}
+    <div className={`absolute inset-x-0 bottom-0 h-16 ${arena.floorGradient} ${arena.floorEdgeClass} overflow-hidden`}>
+      <div
+        className="absolute inset-0 opacity-65"
+        style={{
+          backgroundImage: `linear-gradient(to right, ${arena.accentLineColor} 1px, transparent 1px), linear-gradient(to bottom, ${arena.accentLineColor} 1px, transparent 1px)`,
+          backgroundSize: '32px 16px',
+        }}
+      />
+      <div
+        className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[82%] h-9 rounded-full border opacity-45"
+        style={{ borderColor: arena.accentLineColor }}
+      />
+    </div>
+  </div>
+);
+
 export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
   pet,
   species,
@@ -54,6 +220,7 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
 }) => {
   const [matchState, setMatchState] = useState<'lobby' | 'matching' | 'battling' | 'victory' | 'defeat'>('lobby');
   const [roomCode, setRoomCode] = useState<string>('');
+  const [arenaTheme, setArenaTheme] = useState<ColosseumArenaTheme>(COLOSSEUM_ARENAS[0]);
   const [playerFighter, setPlayerFighter] = useState<BattleFighter | null>(null);
   const [opponentFighter, setOpponentFighter] = useState<BattleFighter | null>(null);
   const [battleLogs, setBattleLogs] = useState<BattleLogEntry[]>([]);
@@ -192,12 +359,18 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
       isPlayer: false,
     };
 
+    const otherArenas = COLOSSEUM_ARENAS.filter((a) => a.id !== arenaTheme.id);
+    const chosenArena =
+      otherArenas[Math.floor(Math.random() * otherArenas.length)] ||
+      COLOSSEUM_ARENAS[Math.floor(Math.random() * COLOSSEUM_ARENAS.length)];
+    setArenaTheme(chosenArena);
+
     setPlayerFighter(player);
     setOpponentFighter(opponent);
     setBattleLogs([
       {
         id: 'start-1',
-        text: `Colosseum Match Started: ${player.name} (${ATTACK_ELEMENT_META[playerEl].label}) vs ${opponent.name} (${ATTACK_ELEMENT_META[oppEl].label})`,
+        text: `Colosseum Match [${chosenArena.name}]: ${player.name} (${ATTACK_ELEMENT_META[playerEl].label}) vs ${opponent.name} (${ATTACK_ELEMENT_META[oppEl].label})`,
         type: 'action',
       },
     ]);
@@ -244,8 +417,11 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
           isSpecial: true,
         });
         const oppSpec = classifyAttackVisual(opponentFighter.signatureMove, oppSpecies);
-        if (oppSpec.motion === 'melee' && !crit.isCrit) sound.playPunch();
-        else sound.playBlast();
+        battleSoundLibrary.playAttackSound({
+          spec: oppSpec,
+          isCrit: crit.isCrit,
+          isSuperEffective: typeMult > 1,
+        });
         triggerHaptic('heavy');
         setOpponentActionAnim(oppSpec.motion === 'melee' ? 'attack_melee' : 'attack_ranged');
         setOpponentEffect(oppSpec.motion === 'melee' ? 'melee_rush' : 'ranged_cast');
@@ -307,8 +483,11 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
           ? getRangedVolleyVisual(oppEl, `${opponentFighter.name} Bolt`)
           : getBasicAttackVisual(oppEl, oppSpecies);
 
-        if (crit.isCrit || atkSpec.motion === 'ranged') sound.playBlast();
-        else sound.playPunch();
+        battleSoundLibrary.playAttackSound({
+          spec: atkSpec,
+          isCrit: crit.isCrit,
+          isSuperEffective: typeMult > 1,
+        });
         triggerHaptic(crit.isCrit ? 'heavy' : 'medium');
         setOpponentActionAnim(atkSpec.motion === 'melee' ? 'attack_melee' : 'attack_ranged');
         setOpponentEffect(atkSpec.motion === 'melee' ? 'melee_rush' : 'ranged_cast');
@@ -396,8 +575,11 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
       isCharged,
     });
     const atkSpec = getBasicAttackVisual(playerFighter.element || 'neutral', species);
-    if (crit.isCrit) sound.playBlast();
-    else sound.playPunch();
+    battleSoundLibrary.playAttackSound({
+      spec: atkSpec,
+      isCrit: crit.isCrit,
+      isSuperEffective: typeMult > 1,
+    });
     triggerHaptic(crit.isCrit ? 'heavy' : 'medium');
     setPlayerActionAnim('attack_melee');
     setPlayerEffect('melee_rush');
@@ -473,8 +655,11 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
       isSpecial: true,
     });
     const moveSpec = classifyAttackVisual(playerFighter.signatureMove, species);
-    if (moveSpec.motion === 'melee' && !crit.isCrit) sound.playPunch();
-    else sound.playBlast();
+    battleSoundLibrary.playAttackSound({
+      spec: moveSpec,
+      isCrit: crit.isCrit,
+      isSuperEffective: typeMult > 1,
+    });
     triggerHaptic('heavy');
     setPlayerActionAnim(moveSpec.motion === 'melee' ? 'attack_melee' : 'attack_ranged');
     setPlayerEffect(moveSpec.motion === 'melee' ? 'melee_rush' : 'ranged_cast');
@@ -548,8 +733,11 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
       isSpecial: true,
     });
     const moveSpec = classifyAttackVisual(move, species);
-    if (crit.isCrit || moveSpec.motion === 'ranged') sound.playBlast();
-    else sound.playPunch();
+    battleSoundLibrary.playAttackSound({
+      spec: moveSpec,
+      isCrit: crit.isCrit,
+      isSuperEffective: typeMult > 1,
+    });
     triggerHaptic('heavy');
     setPlayerActionAnim(moveSpec.motion === 'melee' ? 'attack_melee' : 'attack_ranged');
     setPlayerEffect(moveSpec.motion === 'melee' ? 'melee_rush' : 'ranged_cast');
@@ -838,10 +1026,12 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
           <div className="flex flex-col space-y-3 py-2">
             {/* Arena Battle Stage */}
             <div
-              className={`relative w-full h-56 sm:h-64 bg-gradient-to-b from-indigo-950 via-slate-900 to-slate-950 rounded-2xl border border-slate-700 p-3.5 sm:p-4 flex justify-between items-center overflow-hidden scanlines transition-transform [--battle-dash:125px] sm:[--battle-dash:260px] ${
+              className={`relative w-full h-56 sm:h-64 bg-gradient-to-b ${arenaTheme.skyGradient} rounded-2xl border ${arenaTheme.borderClass} p-3.5 sm:p-4 flex justify-between items-center overflow-hidden scanlines transition-transform [--battle-dash:125px] sm:[--battle-dash:260px] ${
                 arenaShake ? 'battle-arena-shake' : ''
               }`}
             >
+              <ColosseumBackdropArt arena={arenaTheme} />
+
               {screenFlash !== 'none' && (
                 <div
                   className={`absolute inset-0 pointer-events-none z-30 ${
@@ -940,8 +1130,11 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
                 </div>
               </div>
 
-              <div className="hidden sm:flex flex-col items-center opacity-40">
-                <span className="font-chakra font-bold text-xl text-slate-400">VS</span>
+              <div className="hidden sm:flex flex-col items-center opacity-55 z-10">
+                <span className="font-chakra font-bold text-xl text-slate-300">VS</span>
+                <span className="text-[10px] font-chakra uppercase tracking-wider text-slate-300/80">
+                  {arenaTheme.name}
+                </span>
               </div>
 
               {/* Opponent Fighter Side */}

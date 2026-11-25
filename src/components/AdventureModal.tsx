@@ -43,6 +43,7 @@ import {
   PixelVitaminIcon,
 } from './PixelItemIcons';
 import { sound, triggerHaptic } from '../utils/audio';
+import { battleSoundLibrary } from '../utils/battleSoundLibrary';
 import confetti from 'canvas-confetti';
 import {
   AlertTriangle,
@@ -662,8 +663,11 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
           bonusChance: enemyBossCritBonus,
         });
         const oppSpec = classifyAttackVisual(opponentFighter.signatureMove, oppSpecies);
-        if (oppSpec.motion === 'melee' && !crit.isCrit) sound.playPunch();
-        else sound.playBlast();
+        battleSoundLibrary.playAttackSound({
+          spec: oppSpec,
+          isCrit: crit.isCrit,
+          isSuperEffective: typeMult > 1,
+        });
         triggerHaptic('heavy');
         setOpponentActionAnim(oppSpec.motion === 'melee' ? 'attack_melee' : 'attack_ranged');
         setOpponentEffect(oppSpec.motion === 'melee' ? 'melee_rush' : 'ranged_cast');
@@ -725,8 +729,11 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
           ? getRangedVolleyVisual(oppEl, `${opponentFighter.name} Shot`)
           : getBasicAttackVisual(oppEl, oppSpecies);
 
-        if (crit.isCrit || atkSpec.motion === 'ranged') sound.playBlast();
-        else sound.playPunch();
+        battleSoundLibrary.playAttackSound({
+          spec: atkSpec,
+          isCrit: crit.isCrit,
+          isSuperEffective: typeMult > 1,
+        });
         triggerHaptic(crit.isCrit ? 'heavy' : 'medium');
         setOpponentActionAnim(atkSpec.motion === 'melee' ? 'attack_melee' : 'attack_ranged');
         setOpponentEffect(atkSpec.motion === 'melee' ? 'melee_rush' : 'ranged_cast');
@@ -904,8 +911,11 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
       isCharged,
     });
     const atkSpec = getBasicAttackVisual(playerFighter.element || 'neutral', species);
-    if (crit.isCrit) sound.playBlast();
-    else sound.playPunch();
+    battleSoundLibrary.playAttackSound({
+      spec: atkSpec,
+      isCrit: crit.isCrit,
+      isSuperEffective: typeMult > 1,
+    });
     triggerHaptic(crit.isCrit ? 'heavy' : 'medium');
     setPlayerActionAnim('attack_melee');
     setPlayerEffect('melee_rush');
@@ -982,8 +992,11 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
       isSpecial: true,
     });
     const moveSpec = classifyAttackVisual(playerFighter.signatureMove, species);
-    if (moveSpec.motion === 'melee' && !crit.isCrit) sound.playPunch();
-    else sound.playBlast();
+    battleSoundLibrary.playAttackSound({
+      spec: moveSpec,
+      isCrit: crit.isCrit,
+      isSuperEffective: typeMult > 1,
+    });
     triggerHaptic('heavy');
     setPlayerActionAnim(moveSpec.motion === 'melee' ? 'attack_melee' : 'attack_ranged');
     setPlayerEffect(moveSpec.motion === 'melee' ? 'melee_rush' : 'ranged_cast');
@@ -1058,8 +1071,11 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
       isSpecial: true,
     });
     const moveSpec = classifyAttackVisual(move, species);
-    if (crit.isCrit || moveSpec.motion === 'ranged') sound.playBlast();
-    else sound.playPunch();
+    battleSoundLibrary.playAttackSound({
+      spec: moveSpec,
+      isCrit: crit.isCrit,
+      isSuperEffective: typeMult > 1,
+    });
     triggerHaptic('heavy');
     setPlayerActionAnim(moveSpec.motion === 'melee' ? 'attack_melee' : 'attack_ranged');
     setPlayerEffect(moveSpec.motion === 'melee' ? 'melee_rush' : 'ranged_cast');

@@ -1,5 +1,14 @@
 apply plugin: 'com.android.application'
 
+def envKeystorePath = System.getenv('DIGIPET_RELEASE_KEYSTORE')
+def localKeystorePropsFile = rootProject.file('keystore.properties')
+def localKeystoreProps = new Properties()
+if (localKeystorePropsFile.exists()) {
+    localKeystorePropsFile.withInputStream { localKeystoreProps.load(it) }
+}
+def resolvedReleaseStorePath = envKeystorePath ?: localKeystoreProps.getProperty('storeFile')
+def resolvedReleaseStoreFile = resolvedReleaseStorePath ? file(resolvedReleaseStorePath) : null
+
 android {
     namespace = "com.digipet.companion"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -17,19 +26,14 @@ android {
         }
     }
     signingConfigs {
-        debug {
-            storeFile file('digipet-debug.keystore')
-            storeType 'PKCS12'
-            storePassword System.getenv('DIGIPET_KEYSTORE_PASSWORD') ?: 'android'
-            keyAlias System.getenv('DIGIPET_KEY_ALIAS') ?: 'digipet'
-            keyPassword System.getenv('DIGIPET_KEY_PASSWORD') ?: 'android'
-        }
         release {
-            storeFile file(System.getenv('DIGIPET_RELEASE_KEYSTORE') ?: 'digipet-debug.keystore')
-            storeType 'PKCS12'
-            storePassword System.getenv('DIGIPET_KEYSTORE_PASSWORD') ?: 'android'
-            keyAlias System.getenv('DIGIPET_KEY_ALIAS') ?: 'digipet'
-            keyPassword System.getenv('DIGIPET_KEY_PASSWORD') ?: 'android'
+            if (resolvedReleaseStoreFile != null && resolvedReleaseStoreFile.exists()) {
+                storeFile resolvedReleaseStoreFile
+                storeType System.getenv('DIGIPET_KEYSTORE_TYPE') ?: localKeystoreProps.getProperty('storeType', 'PKCS12')
+                storePassword System.getenv('DIGIPET_KEYSTORE_PASSWORD') ?: localKeystoreProps.getProperty('storePassword')
+                keyAlias System.getenv('DIGIPET_KEY_ALIAS') ?: localKeystoreProps.getProperty('keyAlias')
+                keyPassword System.getenv('DIGIPET_KEY_PASSWORD') ?: localKeystoreProps.getProperty('keyPassword')
+            }
         }
     }
     compileOptions {
@@ -38,10 +42,12 @@ android {
     }
     buildTypes {
         debug {
-            signingConfig signingConfigs.debug
+            // Uses standard local Android debug keystore (~/.android/debug.keystore)
         }
         release {
-            signingConfig signingConfigs.release
+            if (signingConfigs.release.storeFile != null) {
+                signingConfig signingConfigs.release
+            }
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }

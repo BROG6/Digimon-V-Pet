@@ -27,6 +27,8 @@ import {
   DEFAULT_APP_INFO,
   getLocalAppInfo, 
   checkForUpdate, 
+  canRequestPackageInstalls,
+  openInstallPermissionSettings,
   downloadAndInstallApk, 
   reloadLiveAssets, 
   openExternalUrl,
@@ -87,6 +89,8 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
   const [backupCode, setBackupCode] = useState<string>('');
   const [restoreInput, setRestoreInput] = useState<string>('');
   const [backupStatusMsg, setBackupStatusMsg] = useState<string | null>(null);
+  const [hasInstallPerm, setHasInstallPerm] = useState<boolean>(true);
+  const [needsInstallPermPrompt, setNeedsInstallPermPrompt] = useState<boolean>(false);
 
   // Load app info and check install permission on mount / open
   useEffect(() => {
@@ -100,6 +104,10 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
     }
 
     getLocalAppInfo().then((info) => setAppInfo(info));
+    canRequestPackageInstalls().then((granted) => {
+      setHasInstallPerm(granted);
+      if (granted) setNeedsInstallPermPrompt(false);
+    });
     setAutoCheck(getAutoCheckEnabled());
     setCustomManifestUrl(getCustomUpdateUrl());
     setCustomApkUrlState(getCustomApkUrl());
@@ -109,6 +117,23 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
 
     // Perform fresh check if opened
     handleCheckUpdates(false);
+  }, [isOpen]);
+
+  // Re-check install permission when returning from Android Settings
+  useEffect(() => {
+    if (!isOpen || !Capacitor.isNativePlatform()) return;
+    const refreshPerm = () => {
+      canRequestPackageInstalls().then((granted) => {
+        setHasInstallPerm(granted);
+        if (granted) setNeedsInstallPermPrompt(false);
+      });
+    };
+    window.addEventListener('focus', refreshPerm);
+    document.addEventListener('visibilitychange', refreshPerm);
+    return () => {
+      window.removeEventListener('focus', refreshPerm);
+      document.removeEventListener('visibilitychange', refreshPerm);
+    };
   }, [isOpen]);
 
   const handleCheckUpdates = async (playSfx: boolean = true, forceGitHub: boolean = false) => {
@@ -161,11 +186,16 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
     sound.playButton();
     setErrorMsg(null);
     setSuccessMsg(null);
+    setNeedsInstallPermPrompt(false);
 
     const directUrl = typeof directUrlOverride === 'string' ? directUrlOverride : undefined;
 
     setIsDownloading(true);
-    setDownloadStep('Opening trusted release download...');
+    setDownloadStep(
+      Capacitor.isNativePlatform()
+        ? 'Downloading APK via Android Download Manager (see status bar)...'
+        : 'Opening release download...'
+    );
 
     try {
       const targetApk = directUrl || customApkUrlState || manifest?.apkDownloadUrl || '/api/download-apk';
@@ -175,11 +205,22 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
       const fileName = manifest?.apkFileName || `digipet-v${manifest?.versionName || '1.2.4'}.apk`;
       const res = await downloadAndInstallApk(targetApk, fileName);
 
-      if (res.success) {
-        setSuccessMsg('Download opened in your browser! Tap the finished APK notification to install the update.');
+      if (res.needsInstallPermission) {
+        setHasInstallPerm(false);
+        setNeedsInstallPermPrompt(true);
+        setErrorMsg(
+          res.message ||
+            'Allow "Install unknown apps" for DigiPet in Android Settings, then tap Download & Install again.'
+        );
+      } else if (res.success) {
+        setSuccessMsg(
+          res.usedDownloadManager
+            ? 'APK verified & Android package installer launched! Tap Update/Install to finish.'
+            : 'Download opened in your browser! Tap the finished APK notification to install the update.'
+        );
         onUpdateDownloaded?.();
       } else {
-        setErrorMsg(res.message || 'Could not open APK download URL in browser. Please check the APK URL.');
+        setErrorMsg(res.message || 'Could not download APK update. Please try Open in Browser.');
       }
     } catch (err: any) {
       setErrorMsg(err.message || 'Download failed');
@@ -504,6 +545,19 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
 
               {/* Action buttons on error */}
               <div className="flex flex-wrap items-center gap-2 pt-0.5">
+                {Capacitor.isNativePlatform() && (!hasInstallPerm || needsInstallPermPrompt) && (
+                  <button
+                    onClick={async () => {
+                      sound.playButton();
+                      await openInstallPermissionSettings();
+                    }}
+                    className="py-1.5 px-3 bg-amber-500 hover:bg-amber-400 text-slate-950 font-pixel text-[10px] font-bold rounded-xl flex items-center gap-1.5 cursor-pointer active:scale-95"
+                  >
+                    <ShieldCheck className="w-3.5 h-3.5" />
+                    <span>ALLOW IN-APP INSTALLS</span>
+                  </button>
+                )}
+
                 <button
                   onClick={handleOpenInBrowser}
                   className="py-1.5 px-3 bg-rose-900/80 hover:bg-rose-800 text-rose-100 border border-rose-500/50 font-pixel text-[10px] font-bold rounded-xl flex items-center gap-1.5 cursor-pointer active:scale-95"
@@ -605,6 +659,23 @@ export const AppUpdateModal: React.FC<AppUpdateModalProps> = ({
 
           {/* PRIMARY ACTIONS */}
           <div className="space-y-2 pt-1">
+            {isNative && !hasInstallPerm && (
+              <div className="p-3 rounded-2xl bg-amber-950/50 border border-amber-500/50 flex items-center justify-between gap-2.5">
+                <div className="text-[11px] text-amber-200 leading-tight">
+                  <strong>One-time setup:</strong> Allow <em>Install unknown apps</em> for direct in-app APK updates.
+                </div>
+                <button
+                  onClick={async () => {
+                    sound.playButton();
+                    await openInstallPermissionSettings();
+                  }}
+                  className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-pixel text-[9px] font-bold rounded-xl shrink-0 cursor-pointer active:scale-95"
+                >
+                  ALLOW
+                </button>
+              </div>
+            )}
+
             {isUpdateAvailable ? (
               <button
                 onClick={handleStartDownload}

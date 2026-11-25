@@ -1302,6 +1302,99 @@ export function calculateTrainingOutcome(
   };
 }
 
+export const MAX_PENDULUM_SHAKES = 25;
+export const PENDULUM_DURATION_MS = 4000;
+
+export interface PendulumTrainingOutcome {
+  statKey: TrainingStatKey;
+  statLabel: string;
+  clampedShakes: number;
+  maxShakes: number;
+  nextStats: BattleStats;
+  deltas: BattleStats;
+}
+
+const PENDULUM_STAT_LABELS: Record<TrainingStatKey, string> = {
+  hp: 'HP',
+  mp: 'MP',
+  offense: 'Offense',
+  defense: 'Defense',
+  speed: 'Speed',
+  brains: 'Brains',
+};
+
+const PENDULUM_STAT_KEYS: TrainingStatKey[] = [
+  'hp',
+  'mp',
+  'offense',
+  'defense',
+  'speed',
+  'brains',
+];
+
+export function calculatePendulumTrainingOutcome(
+  pet: PetState,
+  species: DigimonSpecies | undefined,
+  shakeCount: number,
+  forcedStatKey?: TrainingStatKey
+): PendulumTrainingOutcome {
+  const clampedShakes = Math.max(0, Math.min(MAX_PENDULUM_SHAKES, Math.floor(shakeCount)));
+  const statKey =
+    forcedStatKey ??
+    PENDULUM_STAT_KEYS[Math.floor(Math.random() * PENDULUM_STAT_KEYS.length)];
+
+  // Strictly modest, hard-capped gains per session (single random stat only, no stage inflation)
+  let hpGain = 4;
+  let mpGain = 2;
+  let coreGain = 1;
+
+  if (clampedShakes >= 22) {
+    hpGain = 20;
+    mpGain = 11;
+    coreGain = 5;
+  } else if (clampedShakes >= 16) {
+    hpGain = 16;
+    mpGain = 9;
+    coreGain = 4;
+  } else if (clampedShakes >= 10) {
+    hpGain = 12;
+    mpGain = 6;
+    coreGain = 3;
+  } else if (clampedShakes >= 4) {
+    hpGain = 8;
+    mpGain = 4;
+    coreGain = 2;
+  }
+
+  const deltas: BattleStats = {
+    maxHp: statKey === 'hp' ? hpGain : 0,
+    maxMp: statKey === 'mp' ? mpGain : 0,
+    offense: statKey === 'offense' ? coreGain : 0,
+    defense: statKey === 'defense' ? coreGain : 0,
+    speed: statKey === 'speed' ? coreGain : 0,
+    brains: statKey === 'brains' ? coreGain : 0,
+  };
+
+  const current = getEffectiveBattleStats(pet, species);
+  const nextStats: BattleStats = {
+    maxHp: current.maxHp + deltas.maxHp,
+    maxMp: current.maxMp + deltas.maxMp,
+    offense: current.offense + deltas.offense,
+    defense: current.defense + deltas.defense,
+    speed: current.speed + deltas.speed,
+    brains: current.brains + deltas.brains,
+  };
+
+  return {
+    statKey,
+    statLabel: PENDULUM_STAT_LABELS[statKey],
+    clampedShakes,
+    maxShakes: MAX_PENDULUM_SHAKES,
+    nextStats,
+    deltas,
+  };
+}
+
 export const CRIT_DAMAGE_MULTIPLIER = 1.75;
 
 export interface CriticalHitRoll {

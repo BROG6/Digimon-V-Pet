@@ -17,7 +17,6 @@ import {
   Moon, 
   Sun, 
   Activity, 
-  Palette,
   Home,
   ShoppingBag,
   ExternalLink,
@@ -478,31 +477,21 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
     <div ref={containerRef} className="w-full flex flex-col items-center justify-center py-1 sm:py-2 px-0 select-none">
       
       {/* AUTHENTIC DIGIVICE TOY COLORWAYS SELECTOR */}
-      <div className="flex flex-col items-center mb-3 px-2">
-        <div className="flex items-center gap-1.5 px-3 py-1 bg-slate-900/90 rounded-full border border-slate-700/80 shadow-md">
-          <Palette className="w-3.5 h-3.5 text-amber-400" />
-          <span className="font-pixel text-[9px] text-slate-300">
-            SHELL: <span className="text-white font-bold">{currentShell.name}</span>
-          </span>
-        </div>
-        
-        {/* Color Swatch Dots */}
-        <div className="flex items-center gap-2 mt-2">
-          {SHELL_STYLES.map((shell, idx) => (
-            <button
-              key={shell.id}
-              onClick={() => {
-                sound.playButton();
-                setShellIndex(idx);
-              }}
-              title={shell.name}
-              style={{ backgroundColor: shell.colorHex }}
-              className={`w-4 h-4 rounded-full border-2 transition-transform cursor-pointer shadow-sm ${
-                shellIndex === idx ? 'scale-125 border-white ring-2 ring-amber-400' : 'border-black/50 opacity-75 hover:opacity-100 hover:scale-110'
-              }`}
-            />
-          ))}
-        </div>
+      <div className="flex items-center justify-center gap-2 mt-1 mb-2.5 px-2">
+        {SHELL_STYLES.map((shell, idx) => (
+          <button
+            key={shell.id}
+            onClick={() => {
+              sound.playButton();
+              setShellIndex(idx);
+            }}
+            title={shell.name}
+            style={{ backgroundColor: shell.colorHex }}
+            className={`w-4 h-4 rounded-full border-2 transition-transform cursor-pointer shadow-sm ${
+              shellIndex === idx ? 'scale-125 border-white ring-2 ring-amber-400' : 'border-black/50 opacity-75 hover:opacity-100 hover:scale-110'
+            }`}
+          />
+        ))}
       </div>
 
       {/* QUICK STATUS BAR: DIGIBITS & EVOLUTION BADGE (OUTSIDE THE TOY CASING) */}

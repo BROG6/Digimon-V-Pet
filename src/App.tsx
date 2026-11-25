@@ -19,6 +19,7 @@ import {
   getEquippedBattleMoves,
   getLearnedTechniqueIds,
   MAX_EQUIPPED_ATTACKS,
+  PendulumTrainingOutcome,
 } from './data/battleTechniques';
 import { DigiviceHUD } from './components/DigiviceHUD';
 import { PixelMeatIcon, PixelVitaminIcon, PixelPoopIcon } from './components/PixelItemIcons';
@@ -1360,6 +1361,38 @@ export default function App() {
     } else {
       showNotification(`Gym Session Complete: ${statGainSummary} (+${success ? 2 : 1} Effort)`);
     }
+  };
+
+  const handlePendulumTrainingComplete = (outcome: PendulumTrainingOutcome) => {
+    setPet((prev) => {
+      const now = Date.now();
+      const nextEnergy = Math.max(0, prev.energy - TRAINING_ENERGY_COST);
+      return {
+        ...prev,
+        trainingCount: prev.trainingCount + 1,
+        stageTrainingCount: (prev.stageTrainingCount ?? 0) + 1,
+        effort: Math.min(10, (prev.effort ?? 0) + 1),
+        strength: prev.strength + 4,
+        dpPoints: prev.dpPoints + 8,
+        energy: nextEnergy,
+        lastEnergyRegenAt: prev.energy >= 100 ? now : (prev.lastEnergyRegenAt ?? now),
+        weight: Math.max(10, prev.weight - 1),
+        happiness: Math.min(100, prev.happiness + 8),
+        digiBits: prev.digiBits + 12,
+        battleStats: outcome.nextStats,
+      };
+    });
+
+    const gainAmount =
+      outcome.deltas.maxHp ||
+      outcome.deltas.maxMp ||
+      outcome.deltas.offense ||
+      outcome.deltas.defense ||
+      outcome.deltas.speed ||
+      outcome.deltas.brains;
+    showNotification(
+      `Pendulum Complete (${outcome.clampedShakes}/${outcome.maxShakes} shakes): +${gainAmount} ${outcome.statLabel}!`
+    );
   };
 
   const handleToggleEquipAttack = (moveId: string) => {
@@ -2949,6 +2982,7 @@ export default function App() {
         isOpen={isTrainingOpen}
         onClose={() => setIsTrainingOpen(false)}
         onTrainingComplete={handleTrainingComplete}
+        onPendulumTrainingComplete={handlePendulumTrainingComplete}
         onToggleEquipAttack={handleToggleEquipAttack}
         onOpenFoodGame={() => setIsFoodGameOpen(true)}
       />

@@ -5,6 +5,10 @@ import {
   ATTACK_ELEMENT_META,
   GYM_STATIONS,
   MAX_EQUIPPED_ATTACKS,
+  MAX_PENDULUM_SHAKES,
+  PENDULUM_DURATION_MS,
+  PendulumTrainingOutcome,
+  calculatePendulumTrainingOutcome,
   getEffectiveBattleStats,
   getEquippedBattleMoves,
   getLearnedTechniqueIds,
@@ -25,8 +29,8 @@ import {
   PixelImpactSparks,
   PixelWaterfallBackdrop,
 } from './PixelGymProps';
-import { sound } from '../utils/audio';
-import { Dumbbell, X, Flame, Check, Lock, Swords } from 'lucide-react';
+import { sound, triggerHaptic } from '../utils/audio';
+import { Dumbbell, X, Flame, Check, Lock, Swords, Activity, Smartphone, Sparkles } from 'lucide-react';
 
 interface GymStationVisualProps {
   statKey: TrainingStatKey;
@@ -418,6 +422,7 @@ interface TrainingArenaProps {
   isOpen: boolean;
   onClose: () => void;
   onTrainingComplete: (success: boolean, statKey: TrainingStatKey, hits: number) => void;
+  onPendulumTrainingComplete?: (outcome: PendulumTrainingOutcome) => void;
   onToggleEquipAttack?: (moveId: string) => void;
   onOpenFoodGame: () => void;
 }
@@ -428,10 +433,11 @@ export const TrainingArena: React.FC<TrainingArenaProps> = ({
   isOpen,
   onClose,
   onTrainingComplete,
+  onPendulumTrainingComplete,
   onToggleEquipAttack,
   onOpenFoodGame,
 }) => {
-  const [activeTab, setActiveTab] = useState<'menu' | 'punch' | 'moves'>('menu');
+  const [activeTab, setActiveTab] = useState<'menu' | 'punch' | 'pendulum' | 'moves'>('menu');
   const [selectedStat, setSelectedStat] = useState<TrainingStatKey>('offense');
   const [meterVal, setMeterVal] = useState<number>(0);
   const [round, setRound] = useState<number>(1);
@@ -445,9 +451,33 @@ export const TrainingArena: React.FC<TrainingArenaProps> = ({
   const meterLoopRef = useRef<number | null>(null);
   const timersRef = useRef<number[]>([]);
 
+  // Pendulum Shake Training State
+  const [pendulumPhase, setPendulumPhase] = useState<'ready' | 'shaking' | 'result'>('ready');
+  const [pendulumShakes, setPendulumShakes] = useState<number>(0);
+  const [pendulumTimeLeftMs, setPendulumTimeLeftMs] = useState<number>(PENDULUM_DURATION_MS);
+  const [pendulumResult, setPendulumResult] = useState<PendulumTrainingOutcome | null>(null);
+  const [pendulumSwingNonce, setPendulumSwingNonce] = useState<number>(0);
+  const pendulumShakesRef = useRef<number>(0);
+  const pendulumFinishedRef = useRef<boolean>(false);
+  const pendulumStartRef = useRef<number>(0);
+  const pendulumRafRef = useRef<number | null>(null);
+  const lastAccelRef = useRef<{ x: number; y: number; z: number } | null>(null);
+  const lastMotionAtRef = useRef<number>(0);
+
+  const petRef = useRef(pet);
+  petRef.current = pet;
+  const speciesRef = useRef(species);
+  speciesRef.current = species;
+  const onPendulumCompleteRef = useRef(onPendulumTrainingComplete);
+  onPendulumCompleteRef.current = onPendulumTrainingComplete;
+
   const clearTrainingTimers = () => {
     timersRef.current.forEach((t) => window.clearTimeout(t));
     timersRef.current = [];
+    if (pendulumRafRef.current) {
+      cancelAnimationFrame(pendulumRafRef.current);
+      pendulumRafRef.current = null;
+    }
   };
 
   useEffect(() => {
@@ -457,6 +487,14 @@ export const TrainingArena: React.FC<TrainingArenaProps> = ({
   useEffect(() => {
     if (isOpen) {
       setActiveTab('menu');
+      setPendulumPhase('ready');
+      setPendulumShakes(0);
+      setPendulumTimeLeftMs(PENDULUM_DURATION_MS);
+      setPendulumResult(null);
+      pendulumShakesRef.current = 0;
+      pendulumFinishedRef.current = false;
+    } else {
+      clearTrainingTimers();
     }
   }, [isOpen]);
 
@@ -559,6 +597,130 @@ export const TrainingArena: React.FC<TrainingArenaProps> = ({
     timersRef.current.push(tRound);
   };
 
+  const registerPendulumShake = () => {
+    if (pendulumFinishedRef.current) return;
+    if (pendulumShakesRef.current >= MAX_PENDULUM_SHAKES) {
+      setPendulumSwingNonce((n) => n + 1);
+      return;
+    }
+    const next = pendulumShakesRef.current + 1;
+    pendulumShakesRef.current = next;
+    setPendulumShakes(next);
+    setPendulumSwingNonce((n) => n + 1);
+    if (next === MAX_PENDULUM_SHAKES) {
+      sound.playBlast();
+      triggerHaptic('medium');
+    } else {
+      sound.playButton();
+      triggerHaptic('light');
+    }
+  };
+
+  const handleStartPendulum = async () => {
+    if (petRef.current.energy < TRAINING_ENERGY_COST) {
+      sound.playAlert();
+      return;
+    }
+
+    // Request iOS 13+ DeviceMotion permission inside direct tap gesture when required
+    try {
+      const motionCtor = window.DeviceMotionEvent as unknown as {
+        requestPermission?: () => Promise<'granted' | 'denied'>;
+      } | undefined;
+      if (motionCtor && typeof motionCtor.requestPermission === 'function') {
+        await motionCtor.requestPermission();
+      }
+    } catch {
+      // Fall back smoothly to manual SHAKE button / Spacebar
+    }
+
+    sound.playButton();
+    pendulumShakesRef.current = 0;
+    pendulumFinishedRef.current = false;
+    pendulumStartRef.current = performance.now();
+    lastAccelRef.current = null;
+    lastMotionAtRef.current = 0;
+    setPendulumShakes(0);
+    setPendulumTimeLeftMs(PENDULUM_DURATION_MS);
+    setPendulumResult(null);
+    setPendulumSwingNonce(0);
+    setPendulumPhase('shaking');
+  };
+
+  // Active Pendulum countdown + DeviceMotion + Spacebar listeners
+  useEffect(() => {
+    if (!isOpen || activeTab !== 'pendulum' || pendulumPhase !== 'shaking') return;
+
+    const finishSession = () => {
+      if (pendulumFinishedRef.current) return;
+      pendulumFinishedRef.current = true;
+      if (pendulumRafRef.current) {
+        cancelAnimationFrame(pendulumRafRef.current);
+        pendulumRafRef.current = null;
+      }
+      const outcome = calculatePendulumTrainingOutcome(
+        petRef.current,
+        speciesRef.current,
+        pendulumShakesRef.current
+      );
+      sound.playVictory();
+      triggerHaptic('success');
+      setPendulumTimeLeftMs(0);
+      setPendulumResult(outcome);
+      setPendulumPhase('result');
+      onPendulumCompleteRef.current?.(outcome);
+    };
+
+    const tick = (now: number) => {
+      const elapsed = now - pendulumStartRef.current;
+      const remaining = Math.max(0, PENDULUM_DURATION_MS - elapsed);
+      setPendulumTimeLeftMs(remaining);
+      if (remaining <= 0) {
+        finishSession();
+        return;
+      }
+      pendulumRafRef.current = requestAnimationFrame(tick);
+    };
+    pendulumRafRef.current = requestAnimationFrame(tick);
+
+    const handleDeviceMotion = (event: DeviceMotionEvent) => {
+      const acc = event.accelerationIncludingGravity || event.acceleration;
+      if (!acc) return;
+      const x = acc.x ?? 0;
+      const y = acc.y ?? 0;
+      const z = acc.z ?? 0;
+      const prev = lastAccelRef.current;
+      lastAccelRef.current = { x, y, z };
+      if (!prev) return;
+
+      const delta = Math.abs(x - prev.x) + Math.abs(y - prev.y) + Math.abs(z - prev.z);
+      const now = performance.now();
+      if (delta >= 14 && now - lastMotionAtRef.current >= 115) {
+        lastMotionAtRef.current = now;
+        registerPendulumShake();
+      }
+    };
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.code === 'Space' && !event.repeat) {
+        event.preventDefault();
+        registerPendulumShake();
+      }
+    };
+
+    window.addEventListener('devicemotion', handleDeviceMotion);
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      if (pendulumRafRef.current) {
+        cancelAnimationFrame(pendulumRafRef.current);
+        pendulumRafRef.current = null;
+      }
+      window.removeEventListener('devicemotion', handleDeviceMotion);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isOpen, activeTab, pendulumPhase]);
+
   if (!isOpen) return null;
 
   const stats = getEffectiveBattleStats(pet, species);
@@ -626,35 +788,52 @@ export const TrainingArena: React.FC<TrainingArenaProps> = ({
           </div>
         </div>
 
-        {/* Sub-navigation Tabs (Stations vs Technique Loadout) */}
-        {activeTab !== 'punch' && (
+        {/* Sub-navigation Tabs (Stations vs Pendulum Shake vs Technique Loadout) */}
+        {activeTab !== 'punch' && !(activeTab === 'pendulum' && pendulumPhase === 'shaking') && (
           <div className="flex items-center gap-1.5 p-1 bg-slate-950/90 border border-slate-800 rounded-xl mb-3">
             <button
               onClick={() => {
                 sound.playButton();
                 setActiveTab('menu');
               }}
-              className={`flex-1 min-h-[40px] rounded-lg font-chakra text-xs font-bold transition-colors cursor-pointer whitespace-nowrap ${
+              className={`flex-1 min-h-[40px] rounded-lg font-chakra text-xs font-bold transition-colors cursor-pointer whitespace-nowrap px-2 ${
                 activeTab === 'menu'
                   ? 'bg-cyan-400 text-slate-950'
                   : 'text-slate-300 hover:bg-slate-800'
               }`}
             >
-              6 Gym Stations
+              Gym Stations
+            </button>
+            <button
+              onClick={() => {
+                sound.playButton();
+                setPendulumPhase('ready');
+                setPendulumShakes(0);
+                setPendulumResult(null);
+                setActiveTab('pendulum');
+              }}
+              className={`flex-1 min-h-[40px] rounded-lg font-chakra text-xs font-bold transition-colors cursor-pointer whitespace-nowrap flex items-center justify-center gap-1 px-2 ${
+                activeTab === 'pendulum'
+                  ? 'bg-emerald-400 text-slate-950'
+                  : 'text-slate-300 hover:bg-slate-800'
+              }`}
+            >
+              <Activity className="w-3.5 h-3.5" />
+              <span>Pendulum</span>
             </button>
             <button
               onClick={() => {
                 sound.playButton();
                 setActiveTab('moves');
               }}
-              className={`flex-1 min-h-[40px] rounded-lg font-chakra text-xs font-bold transition-colors cursor-pointer whitespace-nowrap flex items-center justify-center gap-1.5 ${
+              className={`flex-1 min-h-[40px] rounded-lg font-chakra text-xs font-bold transition-colors cursor-pointer whitespace-nowrap flex items-center justify-center gap-1 px-2 ${
                 activeTab === 'moves'
                   ? 'bg-amber-400 text-slate-950'
                   : 'text-slate-300 hover:bg-slate-800'
               }`}
             >
               <Swords className="w-3.5 h-3.5" />
-              <span>Attack Loadout ({equippedMoves.length}/{MAX_EQUIPPED_ATTACKS})</span>
+              <span>Loadout ({equippedMoves.length}/{MAX_EQUIPPED_ATTACKS})</span>
             </button>
           </div>
         )}
@@ -748,6 +927,241 @@ export const TrainingArena: React.FC<TrainingArenaProps> = ({
             </button>
           </div>
         )}
+
+        {/* VIEW 1B: DIGIVICE PENDULUM SHAKE TRAINING */}
+        {activeTab === 'pendulum' && (() => {
+          const isMaxCap = pendulumShakes >= MAX_PENDULUM_SHAKES;
+          const shakeRatio = Math.min(100, Math.round((pendulumShakes / MAX_PENDULUM_SHAKES) * 100));
+          const timeRatio = Math.max(0, Math.min(100, Math.round((pendulumTimeLeftMs / PENDULUM_DURATION_MS) * 100)));
+          const swingAngle =
+            pendulumPhase === 'shaking'
+              ? pendulumSwingNonce === 0
+                ? 0
+                : pendulumSwingNonce % 2 === 1
+                ? -28
+                : 28
+              : 0;
+          const rolledGain = pendulumResult
+            ? pendulumResult.deltas.maxHp ||
+              pendulumResult.deltas.maxMp ||
+              pendulumResult.deltas.offense ||
+              pendulumResult.deltas.defense ||
+              pendulumResult.deltas.speed ||
+              pendulumResult.deltas.brains
+            : 0;
+
+          return (
+            <div className="space-y-3">
+              {/* Energy Strip */}
+              <div
+                className={`px-3 py-2 rounded-xl border flex items-center justify-between gap-2 text-xs font-chakra ${
+                  hasEnoughEnergy
+                    ? 'bg-slate-950/85 border-emerald-500/35 text-emerald-200'
+                    : 'bg-rose-950/55 border-rose-500/50 text-rose-200'
+                }`}
+              >
+                <span className="font-semibold">
+                  {hasEnoughEnergy
+                    ? `⚡ Energy: ${pet.energy}/100 · -${TRAINING_ENERGY_COST} Energy per Pendulum count`
+                    : `⚡ Low Energy (${pet.energy}/100) — Need ${TRAINING_ENERGY_COST} Energy!`}
+                </span>
+                <span className="text-[11px] opacity-85 shrink-0 tabular-nums">
+                  Cap: {MAX_PENDULUM_SHAKES} Shakes
+                </span>
+              </div>
+
+              {/* Pendulum Visual Stage */}
+              <div
+                className="relative w-full h-56 rounded-2xl border-2 border-emerald-500/45 overflow-hidden flex flex-col items-center justify-between p-3 select-none shadow-inner"
+                style={{
+                  background: 'linear-gradient(180deg, #0b1b1c 0%, #102a27 58%, #16382b 100%)',
+                }}
+              >
+                {/* Top HUD Row */}
+                <div className="w-full flex items-center justify-between z-20">
+                  <span className="px-2.5 py-1 rounded-lg bg-slate-950/85 border border-emerald-500/40 font-pixel text-[9px] text-emerald-300 tabular-nums">
+                    SHAKES: {pendulumShakes}/{MAX_PENDULUM_SHAKES}
+                  </span>
+                  {isMaxCap ? (
+                    <span className="px-2.5 py-1 rounded-lg bg-amber-400 text-slate-950 border border-amber-200 font-pixel text-[9px] font-bold shadow">
+                      MAX CAP REACHED!
+                    </span>
+                  ) : (
+                    <span className="px-2.5 py-1 rounded-lg bg-slate-950/85 border border-slate-700 font-pixel text-[9px] text-cyan-200 tabular-nums">
+                      {(pendulumTimeLeftMs / 1000).toFixed(1)}s
+                    </span>
+                  )}
+                </div>
+
+                {/* Swinging Pendulum Arm + Digimon Sprite */}
+                <div className="relative flex-1 w-full flex items-center justify-center">
+                  {/* Pendulum Pivot & Weight */}
+                  <div className="absolute top-0 right-6 flex flex-col items-center pointer-events-none">
+                    <div className="w-2.5 h-2.5 rounded-full bg-slate-300 border border-slate-600 shadow" />
+                    <motion.div
+                      animate={{ rotate: swingAngle }}
+                      transition={{ type: 'spring', stiffness: 360, damping: 16 }}
+                      style={{ transformOrigin: 'top center' }}
+                      className="flex flex-col items-center"
+                    >
+                      <div className="w-1 h-20 bg-gradient-to-b from-slate-300 to-slate-500" />
+                      <div
+                        className={`w-7 h-7 rounded-full border-2 shadow-lg flex items-center justify-center ${
+                          isMaxCap
+                            ? 'bg-amber-400 border-amber-200 shadow-amber-400/50'
+                            : 'bg-cyan-400 border-cyan-200 shadow-cyan-400/40'
+                        }`}
+                      >
+                        <div className="w-2.5 h-2.5 rounded-full bg-white/75" />
+                      </div>
+                    </motion.div>
+                  </div>
+
+                  {/* Digimon Reacting to Shakes */}
+                  <motion.div
+                    key={`pendulum-mon-${pendulumSwingNonce}`}
+                    animate={
+                      pendulumPhase === 'shaking' && pendulumSwingNonce > 0
+                        ? { y: [-8, 0], scale: [1.06, 1] }
+                        : { y: 0, scale: 1 }
+                    }
+                    transition={{ duration: 0.16 }}
+                    className="relative flex flex-col items-center z-10"
+                  >
+                    <DigimonSprite
+                      species={species}
+                      action={
+                        pendulumPhase === 'result'
+                          ? 'happy'
+                          : pendulumPhase === 'shaking'
+                          ? 'attack'
+                          : 'idle'
+                      }
+                      facing="right"
+                      scale={1.08}
+                    />
+                    <div className="w-14 h-2.5 -mt-1.5 rounded-full bg-black/45 blur-[1px]" />
+                  </motion.div>
+                </div>
+
+                {/* Bottom Result Banner OR Shake Meter */}
+                {pendulumPhase === 'result' && pendulumResult ? (
+                  <motion.div
+                    initial={{ opacity: 0, y: 8, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    className="w-full px-3 py-2 rounded-xl bg-slate-950/90 border border-amber-400/60 flex items-center justify-between gap-2 z-20"
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <Sparkles className="w-4 h-4 text-amber-300 shrink-0" />
+                      <span className="font-chakra text-xs text-slate-200 truncate">
+                        Rolled <strong className="text-amber-300">{pendulumResult.statLabel}</strong> ({pendulumResult.clampedShakes}/{pendulumResult.maxShakes} shakes)
+                      </span>
+                    </div>
+                    <span className="font-pixel text-[11px] text-emerald-300 font-bold shrink-0">
+                      +{rolledGain} {pendulumResult.statLabel.toUpperCase()}
+                    </span>
+                  </motion.div>
+                ) : (
+                  <div className="w-full space-y-1.5 z-20">
+                    <div className="w-full h-2.5 bg-slate-950/90 rounded-full overflow-hidden border border-emerald-500/40">
+                      <div
+                        className={`h-full transition-all duration-100 ${
+                          isMaxCap
+                            ? 'bg-gradient-to-r from-amber-400 to-yellow-300'
+                            : 'bg-gradient-to-r from-emerald-400 to-cyan-400'
+                        }`}
+                        style={{ width: `${shakeRatio}%` }}
+                      />
+                    </div>
+                    {pendulumPhase === 'shaking' && (
+                      <div className="w-full h-1.5 bg-slate-950/90 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-cyan-400 transition-none"
+                          style={{ width: `${timeRatio}%` }}
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Pendulum Info & Controls */}
+              {pendulumPhase === 'ready' && (
+                <div className="space-y-3">
+                  <div className="p-3 rounded-2xl bg-slate-950/80 border border-slate-800 text-xs font-chakra text-slate-300 space-y-1">
+                    <div className="flex items-center gap-1.5 text-emerald-300 font-bold">
+                      <Smartphone className="w-4 h-4 shrink-0" />
+                      <span>1998 Digimon Pendulum Shake Counter</span>
+                    </div>
+                    <p className="text-slate-400 leading-relaxed">
+                      Shake your phone (or tap <strong className="text-white">SHAKE!</strong> / press <strong className="text-white">Space</strong>) for 4 seconds. Boosts 1 random stat by a modest capped amount (max +{20} HP / +{11} MP / +{5} core stat at {MAX_PENDULUM_SHAKES} shakes).
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    disabled={!hasEnoughEnergy}
+                    onClick={handleStartPendulum}
+                    className="w-full min-h-[48px] bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 disabled:opacity-45 disabled:cursor-not-allowed text-slate-950 font-chakra text-base py-3 rounded-2xl font-bold shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <Activity className="w-5 h-5" />
+                    <span>
+                      {hasEnoughEnergy
+                        ? `Start Pendulum Count (-${TRAINING_ENERGY_COST}⚡)`
+                        : 'Rest Needed'}
+                    </span>
+                  </button>
+                </div>
+              )}
+
+              {pendulumPhase === 'shaking' && (
+                <div className="space-y-2">
+                  <motion.button
+                    type="button"
+                    whileTap={{ scale: 0.94 }}
+                    onClick={registerPendulumShake}
+                    className="w-full min-h-[58px] bg-gradient-to-r from-amber-400 via-orange-400 to-rose-400 hover:brightness-105 text-slate-950 font-chakra text-lg py-3.5 rounded-2xl font-extrabold shadow-lg shadow-amber-500/25 flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <Activity className="w-5 h-5" />
+                    <span>{isMaxCap ? 'MAX CAP REACHED (25/25)' : 'SHAKE PENDULUM!'}</span>
+                  </motion.button>
+                  <p className="text-center text-[11px] font-chakra text-slate-400">
+                    Motion sensor active on mobile · Tap button or press Spacebar anytime
+                  </p>
+                </div>
+              )}
+
+              {pendulumPhase === 'result' && (
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      sound.playButton();
+                      setPendulumPhase('ready');
+                      setActiveTab('menu');
+                    }}
+                    className="min-h-[48px] px-4 rounded-2xl bg-slate-800 hover:bg-slate-700 text-slate-200 font-chakra text-sm font-semibold cursor-pointer"
+                  >
+                    Back to Gym
+                  </button>
+                  <button
+                    type="button"
+                    disabled={!hasEnoughEnergy}
+                    onClick={handleStartPendulum}
+                    className="flex-1 min-h-[48px] bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 disabled:opacity-45 disabled:cursor-not-allowed text-slate-950 font-chakra text-sm py-3 rounded-2xl font-bold flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <Activity className="w-4 h-4" />
+                    <span>
+                      {hasEnoughEnergy
+                        ? `Shake Again (-${TRAINING_ENERGY_COST}⚡)`
+                        : 'Low Energy'}
+                    </span>
+                  </button>
+                </div>
+              )}
+            </div>
+          );
+        })()}
 
         {/* VIEW 2: LEARNABLE EVOLUTION-LINE ATTACK LOADOUT (MAX 4) */}
         {activeTab === 'moves' && (

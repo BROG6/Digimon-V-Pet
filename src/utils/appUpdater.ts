@@ -33,15 +33,6 @@ export interface AppInfo {
 
 export interface AppUpdatePluginInterface {
   getAppInfo(): Promise<AppInfo>;
-  canRequestPackageInstalls(): Promise<{ granted: boolean }>;
-  openInstallPermissionSettings(): Promise<{ opened: boolean }>;
-  downloadAndInstallApk(options: { url: string; fileName?: string }): Promise<{
-    success: boolean;
-    needsInstallPermission?: boolean;
-    usedDownloadManager?: boolean;
-    filePath?: string;
-    message?: string;
-  }>;
   fetchManifest(options: { url?: string }): Promise<{ data: string }>;
   httpPost(options: { url: string; body: string }): Promise<{ ok: boolean; status: number; data: string }>;
   openExternalUrl(options: { url: string }): Promise<{ success: boolean }>;
@@ -725,84 +716,18 @@ export async function checkForUpdate(optionsOrCustomUrl?: string | {
   return promise;
 }
 
-export async function canRequestPackageInstalls(): Promise<boolean> {
-  if (!Capacitor.isNativePlatform()) return true;
-  try {
-    const res = await AppUpdatePlugin.canRequestPackageInstalls();
-    return Boolean(res?.granted);
-  } catch {
-    return true;
-  }
-}
-
-export async function openInstallPermissionSettings(): Promise<boolean> {
-  if (!Capacitor.isNativePlatform()) return false;
-  try {
-    const res = await AppUpdatePlugin.openInstallPermissionSettings();
-    return Boolean(res?.opened);
-  } catch {
-    return false;
-  }
-}
-
 export async function downloadAndInstallApk(
   apkUrl: string,
-  fileName: string = 'digipet-latest.apk'
-): Promise<{
-  success: boolean;
-  openedInBrowser?: boolean;
-  usedDownloadManager?: boolean;
-  needsInstallPermission?: boolean;
-  message?: string;
-  resolvedUrl?: string;
-}> {
+  _fileName: string = 'digipet-latest.apk'
+): Promise<{ success: boolean; openedInBrowser?: boolean; message?: string; resolvedUrl?: string }> {
+  // If user configured a custom direct APK URL, prefer it
   const customApk = getCustomApkUrl();
   const rawUrl = apkUrl || customApk;
 
   // Resolve to remote absolute HTTPS URL, guaranteeing no localhost
   const fullUrl = resolveFullUrl(rawUrl);
 
-  if (Capacitor.isNativePlatform()) {
-    try {
-      const res = await AppUpdatePlugin.downloadAndInstallApk({
-        url: fullUrl,
-        fileName,
-      });
-
-      if (res?.needsInstallPermission) {
-        return {
-          success: false,
-          needsInstallPermission: true,
-          resolvedUrl: fullUrl,
-          message:
-            res.message ||
-            'Enable "Install unknown apps" for DigiPet in Android Settings, then tap Download & Install again.',
-        };
-      }
-
-      if (res?.success) {
-        return {
-          success: true,
-          usedDownloadManager: Boolean(res.usedDownloadManager),
-          resolvedUrl: fullUrl,
-        };
-      }
-
-      return {
-        success: false,
-        resolvedUrl: fullUrl,
-        message: res?.message || 'In-app APK download failed. Try Open in Browser.',
-      };
-    } catch (err: any) {
-      return {
-        success: false,
-        resolvedUrl: fullUrl,
-        message: err?.message || 'In-app APK download failed. Try Open in Browser.',
-      };
-    }
-  }
-
-  // Web fallback: open download link in browser
+  // Delegate download to the user's trusted system browser rather than requesting REQUEST_INSTALL_PACKAGES
   const opened = await openExternalUrl(fullUrl);
   return {
     success: opened,

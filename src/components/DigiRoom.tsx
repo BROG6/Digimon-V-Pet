@@ -16,6 +16,8 @@ import {
   CloudRain,
   Lock,
   Award,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import type { DayNightPreference } from '../utils/dayNightCycle';
 
@@ -90,51 +92,393 @@ interface DigiRoomProps {
 }
 
 const ThemeBackdropDecor: React.FC<{ themeId: string }> = ({ themeId }) => {
+  if (themeId === 'file-island') {
+    return (
+      <div className="absolute inset-0 pointer-events-none z-[5] overflow-hidden">
+        {/* Warm Tropical Sun & Drifting Clouds */}
+        <div className="absolute top-5 left-8 w-14 h-14 rounded-full bg-amber-200/80 shadow-[0_0_32px_rgba(253,224,71,0.75)]" />
+        <div className="room-slow-drift absolute top-6 left-28 flex items-end opacity-80">
+          <div className="w-10 h-4 rounded-full bg-white/75" />
+          <div className="w-12 h-6 -ml-5 rounded-full bg-white/85" />
+          <div className="w-8 h-4 -ml-4 rounded-full bg-white/75" />
+        </div>
+        <div className="room-slow-drift absolute top-11 right-16 flex items-end opacity-70" style={{ animationDelay: '-3.5s' }}>
+          <div className="w-12 h-4 rounded-full bg-white/70" />
+          <div className="w-14 h-6 -ml-6 rounded-full bg-white/80" />
+          <div className="w-8 h-4 -ml-4 rounded-full bg-white/70" />
+        </div>
+
+        {/* Distant File Island Peaks (Mt. Infinity) */}
+        <svg viewBox="0 0 400 70" preserveAspectRatio="none" className="absolute bottom-[45%] inset-x-0 w-full h-14 opacity-70">
+          <polygon points="10,70 65,24 120,70" fill="#0f766e" opacity="0.55" />
+          <polygon points="85,70 155,14 230,70" fill="#15803d" opacity="0.65" />
+          <polygon points="245,70 305,28 365,70" fill="#0d9488" opacity="0.5" />
+        </svg>
+
+        {/* Digital Ocean Band & Rolling Surf */}
+        <div className="absolute bottom-[44%] inset-x-0 h-11 bg-gradient-to-b from-cyan-500/80 via-sky-500/75 to-teal-400/75 border-t border-sky-200/45 overflow-hidden">
+          <div className="room-wave-slide absolute top-2 left-4 right-4 flex justify-between opacity-75">
+            <span className="w-14 h-1 rounded-full bg-white/65" />
+            <span className="w-20 h-1 rounded-full bg-cyan-100/70" />
+            <span className="w-12 h-1 rounded-full bg-white/65" />
+            <span className="w-16 h-1 rounded-full bg-cyan-100/70" />
+          </div>
+          <div className="room-wave-slide absolute bottom-1.5 left-0 right-0 flex justify-around opacity-85" style={{ animationDelay: '-2s' }}>
+            <span className="w-20 h-1.5 rounded-full bg-white/80" />
+            <span className="w-24 h-1.5 rounded-full bg-white/75" />
+            <span className="w-16 h-1.5 rounded-full bg-white/80" />
+          </div>
+        </div>
+
+        {/* Left & Right Swaying Palm Trees */}
+        <svg viewBox="0 0 80 120" className="room-gentle-sway absolute bottom-[43%] left-2 w-16 sm:w-20 h-28 sm:h-32 drop-shadow-md">
+          <path d="M22,120 Q28,75 40,36" stroke="#78350f" strokeWidth="7" strokeLinecap="round" fill="none" />
+          <path d="M22,120 Q28,75 40,36" stroke="#92400e" strokeWidth="4" strokeLinecap="round" fill="none" />
+          <path d="M40,36 Q18,22 6,34 Q22,34 40,36 Z" fill="#16a34a" />
+          <path d="M40,36 Q24,10 14,14 Q28,22 40,36 Z" fill="#22c55e" />
+          <path d="M40,36 Q56,12 68,20 Q54,26 40,36 Z" fill="#22c55e" />
+          <path d="M40,36 Q64,28 74,44 Q56,38 40,36 Z" fill="#15803d" />
+          <circle cx="37" cy="40" r="3" fill="#451a03" />
+          <circle cx="43" cy="40" r="3" fill="#451a03" />
+        </svg>
+
+        <svg viewBox="0 0 80 120" className="room-gentle-sway absolute bottom-[43%] right-2 w-16 sm:w-20 h-28 sm:h-32 drop-shadow-md" style={{ animationDelay: '-2.2s', transform: 'scaleX(-1)' }}>
+          <path d="M22,120 Q28,75 40,36" stroke="#78350f" strokeWidth="7" strokeLinecap="round" fill="none" />
+          <path d="M22,120 Q28,75 40,36" stroke="#92400e" strokeWidth="4" strokeLinecap="round" fill="none" />
+          <path d="M40,36 Q18,22 6,34 Q22,34 40,36 Z" fill="#16a34a" />
+          <path d="M40,36 Q24,10 14,14 Q28,22 40,36 Z" fill="#22c55e" />
+          <path d="M40,36 Q56,12 68,20 Q54,26 40,36 Z" fill="#22c55e" />
+          <path d="M40,36 Q64,28 74,44 Q56,38 40,36 Z" fill="#15803d" />
+        </svg>
+
+        {/* Beach Starfish & Seashell Details on Shore */}
+        <div className="absolute bottom-[18%] left-[15%] text-sm opacity-75">🐚</div>
+        <div className="absolute bottom-[12%] right-[18%] text-sm opacity-70">⭐</div>
+      </div>
+    );
+  }
+
+  if (themeId === 'starlit-island') {
+    return (
+      <div className="absolute inset-0 pointer-events-none z-[5] overflow-hidden">
+        {/* Moonlit Halo & Distant Island Ridge */}
+        <div className="absolute top-6 right-10 w-24 h-24 rounded-full bg-indigo-400/15 blur-xl" />
+        <svg viewBox="0 0 400 70" preserveAspectRatio="none" className="absolute bottom-[45%] inset-x-0 w-full h-14 opacity-75">
+          <polygon points="0,70 70,22 145,70" fill="#0f172a" />
+          <polygon points="105,70 185,18 270,70" fill="#1e1b4b" />
+          <polygon points="240,70 315,28 395,70" fill="#0f172a" />
+        </svg>
+
+        {/* Nocturnal Digital Ocean with Moonlight Reflection */}
+        <div className="absolute bottom-[44%] inset-x-0 h-11 bg-gradient-to-b from-blue-950/90 via-indigo-950/90 to-slate-900/90 border-t border-indigo-400/25 overflow-hidden">
+          <div className="absolute right-12 top-1 w-14 h-9 bg-gradient-to-b from-amber-100/35 to-transparent blur-[2px]" />
+          <div className="room-wave-slide absolute top-3 right-10 flex flex-col gap-1.5 items-center opacity-70">
+            <span className="w-12 h-0.5 rounded-full bg-amber-100/70" />
+            <span className="w-8 h-0.5 rounded-full bg-sky-200/60" />
+            <span className="w-16 h-0.5 rounded-full bg-cyan-300/45" />
+          </div>
+          <div className="room-wave-slide absolute bottom-1 inset-x-4 flex justify-between opacity-65">
+            <span className="w-20 h-1 rounded-full bg-cyan-400/40" />
+            <span className="w-24 h-1 rounded-full bg-sky-300/35" />
+            <span className="w-18 h-1 rounded-full bg-cyan-400/40" />
+          </div>
+        </div>
+
+        {/* Silhouette Night Palm Trees */}
+        <svg viewBox="0 0 80 120" className="room-gentle-sway absolute bottom-[43%] left-2 w-16 sm:w-20 h-28 sm:h-32 opacity-85">
+          <path d="M22,120 Q28,75 40,36" stroke="#0f172a" strokeWidth="7" strokeLinecap="round" fill="none" />
+          <path d="M40,36 Q18,22 6,34 Q22,34 40,36 Z" fill="#0f172a" />
+          <path d="M40,36 Q24,10 14,14 Q28,22 40,36 Z" fill="#1e293b" />
+          <path d="M40,36 Q56,12 68,20 Q54,26 40,36 Z" fill="#1e293b" />
+          <path d="M40,36 Q64,28 74,44 Q56,38 40,36 Z" fill="#0f172a" />
+        </svg>
+        <div className="absolute bottom-[16%] right-[22%] w-2 h-2 rounded-full bg-cyan-300/50 blur-[1px]" />
+        <div className="absolute bottom-[24%] left-[24%] w-1.5 h-1.5 rounded-full bg-indigo-300/50" />
+      </div>
+    );
+  }
+
+  if (themeId === 'cyber-matrix') {
+    return (
+      <div className="absolute inset-0 pointer-events-none z-[5] overflow-hidden">
+        {/* Cyber Grid Wall & Perspective Matrix Floor */}
+        <div className="absolute inset-x-0 top-0 h-[55%] bg-[linear-gradient(to_right,rgba(16,185,129,0.1)_1px,transparent_1px),linear-gradient(to_bottom,rgba(16,185,129,0.1)_1px,transparent_1px)] [background-size:24px_24px]" />
+        <div className="absolute inset-x-0 bottom-0 h-[45%] bg-[linear-gradient(to_right,rgba(52,211,153,0.16)_1px,transparent_1px),linear-gradient(to_bottom,rgba(52,211,153,0.18)_1px,transparent_1px)] [background-size:28px_18px]" />
+
+        {/* Server Monolith Skyline at Horizon */}
+        <div className="absolute bottom-[45%] inset-x-0 flex items-end justify-between px-4 opacity-75">
+          {[16, 26, 12, 22, 14, 28, 18, 24].map((h, i) => (
+            <div
+              key={i}
+              style={{ height: `${h * 3}px` }}
+              className="w-7 sm:w-9 bg-slate-950/90 border-x border-t border-emerald-500/40 rounded-t-sm flex flex-col justify-evenly px-1.5"
+            >
+              <span className="h-0.5 bg-emerald-400/70 rounded" />
+              <span className="h-0.5 bg-cyan-400/55 rounded" />
+              <span className="h-0.5 bg-emerald-400/45 rounded" />
+            </div>
+          ))}
+        </div>
+
+        {/* Central Holo-Core Ring */}
+        <div className="room-float-bob absolute top-10 left-1/2 -translate-x-1/2 w-24 h-24 rounded-full border border-emerald-400/40 flex items-center justify-center shadow-[0_0_24px_rgba(16,185,129,0.22)]">
+          <div className="w-14 h-14 rotate-45 border border-cyan-400/45" />
+        </div>
+
+        {/* Hex Nodes */}
+        <span className="absolute top-6 left-8 font-mono text-[9px] text-emerald-300/45">0x4F 0xA2</span>
+        <span className="absolute top-8 right-10 font-mono text-[9px] text-cyan-300/45">SYS://DIGI</span>
+      </div>
+    );
+  }
+
+  if (themeId === 'primary-village') {
+    return (
+      <div className="absolute inset-0 pointer-events-none z-[5] overflow-hidden">
+        {/* Cheerful Sunbeams & Rolling Hills */}
+        <div className="absolute -top-6 left-1/3 w-36 h-44 bg-gradient-to-b from-amber-100/35 to-transparent rotate-12" />
+        <svg viewBox="0 0 400 75" preserveAspectRatio="none" className="absolute bottom-[45%] inset-x-0 w-full h-16">
+          <path d="M0,75 Q90,18 200,55 T400,45 L400,75 Z" fill="#86efac" opacity="0.55" />
+          <path d="M0,75 Q140,32 270,58 T400,52 L400,75 Z" fill="#4ade80" opacity="0.45" />
+        </svg>
+
+        {/* Nursery White Picket Fence */}
+        <div className="absolute bottom-[45%] inset-x-0 h-6 flex items-end justify-around px-2 opacity-80">
+          {Array.from({ length: 14 }).map((_, i) => (
+            <div key={i} className="w-2.5 h-6 bg-white/85 rounded-t-full border border-emerald-200/70 shadow-xs" />
+          ))}
+        </div>
+
+        {/* Incubating Digi-Egg Cradles */}
+        <div className="room-float-bob absolute bottom-[47%] left-8 sm:left-14 flex items-end gap-3">
+          <div className="relative flex flex-col items-center">
+            <div className="w-7 h-9 rounded-full bg-gradient-to-b from-white to-sky-100 border-2 border-sky-300 flex items-center justify-center shadow-sm">
+              <span className="w-2 h-2 rounded-full bg-pink-400/80" />
+            </div>
+            <div className="w-9 h-3 -mt-1.5 rounded-b-lg bg-amber-200 border border-amber-400/70" />
+          </div>
+          <div className="relative flex flex-col items-center">
+            <div className="w-6 h-8 rounded-full bg-gradient-to-b from-amber-50 to-pink-100 border-2 border-pink-300 flex items-center justify-center shadow-sm">
+              <span className="w-2 h-2 rounded-full bg-emerald-400/80" />
+            </div>
+            <div className="w-8 h-2.5 -mt-1.5 rounded-b-lg bg-purple-200 border border-purple-400/70" />
+          </div>
+        </div>
+
+        {/* Pastel Toy Blocks on Right */}
+        <div className="absolute bottom-[46%] right-8 sm:right-14 flex items-end gap-1 opacity-90">
+          <div className="w-7 h-7 rounded bg-pink-300 border-2 border-pink-400 flex items-center justify-center font-pixel text-[8px] text-white shadow-sm">
+            D
+          </div>
+          <div className="flex flex-col items-center">
+            <div className="w-6 h-6 rounded bg-amber-300 border-2 border-amber-400 flex items-center justify-center font-pixel text-[8px] text-amber-900 shadow-sm">
+              ★
+            </div>
+            <div className="w-7 h-7 rounded bg-sky-300 border-2 border-sky-400 flex items-center justify-center font-pixel text-[8px] text-white shadow-sm">
+              1
+            </div>
+          </div>
+        </div>
+
+        {/* Scattered Nursery Flowers */}
+        <div className="absolute bottom-[16%] left-[12%] text-xs opacity-80">🌼</div>
+        <div className="absolute bottom-[26%] right-[14%] text-xs opacity-80">🌷</div>
+      </div>
+    );
+  }
+
+  if (themeId === 'colosseum-arena') {
+    return (
+      <div className="absolute inset-0 pointer-events-none z-[5] overflow-hidden">
+        {/* Sweeping Stadium Floodlight Cones */}
+        <div className="absolute -top-8 left-[10%] w-28 h-52 bg-gradient-to-b from-cyan-300/20 via-sky-200/8 to-transparent rotate-[18deg] blur-sm" />
+        <div className="absolute -top-8 right-[10%] w-28 h-52 bg-gradient-to-b from-amber-300/20 via-amber-200/8 to-transparent -rotate-[18deg] blur-sm" />
+
+        {/* Central Colosseum Crest & Scoreboard */}
+        <div className="absolute top-5 left-1/2 -translate-x-1/2 px-4 py-1.5 rounded-lg bg-slate-950/80 border border-indigo-400/45 flex items-center gap-2 shadow-[0_0_20px_rgba(99,102,241,0.3)]">
+          <span className="w-2 h-2 rounded-full bg-rose-400" />
+          <span className="font-pixel text-[8px] tracking-widest text-amber-300">DIGI-COLOSSEUM</span>
+          <span className="w-2 h-2 rounded-full bg-cyan-400" />
+        </div>
+
+        {/* Championship Banners */}
+        <div className="absolute top-0 left-5 w-8 h-24 bg-gradient-to-b from-indigo-600/65 to-indigo-900/20 border-x border-amber-300/35 [clip-path:polygon(0_0,100%_0,100%_82%,50%_100%,0_82%)]" />
+        <div className="absolute top-0 right-5 w-8 h-24 bg-gradient-to-b from-rose-600/65 to-rose-900/20 border-x border-amber-300/35 [clip-path:polygon(0_0,100%_0,100%_82%,50%_100%,0_82%)]" />
+
+        {/* Tiered Stadium Bleachers */}
+        <div className="absolute bottom-[45%] inset-x-0 h-16 flex flex-col justify-end opacity-65">
+          <div className="h-4 mx-6 bg-slate-900/80 border-t border-indigo-400/25 rounded-t-lg" />
+          <div className="h-5 mx-2 bg-slate-900/90 border-t border-indigo-400/35" />
+          <div className="h-5 bg-slate-950/90 border-t border-cyan-400/35" />
+        </div>
+
+        {/* Illuminated Arena Battle Ring on Floor */}
+        <div className="absolute bottom-[12%] left-1/2 -translate-x-1/2 w-[78%] h-20 rounded-full border-2 border-indigo-400/40 bg-indigo-500/5 shadow-[inset_0_0_24px_rgba(99,102,241,0.18)]" />
+        <div className="absolute bottom-[17%] left-1/2 -translate-x-1/2 w-[48%] h-12 rounded-full border border-amber-300/30" />
+      </div>
+    );
+  }
+
   if (themeId === 'ancient-temple') {
     return (
-      <div className="absolute inset-0 pointer-events-none z-5 overflow-hidden">
-        <div className="absolute top-0 left-6 w-8 h-[56%] bg-stone-700/45 border-x border-emerald-400/20" />
-        <div className="absolute top-0 right-6 w-8 h-[56%] bg-stone-700/45 border-x border-emerald-400/20" />
-        <div className="absolute top-0 left-1/3 w-24 h-full bg-gradient-to-b from-amber-200/20 via-amber-100/5 to-transparent -skew-x-12" />
+      <div className="absolute inset-0 pointer-events-none z-[5] overflow-hidden">
+        {/* Diagonal Jungle Sunbeams */}
+        <div className="absolute -top-6 left-1/4 w-28 h-full bg-gradient-to-b from-amber-200/25 via-amber-100/8 to-transparent -skew-x-12" />
+        <div className="absolute -top-6 right-1/3 w-20 h-full bg-gradient-to-b from-emerald-200/15 via-amber-100/5 to-transparent -skew-x-12" />
+
+        {/* Central Ancient Digi-Arch & Pedestal */}
+        <div className="absolute bottom-[45%] left-1/2 -translate-x-1/2 w-40 h-28 border-t-8 border-x-8 border-stone-700/65 rounded-t-full flex items-center justify-center">
+          <div className="w-12 h-12 rounded-full border-2 border-cyan-300/40 bg-cyan-400/10 flex items-center justify-center shadow-[0_0_16px_rgba(34,211,238,0.25)]">
+            <span className="font-pixel text-[10px] text-cyan-200/65">◈</span>
+          </div>
+        </div>
+
+        {/* Carved Stone Pillars with Glowing Digi-Code Runes */}
+        <div className="absolute top-0 left-5 w-9 h-[56%] bg-stone-700/65 border-x border-emerald-400/30 flex flex-col items-center justify-center gap-3">
+          <span className="w-3 h-3 rotate-45 border border-cyan-300/65 bg-cyan-400/20" />
+          <span className="w-3 h-3 rounded-full border border-emerald-300/65 bg-emerald-400/20" />
+          <span className="w-3 h-3 rotate-45 border border-cyan-300/65 bg-cyan-400/20" />
+        </div>
+        <div className="absolute top-0 right-5 w-9 h-[56%] bg-stone-700/65 border-x border-emerald-400/30 flex flex-col items-center justify-center gap-3">
+          <span className="w-3 h-3 rotate-45 border border-cyan-300/65 bg-cyan-400/20" />
+          <span className="w-3 h-3 rounded-full border border-emerald-300/65 bg-emerald-400/20" />
+          <span className="w-3 h-3 rotate-45 border border-cyan-300/65 bg-cyan-400/20" />
+        </div>
+
+        {/* Hanging Jungle Vines */}
+        <svg viewBox="0 0 400 60" preserveAspectRatio="none" className="absolute top-0 inset-x-0 w-full h-14 opacity-75">
+          <path d="M0,0 Q35,38 75,18 Q115,44 165,12" stroke="#15803d" strokeWidth="4" fill="none" />
+          <path d="M235,8 Q285,42 325,18 Q365,36 400,10" stroke="#166534" strokeWidth="4" fill="none" />
+          <circle cx="52" cy="26" r="5" fill="#22c55e" />
+          <circle cx="122" cy="30" r="5" fill="#16a34a" />
+          <circle cx="290" cy="28" r="5" fill="#22c55e" />
+          <circle cx="355" cy="22" r="5" fill="#16a34a" />
+        </svg>
+
+        {/* Mossy Flagstone Floor Seams */}
+        <div className="absolute inset-x-0 bottom-0 h-[45%] bg-[linear-gradient(to_right,rgba(16,185,129,0.12)_1px,transparent_1px),linear-gradient(to_bottom,rgba(0,0,0,0.22)_1px,transparent_1px)] [background-size:48px_24px]" />
       </div>
     );
   }
+
   if (themeId === 'neon-arcade') {
     return (
-      <div className="absolute inset-0 pointer-events-none z-5 overflow-hidden">
-        <div className="absolute inset-x-0 top-0 h-[55%] bg-[linear-gradient(to_right,rgba(34,211,238,0.08)_1px,transparent_1px),linear-gradient(to_bottom,rgba(232,121,249,0.08)_1px,transparent_1px)] [background-size:24px_24px]" />
-        <div className="absolute top-5 left-1/2 -translate-x-1/2 w-52 h-1 rounded-full bg-gradient-to-r from-cyan-400 via-fuchsia-400 to-cyan-400 opacity-70 shadow-[0_0_16px_rgba(232,121,249,0.8)]" />
+      <div className="absolute inset-0 pointer-events-none z-[5] overflow-hidden">
+        {/* Synth-Wave Horizon Grid & Retro Sunset */}
+        <div className="absolute inset-x-0 top-0 h-[55%] bg-[linear-gradient(to_right,rgba(34,211,238,0.09)_1px,transparent_1px),linear-gradient(to_bottom,rgba(232,121,249,0.09)_1px,transparent_1px)] [background-size:24px_24px]" />
+        <div className="absolute bottom-[45%] left-1/2 -translate-x-1/2 w-32 h-16 rounded-t-full bg-gradient-to-b from-amber-400/65 via-fuchsia-500/55 to-purple-700/45 overflow-hidden shadow-[0_0_24px_rgba(232,121,249,0.45)]">
+          <div className="mt-4 h-1 bg-slate-950/70" />
+          <div className="mt-2 h-1.5 bg-slate-950/70" />
+          <div className="mt-2 h-2 bg-slate-950/70" />
+        </div>
+
+        {/* Neon Dojo Header Bar */}
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 w-56 h-1.5 rounded-full bg-gradient-to-r from-cyan-400 via-fuchsia-400 to-cyan-400 opacity-85 shadow-[0_0_16px_rgba(232,121,249,0.85)]" />
+
+        {/* Arcade Cabinet & Dojo Holo-Screen Silhouettes */}
+        <div className="absolute bottom-[45%] left-5 w-11 h-24 bg-slate-950/85 border border-cyan-400/50 rounded-t-md p-1 flex flex-col gap-1">
+          <div className="h-8 bg-cyan-500/25 border border-cyan-300/60 rounded-xs" />
+          <div className="h-1 bg-fuchsia-400/70 rounded" />
+        </div>
+        <div className="absolute bottom-[45%] right-5 w-11 h-24 bg-slate-950/85 border border-fuchsia-400/50 rounded-t-md p-1 flex flex-col gap-1">
+          <div className="h-8 bg-fuchsia-500/25 border border-fuchsia-300/60 rounded-xs" />
+          <div className="h-1 bg-cyan-400/70 rounded" />
+        </div>
+
+        {/* Neon Synth Floor Grid */}
+        <div className="absolute inset-x-0 bottom-0 h-[45%] bg-[linear-gradient(to_right,rgba(232,121,249,0.18)_1px,transparent_1px),linear-gradient(to_bottom,rgba(34,211,238,0.16)_1px,transparent_1px)] [background-size:30px_16px]" />
       </div>
     );
   }
+
   if (themeId === 'celestial-sky') {
     return (
-      <div className="absolute inset-0 pointer-events-none z-5 overflow-hidden">
-        <div className="absolute top-6 left-10 w-24 h-8 rounded-full bg-white/55 blur-[1px]" />
-        <div className="absolute top-12 right-12 w-32 h-10 rounded-full bg-amber-50/50 blur-[1px]" />
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 w-28 h-28 rounded-full border-2 border-amber-200/45 shadow-[0_0_30px_rgba(253,224,71,0.35)]" />
+      <div className="absolute inset-0 pointer-events-none z-[5] overflow-hidden">
+        {/* Sacred Sun Ring & Prismatic Sky Beams */}
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 w-32 h-32 rounded-full border-2 border-amber-200/60 shadow-[0_0_32px_rgba(253,224,71,0.4)] flex items-center justify-center">
+          <div className="w-22 h-22 rounded-full border border-white/50" />
+        </div>
+        <div className="absolute top-0 left-1/3 w-24 h-full bg-gradient-to-b from-white/25 via-amber-100/10 to-transparent rotate-12" />
+
+        {/* Marble Sky-Citadel Pillars */}
+        <div className="absolute bottom-[45%] left-6 w-7 h-28 bg-gradient-to-b from-white/65 to-amber-100/45 border-x border-amber-200/70 rounded-t-sm" />
+        <div className="absolute bottom-[45%] right-6 w-7 h-28 bg-gradient-to-b from-white/65 to-amber-100/45 border-x border-amber-200/70 rounded-t-sm" />
+
+        {/* Billowing Horizon Clouds */}
+        <div className="room-slow-drift absolute bottom-[42%] left-0 right-0 flex justify-around items-end opacity-85">
+          <div className="w-28 h-9 rounded-full bg-white/75 blur-[1px]" />
+          <div className="w-36 h-11 rounded-full bg-amber-50/80 blur-[1px]" />
+          <div className="w-28 h-9 rounded-full bg-white/75 blur-[1px]" />
+        </div>
+        <div className="room-slow-drift absolute top-7 left-10 w-24 h-8 rounded-full bg-white/60 blur-[1px]" />
+        <div className="room-slow-drift absolute top-11 right-12 w-28 h-9 rounded-full bg-amber-50/55 blur-[1px]" style={{ animationDelay: '-4s' }} />
       </div>
     );
   }
+
   if (themeId === 'sovereign-throne') {
     return (
-      <div className="absolute inset-0 pointer-events-none z-5 overflow-hidden">
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-48 h-[56%] border-x-2 border-amber-400/35 bg-gradient-to-b from-amber-500/10 to-transparent" />
-        <div className="absolute top-6 left-1/2 -translate-x-1/2 text-3xl opacity-35">👑</div>
+      <div className="absolute inset-0 pointer-events-none z-[5] overflow-hidden">
+        {/* Molten Gold Gothic Arch & Sovereign Crest */}
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-52 h-[56%] border-x-2 border-amber-400/45 bg-gradient-to-b from-amber-500/15 to-transparent rounded-t-full" />
+        <div className="absolute top-5 left-1/2 -translate-x-1/2 flex flex-col items-center">
+          <span className="text-3xl opacity-55 drop-shadow-[0_0_12px_rgba(251,191,36,0.65)]">👑</span>
+          <div className="w-16 h-0.5 bg-gradient-to-r from-transparent via-amber-400/75 to-transparent mt-1" />
+        </div>
+
+        {/* Crimson Royal Banners & Golden Wall Sconces */}
+        <div className="absolute top-0 left-6 w-9 h-28 bg-gradient-to-b from-rose-700/80 to-rose-950/60 border-x border-amber-400/55 [clip-path:polygon(0_0,100%_0,100%_85%,50%_100%,0_85%)] flex justify-center pt-4">
+          <span className="text-amber-300/75 text-xs">✦</span>
+        </div>
+        <div className="absolute top-0 right-6 w-9 h-28 bg-gradient-to-b from-rose-700/80 to-rose-950/60 border-x border-amber-400/55 [clip-path:polygon(0_0,100%_0,100%_85%,50%_100%,0_85%)] flex justify-center pt-4">
+          <span className="text-amber-300/75 text-xs">✦</span>
+        </div>
+        <div className="absolute bottom-[49%] left-20 w-3 h-5 rounded-t-full bg-amber-300/85 shadow-[0_0_14px_rgba(251,191,36,0.9)] animate-pulse" />
+        <div className="absolute bottom-[49%] right-20 w-3 h-5 rounded-t-full bg-amber-300/85 shadow-[0_0_14px_rgba(251,191,36,0.9)] animate-pulse" />
+
+        {/* Imperial Red & Gold Throne Carpet */}
+        <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-36 h-[45%] bg-gradient-to-b from-rose-800/70 to-rose-950/85 border-x-2 border-amber-400/55" />
       </div>
     );
   }
+
   if (themeId === 'infinity-nexus') {
     return (
-      <div className="absolute inset-0 pointer-events-none z-5 overflow-hidden">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_30%,rgba(192,132,252,0.28),transparent_62%)]" />
-        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-36 h-36 rounded-full border border-fuchsia-400/35 animate-pulse" />
-        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 mt-4 w-28 h-28 rounded-full border border-cyan-400/35" />
+      <div className="absolute inset-0 pointer-events-none z-[5] overflow-hidden">
+        {/* Cosmic Nebula & Rotating Astral Digi-Code Rings */}
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_32%,rgba(192,132,252,0.3),transparent_62%)]" />
+        <div className="absolute top-8 left-1/2 -translate-x-1/2 w-40 h-40 rounded-full border border-fuchsia-400/40 animate-pulse flex items-center justify-center">
+          <div className="w-28 h-28 rounded-full border border-cyan-400/45 rotate-45" />
+        </div>
+
+        {/* Floating Crystal Data Monoliths */}
+        <div className="room-float-bob absolute bottom-[48%] left-10 w-6 h-14 bg-gradient-to-b from-cyan-300/55 to-fuchsia-500/40 border border-cyan-200/60 [clip-path:polygon(50%_0,100%_25%,85%_100%,15%_100%,0_25%)]" />
+        <div className="room-float-bob absolute bottom-[50%] right-10 w-7 h-16 bg-gradient-to-b from-fuchsia-300/55 to-indigo-500/40 border border-fuchsia-200/60 [clip-path:polygon(50%_0,100%_25%,85%_100%,15%_100%,0_25%)]" style={{ animationDelay: '-1.8s' }} />
+
+        {/* Astral Horizon Starlight Grid */}
+        <div className="absolute inset-x-0 bottom-0 h-[45%] bg-[linear-gradient(to_right,rgba(192,132,252,0.16)_1px,transparent_1px),linear-gradient(to_bottom,rgba(56,189,248,0.14)_1px,transparent_1px)] [background-size:32px_18px]" />
       </div>
     );
   }
+
   return null;
 };
+
+const RoomThemeStageLayer: React.FC<{
+  theme: (typeof ROOM_THEMES)[number];
+  className?: string;
+}> = ({ theme, className = '' }) => (
+  <div className={`absolute inset-0 pointer-events-none ${className}`}>
+    {/* Room Sky / Wall Background */}
+    <div className={`absolute inset-0 bg-gradient-to-b ${theme.skyColor} opacity-90`} />
+    {/* Room Floor */}
+    <div
+      className={`absolute bottom-0 left-0 right-0 h-[45%] bg-gradient-to-t ${theme.floorColor} border-t-2 border-black/20 shadow-inner`}
+    />
+    {/* Detailed Theme-Accurate Scenery */}
+    <ThemeBackdropDecor themeId={theme.id} />
+  </div>
+);
 
 export const DigiRoom: React.FC<DigiRoomProps> = ({
   pet,
@@ -156,11 +500,48 @@ export const DigiRoom: React.FC<DigiRoomProps> = ({
   const [selectedFurnitureId, setSelectedFurnitureId] = useState<string | null>(null);
   const [weatherMode, setWeatherMode] = useState<'auto' | WeatherKind>('auto');
   const [weatherSeed, setWeatherSeed] = useState<number>(1);
+  const [outgoingThemeId, setOutgoingThemeId] = useState<string | null>(null);
+  const [themeTransitionEpoch, setThemeTransitionEpoch] = useState<number>(0);
+  const prevThemeIdRef = useRef<string>(pet.activeRoomTheme);
+  const lastViewedThemeRef = useRef<string>(pet.activeRoomTheme);
 
   const [digimonPos, setDigimonPos] = useState<number>(45);
   const [digimonFacing, setDigimonFacing] = useState<'left' | 'right'>('right');
   const [digimonAction, setDigimonAction] = useState<'walk' | 'idle' | 'happy' | 'sit' | 'sleep'>('idle');
   const roomContainerRef = useRef<HTMLDivElement>(null);
+
+  // Trigger smooth cross-fade + digital wipe when theme changes (or upon returning to VIEW ROOM after picking a theme)
+  useEffect(() => {
+    if (!isOpen) {
+      prevThemeIdRef.current = pet.activeRoomTheme;
+      lastViewedThemeRef.current = pet.activeRoomTheme;
+      setOutgoingThemeId(null);
+      return;
+    }
+
+    if (activeTab === 'room') {
+      const fromTheme =
+        prevThemeIdRef.current !== pet.activeRoomTheme
+          ? prevThemeIdRef.current
+          : lastViewedThemeRef.current !== pet.activeRoomTheme
+          ? lastViewedThemeRef.current
+          : null;
+
+      prevThemeIdRef.current = pet.activeRoomTheme;
+      lastViewedThemeRef.current = pet.activeRoomTheme;
+
+      if (fromTheme) {
+        setOutgoingThemeId(fromTheme);
+        setThemeTransitionEpoch((e) => e + 1);
+        const timer = window.setTimeout(() => {
+          setOutgoingThemeId(null);
+        }, 600);
+        return () => window.clearTimeout(timer);
+      }
+    } else {
+      prevThemeIdRef.current = pet.activeRoomTheme;
+    }
+  }, [isOpen, activeTab, pet.activeRoomTheme]);
 
   useEffect(() => {
     if (!isOpen || weatherMode !== 'auto') return;
@@ -205,6 +586,20 @@ export const DigiRoom: React.FC<DigiRoomProps> = ({
 
   const rankProgress = computeTamerRankProgress(pet);
   const currentTheme = ROOM_THEMES.find((t) => t.id === pet.activeRoomTheme) || ROOM_THEMES[0];
+  const outgoingTheme = outgoingThemeId
+    ? ROOM_THEMES.find((t) => t.id === outgoingThemeId) || null
+    : null;
+  const unlockedThemes = ROOM_THEMES.filter((t) => rankProgress.rank >= (t.minTamerRank ?? 1));
+  const stepTheme = (delta: -1 | 1) => {
+    if (unlockedThemes.length <= 1) return;
+    sound.playButton();
+    const curIdx = Math.max(
+      0,
+      unlockedThemes.findIndex((t) => t.id === currentTheme.id)
+    );
+    const nextIdx = (curIdx + delta + unlockedThemes.length) % unlockedThemes.length;
+    onChangeTheme(unlockedThemes[nextIdx].id);
+  };
   const activeWeather: WeatherKind =
     weatherMode === 'auto'
       ? pickThemeWeather(currentTheme.id, isNightTime, weatherSeed)
@@ -270,7 +665,7 @@ export const DigiRoom: React.FC<DigiRoomProps> = ({
   return (
     <div
       onClick={onClose}
-      className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-slate-950/90 backdrop-blur-md android-safe-modal"
+      className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-slate-950/95 android-safe-modal"
     >
       <div
         onClick={(e) => e.stopPropagation()}
@@ -400,16 +795,32 @@ export const DigiRoom: React.FC<DigiRoomProps> = ({
         {activeTab === 'room' && (
           <div
             ref={roomContainerRef}
-            className="relative w-full h-[360px] sm:h-[420px] rounded-2xl overflow-hidden border-2 border-slate-700 select-none flex flex-col justify-between"
+            className="relative w-full h-[360px] sm:h-[420px] rounded-2xl overflow-hidden border-2 border-slate-700 select-none flex flex-col justify-between bg-slate-950"
           >
-            {/* Room Sky / Wall Background */}
-            <div className={`absolute inset-0 bg-gradient-to-b ${currentTheme.skyColor} opacity-90 transition-colors duration-700`} />
+            {/* Outgoing Theme Layer (cross-fades out underneath incoming wipe) */}
+            {outgoingTheme && outgoingTheme.id !== currentTheme.id && (
+              <RoomThemeStageLayer
+                key={`outgoing-${outgoingTheme.id}-${themeTransitionEpoch}`}
+                theme={outgoingTheme}
+                className="room-theme-fade-exit z-0"
+              />
+            )}
 
-            {/* Room Floor */}
-            <div className={`absolute bottom-0 left-0 right-0 h-[45%] bg-gradient-to-t ${currentTheme.floorColor} border-t-2 border-black/20 shadow-inner transition-colors duration-700`} />
+            {/* Incoming / Active Theme Layer (digital wipe reveal on theme change) */}
+            <RoomThemeStageLayer
+              key={`active-${currentTheme.id}-${themeTransitionEpoch}`}
+              theme={currentTheme}
+              className={themeTransitionEpoch > 0 ? 'room-theme-wipe-enter z-[1]' : 'z-[1]'}
+            />
 
-            {/* Custom Scenery Accents for Rank-Unlocked Themes */}
-            <ThemeBackdropDecor themeId={currentTheme.id} />
+            {/* Digital Wipe Scanline Beam */}
+            {outgoingTheme && themeTransitionEpoch > 0 && (
+              <div
+                key={`scan-${themeTransitionEpoch}`}
+                aria-hidden="true"
+                className="room-scan-sweep-bar absolute inset-y-0 left-0 w-10 pointer-events-none z-[12] bg-gradient-to-r from-transparent via-cyan-300/65 to-transparent shadow-[0_0_24px_rgba(34,211,238,0.85)]"
+              />
+            )}
 
             {/* Evening Starlight & Ambient Dimmer Overlay */}
             {(isNightTime || currentTheme.id === 'starlit-island' || currentTheme.id === 'infinity-nexus') && (
@@ -616,9 +1027,31 @@ export const DigiRoom: React.FC<DigiRoomProps> = ({
               />
             </motion.div>
 
-            {/* Room Name & Weather Badge */}
-            <div className="relative bottom-2 left-2 z-30 self-start bg-slate-900/80 backdrop-blur-md px-3 py-1 rounded-full text-slate-300 font-pixel text-[10px] border border-slate-700 flex items-center gap-2">
+            {/* Room Name, Quick Theme Switcher & Weather Strip */}
+            <div className="relative bottom-2 left-2 z-30 self-start bg-slate-900/85 px-2.5 py-1 rounded-xl text-slate-300 font-pixel text-[10px] border border-slate-700 flex items-center gap-1.5">
+              {unlockedThemes.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => stepTheme(-1)}
+                  className="p-0.5 rounded hover:bg-slate-700 text-slate-300 hover:text-white cursor-pointer"
+                  aria-label="Previous room theme"
+                  title="Previous room theme"
+                >
+                  <ChevronLeft className="w-3.5 h-3.5" />
+                </button>
+              )}
               <span>{currentTheme.name}</span>
+              {unlockedThemes.length > 1 && (
+                <button
+                  type="button"
+                  onClick={() => stepTheme(1)}
+                  className="p-0.5 rounded hover:bg-slate-700 text-slate-300 hover:text-white cursor-pointer"
+                  aria-label="Next room theme"
+                  title="Next room theme"
+                >
+                  <ChevronRight className="w-3.5 h-3.5" />
+                </button>
+              )}
               <span className="text-slate-500">·</span>
               <span className="text-sky-300">
                 {WEATHER_LABELS[activeWeather].icon} {WEATHER_LABELS[activeWeather].label}

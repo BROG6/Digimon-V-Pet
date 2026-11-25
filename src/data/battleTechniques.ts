@@ -1442,12 +1442,48 @@ export type AttackVfxVariant =
   | 'missile'
   | 'filth';
 
+export type SignatureVfxStyle =
+  | 'nova_sphere'
+  | 'twin_missiles'
+  | 'rapid_volley'
+  | 'v_x_wave'
+  | 'flame_breath'
+  | 'frost_breath'
+  | 'comet_rush'
+  | 'wing_storm'
+  | 'dragon_fireball'
+  | 'thunder_strike'
+  | 'diamond_storm'
+  | 'vine_whip'
+  | 'needle_rain'
+  | 'flower_burst'
+  | 'fish_march'
+  | 'tidal_wave'
+  | 'harpoon_trident'
+  | 'bubbles'
+  | 'celestial_arrow'
+  | 'holy_orbs'
+  | 'sacred_seal'
+  | 'beast_fist'
+  | 'bat_swarm'
+  | 'shadow_hand'
+  | 'reaper_scythe'
+  | 'sonic_wave'
+  | 'drill_boulder'
+  | 'poop_splat'
+  | 'claw_slash'
+  | 'tornado'
+  | 'beam';
+
 export interface AttackVisualSpec {
   motion: AttackMotionKind;
   element: AttackElement;
   variant: AttackVfxVariant;
   colorHex: string;
   glowHex: string;
+  accentHex?: string;
+  signatureStyle?: SignatureVfxStyle;
+  speciesId?: string;
 }
 
 const ELEMENT_VISUAL_PALETTE: Record<AttackElement, { colorHex: string; glowHex: string }> = {
@@ -1464,19 +1500,218 @@ const ELEMENT_VISUAL_PALETTE: Record<AttackElement, { colorHex: string; glowHex:
 };
 
 const RANGED_MOVE_REGEX =
-  /blast|beam|ray|cannon|shot|fire|flame|inferno|ember|spit|bubble|wave|surge|torrent|ice|frost|freeze|blizzard|hail|spear|lance|javelin|bolt|thunder|lightning|spark|shock|storm|tempest|wind|twister|gale|leaf|thorn|seed|petal|vine|ivy|star|nova|ring|orb|missile|rocket|bullet|laser|gun|arrow|dart|kunai|shuriken|rock|boulder|toss|splash|cloud|haze|howl|roar|shout|sonic|ultrasonic|symphony|serenade|dance|rite|breath|meteor|ball|flare|corona|pulse|jihad|heavens|mandala|dust|powder|flash|arrow/i;
+  /blast|beam|ray|cannon|shot|fire|flame|inferno|ember|spit|bubble|wave|surge|torrent|ice|frost|freeze|blizzard|hail|spear|lance|javelin|bolt|thunder|lightning|spark|shock|storm|tempest|wind|twister|gale|leaf|thorn|seed|petal|vine|ivy|star|nova|ring|orb|missile|rocket|bullet|laser|gun|arrow|dart|kunai|shuriken|rock|boulder|toss|splash|cloud|haze|howl|roar|shout|sonic|ultrasonic|symphony|serenade|dance|rite|breath|meteor|ball|flare|corona|pulse|jihad|heavens|mandala|dust|powder|flash|saber|sword|slash|rain|gate|destiny|spiral|fish|pearl|torpedo|trident|anchor|ink|wing|tornado|heart|treat|soul|breaker|destroyer|death|flame|blaze/i;
 
 const MELEE_MOVE_REGEX =
-  /punch|fist|knuckle|claw|nail|scratch|fang|bite|kick|knee|elbow|tackle|headbutt|rush|smash|crash|slam|stomp|hammer|lariat|paw|rend|scissors|slash|sword|blade|cutter|sting|horn|tail|whip|spin|drill|strike/i;
+  /punch|fist|knuckle|claw|nail|scratch|fang|bite|kick|knee|elbow|tackle|headbutt|rush|smash|crash|slam|stomp|hammer|lariat|paw|rend|scissors|chopper|slash|blade|cutter|sting|horn|tail|whip|spin|drill|strike|pecker|crusher|rake|slide|sliding/i;
 
 const PURE_PROJECTILE_REGEX =
-  /bubble|dust|powder|ring|shot|spit|rock|shuriken|kunai|dart|arrow|seed|thorn|toss|splash|cannon|missile|beam|ray|laser|wave|storm|orb|star|nova|blast/i;
+  /bubble|dust|powder|ring|shot|spit|rock|pebble|stone|shuriken|kunai|dart|arrow|seed|thorn|toss|splash|cannon|missile|beam|ray|laser|wave|storm|orb|star|nova|blast|fish|pearl|heart|talisman|gear/i;
 
 const BEAM_MOVE_REGEX =
-  /beam|ray|laser|cannon|lance|javelin|impulse|force|prominence|aurora|flash|buster|infinity|giga|mega flame/i;
+  /beam|ray|laser|cannon|lance|javelin|impulse|force|prominence|aurora|flash|buster|infinity|blaster|river of power|diverting|hyper heat/i;
 
 const SLASH_MOVE_REGEX =
-  /claw|nail|scratch|slash|sword|blade|cutter|scissors|rend|horn|fang|sting|wing/i;
+  /claw|nail|scratch|slash|sword|blade|cutter|scissors|rend|horn|fang|sting|wing|chopper|scythe|edge|trident|shuriken|haken|saber|ripper|iai|maru/i;
+
+interface SignatureOverride {
+  signatureStyle: SignatureVfxStyle;
+  motion?: AttackMotionKind;
+  variant?: AttackVfxVariant;
+  colorHex?: string;
+  glowHex?: string;
+  accentHex?: string;
+}
+
+const SPECIES_SIGNATURE_OVERRIDES: Record<string, SignatureOverride> = {
+  // Iconic Adventure & Protagonist Lines
+  agumon: { signatureStyle: 'dragon_fireball', motion: 'ranged', variant: 'fireball', colorHex: '#fb923c', glowHex: '#ef4444' },
+  greymon: { signatureStyle: 'flame_breath', motion: 'ranged', variant: 'fireball', colorHex: '#fb923c', glowHex: '#dc2626' },
+  metalgreymon: { signatureStyle: 'twin_missiles', motion: 'ranged', variant: 'missile', colorHex: '#fb923c', glowHex: '#ef4444', accentHex: '#94a3b8' },
+  wargreymon: { signatureStyle: 'nova_sphere', motion: 'ranged', variant: 'fireball', colorHex: '#fde047', glowHex: '#ea580c', accentHex: '#ffffff' },
+  blackwargreymon: { signatureStyle: 'nova_sphere', motion: 'ranged', variant: 'dark', colorHex: '#e879f9', glowHex: '#7e22ce', accentHex: '#0f172a' },
+
+  gabumon: { signatureStyle: 'frost_breath', motion: 'ranged', variant: 'ice', colorHex: '#60a5fa', glowHex: '#2563eb' },
+  garurumon: { signatureStyle: 'frost_breath', motion: 'ranged', variant: 'ice', colorHex: '#93c5fd', glowHex: '#1d4ed8' },
+  weregarurumon: { signatureStyle: 'claw_slash', motion: 'melee', variant: 'slash', colorHex: '#93c5fd', glowHex: '#2563eb' },
+  metalgarurumon: { signatureStyle: 'frost_breath', motion: 'ranged', variant: 'beam', colorHex: '#a5f3fc', glowHex: '#0284c7', accentHex: '#ffffff' },
+
+  biyomon: { signatureStyle: 'tornado', motion: 'ranged', variant: 'fireball', colorHex: '#f472b6', glowHex: '#ea580c' },
+  birdramon: { signatureStyle: 'wing_storm', motion: 'ranged', variant: 'fireball', colorHex: '#fb923c', glowHex: '#dc2626' },
+  garudamon: { signatureStyle: 'wing_storm', motion: 'ranged', variant: 'fireball', colorHex: '#f97316', glowHex: '#b91c1c', accentHex: '#fde047' },
+  phoenixmon: { signatureStyle: 'wing_storm', motion: 'ranged', variant: 'holy', colorHex: '#fef08a', glowHex: '#f59e0b', accentHex: '#ffffff' },
+
+  tentomon: { signatureStyle: 'thunder_strike', motion: 'ranged', variant: 'bolt', colorHex: '#fde047', glowHex: '#38bdf8' },
+  kabuterimon: { signatureStyle: 'thunder_strike', motion: 'ranged', variant: 'bolt', colorHex: '#60a5fa', glowHex: '#2563eb', accentHex: '#fef08a' },
+  megakabuterimon: { signatureStyle: 'thunder_strike', motion: 'ranged', variant: 'beam', colorHex: '#fde047', glowHex: '#dc2626' },
+  herculeskabuterimon: { signatureStyle: 'thunder_strike', motion: 'ranged', variant: 'beam', colorHex: '#fde047', glowHex: '#eab308', accentHex: '#38bdf8' },
+
+  palmon: { signatureStyle: 'vine_whip', motion: 'ranged', variant: 'leaf', colorHex: '#4ade80', glowHex: '#7e22ce' },
+  togemon: { signatureStyle: 'needle_rain', motion: 'ranged', variant: 'leaf', colorHex: '#86efac', glowHex: '#16a34a' },
+  lillymon: { signatureStyle: 'flower_burst', motion: 'ranged', variant: 'beam', colorHex: '#f9a8d4', glowHex: '#22c55e', accentHex: '#fef08a' },
+  rosemon: { signatureStyle: 'flower_burst', motion: 'ranged', variant: 'leaf', colorHex: '#fb7185', glowHex: '#be123c', accentHex: '#f472b6' },
+
+  gomamon: { signatureStyle: 'fish_march', motion: 'ranged', variant: 'ice', colorHex: '#38bdf8', glowHex: '#0284c7', accentHex: '#f97316' },
+  ikkakumon: { signatureStyle: 'harpoon_trident', motion: 'ranged', variant: 'missile', colorHex: '#7dd3fc', glowHex: '#0284c7', accentHex: '#f97316' },
+  zudomon: { signatureStyle: 'beast_fist', motion: 'melee', variant: 'punch', colorHex: '#fde047', glowHex: '#f97316', accentHex: '#38bdf8' },
+  vikemon: { signatureStyle: 'diamond_storm', motion: 'ranged', variant: 'ice', colorHex: '#a5f3fc', glowHex: '#0369a1', accentHex: '#ffffff' },
+
+  patamon: { signatureStyle: 'bubbles', motion: 'ranged', variant: 'holy', colorHex: '#fde68a', glowHex: '#fb923c' },
+  angemon: { signatureStyle: 'celestial_arrow', motion: 'ranged', variant: 'holy', colorHex: '#fef08a', glowHex: '#f59e0b' },
+  magnaangemon: { signatureStyle: 'sacred_seal', motion: 'ranged', variant: 'holy', colorHex: '#fef08a', glowHex: '#a855f7', accentHex: '#ffffff' },
+  seraphimon: { signatureStyle: 'holy_orbs', motion: 'ranged', variant: 'holy', colorHex: '#fef08a', glowHex: '#f59e0b', accentHex: '#ffffff' },
+
+  salamon: { signatureStyle: 'sonic_wave', motion: 'ranged', variant: 'holy', colorHex: '#f9a8d4', glowHex: '#f59e0b' },
+  gatomon: { signatureStyle: 'claw_slash', motion: 'melee', variant: 'slash', colorHex: '#fef08a', glowHex: '#f59e0b' },
+  angewomon: { signatureStyle: 'celestial_arrow', motion: 'ranged', variant: 'holy', colorHex: '#fef08a', glowHex: '#f472b6', accentHex: '#ffffff' },
+  ophanimon: { signatureStyle: 'celestial_arrow', motion: 'ranged', variant: 'holy', colorHex: '#fde047', glowHex: '#10b981', accentHex: '#ffffff' },
+  magnadramon: { signatureStyle: 'tornado', motion: 'ranged', variant: 'holy', colorHex: '#f9a8d4', glowHex: '#f59e0b' },
+
+  veemon: { signatureStyle: 'comet_rush', motion: 'melee', variant: 'punch', colorHex: '#60a5fa', glowHex: '#2563eb' },
+  exveemon: { signatureStyle: 'v_x_wave', motion: 'ranged', variant: 'beam', colorHex: '#38bdf8', glowHex: '#2563eb', accentHex: '#ffffff' },
+  flamedramon: { signatureStyle: 'comet_rush', motion: 'melee', variant: 'punch', colorHex: '#fb923c', glowHex: '#ef4444', accentHex: '#fef08a' },
+  magnamon: { signatureStyle: 'sacred_seal', motion: 'ranged', variant: 'holy', colorHex: '#fde047', glowHex: '#f59e0b', accentHex: '#ffffff' },
+  veedramon: { signatureStyle: 'v_x_wave', motion: 'ranged', variant: 'fireball', colorHex: '#60a5fa', glowHex: '#1d4ed8' },
+  aeroveedramon: { signatureStyle: 'v_x_wave', motion: 'ranged', variant: 'beam', colorHex: '#38bdf8', glowHex: '#16a34a', accentHex: '#fef08a' },
+  ulforceveedramon: { signatureStyle: 'v_x_wave', motion: 'ranged', variant: 'beam', colorHex: '#7dd3fc', glowHex: '#eab308', accentHex: '#ffffff' },
+  paildramon: { signatureStyle: 'rapid_volley', motion: 'ranged', variant: 'missile', colorHex: '#60a5fa', glowHex: '#ef4444', accentHex: '#fde047' },
+  imperialdramondragonmode: { signatureStyle: 'nova_sphere', motion: 'ranged', variant: 'dark', colorHex: '#a855f7', glowHex: '#1d4ed8', accentHex: '#ffffff' },
+  imperialdramonfightermode: { signatureStyle: 'beam', motion: 'ranged', variant: 'beam', colorHex: '#38bdf8', glowHex: '#1d4ed8', accentHex: '#ffffff' },
+  silphymon: { signatureStyle: 'nova_sphere', motion: 'ranged', variant: 'fireball', colorHex: '#fb7185', glowHex: '#ea580c', accentHex: '#fef08a' },
+  dinobeemon: { signatureStyle: 'bat_swarm', motion: 'ranged', variant: 'dark', colorHex: '#c084fc', glowHex: '#16a34a' },
+  aquilamon: { signatureStyle: 'beam', motion: 'ranged', variant: 'beam', colorHex: '#fef08a', glowHex: '#ea580c' },
+  crossmon: { signatureStyle: 'wing_storm', motion: 'ranged', variant: 'holy', colorHex: '#fde047', glowHex: '#f59e0b', accentHex: '#ffffff' },
+  skullgreymon: { signatureStyle: 'twin_missiles', motion: 'ranged', variant: 'missile', colorHex: '#e2e8f0', glowHex: '#7e22ce', accentHex: '#ef4444' },
+  blackagumon: { signatureStyle: 'dragon_fireball', motion: 'ranged', variant: 'dark', colorHex: '#c084fc', glowHex: '#7e22ce' },
+  darktyrannomon: { signatureStyle: 'flame_breath', motion: 'ranged', variant: 'dark', colorHex: '#c084fc', glowHex: '#581c87' },
+  blackguilmon: { signatureStyle: 'dragon_fireball', motion: 'ranged', variant: 'dark', colorHex: '#c084fc', glowHex: '#7e22ce' },
+  youkomonrookie: { signatureStyle: 'dragon_fireball', motion: 'ranged', variant: 'dark', colorHex: '#a855f7', glowHex: '#2563eb' },
+  youkomon: { signatureStyle: 'dragon_fireball', motion: 'ranged', variant: 'dark', colorHex: '#a855f7', glowHex: '#581c87' },
+  durandamon: { signatureStyle: 'reaper_scythe', motion: 'melee', variant: 'slash', colorHex: '#fde047', glowHex: '#ea580c' },
+  demidevilmon: { signatureStyle: 'needle_rain', motion: 'ranged', variant: 'dark', colorHex: '#c084fc', glowHex: '#7e22ce' },
+  mojyamon: { signatureStyle: 'diamond_storm', motion: 'ranged', variant: 'ice', colorHex: '#e2e8f0', glowHex: '#38bdf8' },
+  shogungekomon: { signatureStyle: 'sonic_wave', motion: 'ranged', variant: 'ice', colorHex: '#38bdf8', glowHex: '#0284c7' },
+  pinamon: { signatureStyle: 'sonic_wave', motion: 'ranged', variant: 'bolt', colorHex: '#fde047', glowHex: '#38bdf8' },
+  chikurimon: { signatureStyle: 'nova_sphere', motion: 'ranged', variant: 'bolt', colorHex: '#fde047', glowHex: '#38bdf8' },
+  nanimon: { signatureStyle: 'beast_fist', motion: 'melee', variant: 'punch', colorHex: '#fb923c', glowHex: '#ea580c' },
+
+  guilmon: { signatureStyle: 'dragon_fireball', motion: 'ranged', variant: 'fireball', colorHex: '#fb923c', glowHex: '#dc2626' },
+  growlmon: { signatureStyle: 'flame_breath', motion: 'ranged', variant: 'fireball', colorHex: '#fb923c', glowHex: '#dc2626' },
+  wargrowlmon: { signatureStyle: 'beam', motion: 'ranged', variant: 'beam', colorHex: '#f87171', glowHex: '#dc2626', accentHex: '#fef08a' },
+  gallantmon: { signatureStyle: 'reaper_scythe', motion: 'ranged', variant: 'holy', colorHex: '#fef08a', glowHex: '#dc2626', accentHex: '#ffffff' },
+  chaosdukemon: { signatureStyle: 'reaper_scythe', motion: 'ranged', variant: 'dark', colorHex: '#e879f9', glowHex: '#991b1b' },
+
+  renamon: { signatureStyle: 'diamond_storm', motion: 'ranged', variant: 'ice', colorHex: '#a5f3fc', glowHex: '#0284c7', accentHex: '#fde047' },
+  kyubimon: { signatureStyle: 'dragon_fireball', motion: 'ranged', variant: 'fireball', colorHex: '#60a5fa', glowHex: '#2563eb', accentHex: '#e0f2fe' },
+  taomon: { signatureStyle: 'sacred_seal', motion: 'ranged', variant: 'holy', colorHex: '#fde047', glowHex: '#9333ea', accentHex: '#ffffff' },
+  sakuyamon: { signatureStyle: 'sacred_seal', motion: 'ranged', variant: 'holy', colorHex: '#c084fc', glowHex: '#eab308', accentHex: '#ffffff' },
+
+  terriermon: { signatureStyle: 'dragon_fireball', motion: 'ranged', variant: 'fireball', colorHex: '#4ade80', glowHex: '#ea580c' },
+  gargomon: { signatureStyle: 'rapid_volley', motion: 'ranged', variant: 'missile', colorHex: '#7dd3fc', glowHex: '#16a34a' },
+  rapidmon: { signatureStyle: 'rapid_volley', motion: 'ranged', variant: 'beam', colorHex: '#86efac', glowHex: '#0284c7', accentHex: '#fde047' },
+  megagargomon: { signatureStyle: 'twin_missiles', motion: 'ranged', variant: 'missile', colorHex: '#fde047', glowHex: '#15803d', accentHex: '#ef4444' },
+
+  wormmon: { signatureStyle: 'vine_whip', motion: 'ranged', variant: 'leaf', colorHex: '#e2e8f0', glowHex: '#4ade80' },
+  stingmon: { signatureStyle: 'needle_rain', motion: 'melee', variant: 'slash', colorHex: '#86efac', glowHex: '#16a34a' },
+
+  // Major Villains, Dark Masters, Olympus XII & Royal Knights
+  devimon: { signatureStyle: 'shadow_hand', motion: 'melee', variant: 'dark', colorHex: '#c084fc', glowHex: '#7e22ce' },
+  ladydevimon: { signatureStyle: 'bat_swarm', motion: 'ranged', variant: 'dark', colorHex: '#e879f9', glowHex: '#6b21a8' },
+  myotismon: { signatureStyle: 'bat_swarm', motion: 'ranged', variant: 'dark', colorHex: '#f87171', glowHex: '#7f1d1d', accentHex: '#c084fc' },
+  malomyotismon: { signatureStyle: 'bat_swarm', motion: 'ranged', variant: 'dark', colorHex: '#ef4444', glowHex: '#581c87', accentHex: '#fde047' },
+  phantomon: { signatureStyle: 'reaper_scythe', motion: 'melee', variant: 'slash', colorHex: '#c084fc', glowHex: '#6d28d9', accentHex: '#ffffff' },
+  piedmon: { signatureStyle: 'reaper_scythe', motion: 'ranged', variant: 'dark', colorHex: '#f472b6', glowHex: '#7e22ce', accentHex: '#fde047' },
+  beelzebumon: { signatureStyle: 'rapid_volley', motion: 'ranged', variant: 'dark', colorHex: '#c084fc', glowHex: '#dc2626', accentHex: '#fef08a' },
+  machinedramon: { signatureStyle: 'beam', motion: 'ranged', variant: 'beam', colorHex: '#38bdf8', glowHex: '#1d4ed8', accentHex: '#ffffff' },
+  metalseadramon: { signatureStyle: 'beam', motion: 'ranged', variant: 'beam', colorHex: '#67e8f9', glowHex: '#eab308', accentHex: '#ffffff' },
+  puppetmon: { signatureStyle: 'beast_fist', motion: 'melee', variant: 'punch', colorHex: '#fb923c', glowHex: '#a16207', accentHex: '#cbd5e1' },
+  apocalymon: { signatureStyle: 'nova_sphere', motion: 'ranged', variant: 'dark', colorHex: '#a855f7', glowHex: '#0f172a', accentHex: '#f43f5e' },
+  diablomon: { signatureStyle: 'nova_sphere', motion: 'ranged', variant: 'dark', colorHex: '#818cf8', glowHex: '#4c1d95', accentHex: '#f43f5e' },
+  armageddemon: { signatureStyle: 'nova_sphere', motion: 'ranged', variant: 'dark', colorHex: '#c084fc', glowHex: '#3b0764', accentHex: '#ffffff' },
+  alphamon: { signatureStyle: 'sacred_seal', motion: 'ranged', variant: 'holy', colorHex: '#fef08a', glowHex: '#2563eb', accentHex: '#ffffff' },
+  leomon: { signatureStyle: 'beast_fist', motion: 'ranged', variant: 'fireball', colorHex: '#fbbf24', glowHex: '#ea580c', accentHex: '#ffffff' },
+  gankoomon: { signatureStyle: 'beast_fist', motion: 'melee', variant: 'punch', colorHex: '#fb923c', glowHex: '#dc2626', accentHex: '#fde047' },
+  numemon: { signatureStyle: 'poop_splat', motion: 'ranged', variant: 'filth', colorHex: '#a16207', glowHex: '#65a30d' },
+  whamon: { signatureStyle: 'tidal_wave', motion: 'ranged', variant: 'ice', colorHex: '#38bdf8', glowHex: '#0369a1', accentHex: '#e0f2fe' },
+  dianamon: { signatureStyle: 'diamond_storm', motion: 'ranged', variant: 'ice', colorHex: '#93c5fd', glowHex: '#3b82f6', accentHex: '#fef08a' },
+  apollomon: { signatureStyle: 'nova_sphere', motion: 'ranged', variant: 'fireball', colorHex: '#fde047', glowHex: '#ea580c', accentHex: '#ffffff' },
+  monzaemon: { signatureStyle: 'holy_orbs', motion: 'ranged', variant: 'holy', colorHex: '#f9a8d4', glowHex: '#ec4899', accentHex: '#ffffff' },
+  shoutmon: { signatureStyle: 'sonic_wave', motion: 'ranged', variant: 'fireball', colorHex: '#f87171', glowHex: '#ea580c', accentHex: '#fde047' },
+  etemon: { signatureStyle: 'sonic_wave', motion: 'ranged', variant: 'dark', colorHex: '#c084fc', glowHex: '#6b21a8' },
+  pumpkinmon: { signatureStyle: 'bat_swarm', motion: 'ranged', variant: 'dark', colorHex: '#fb923c', glowHex: '#7c2d12', accentHex: '#fde047' },
+};
+
+function inferSignatureStyleFromMove(
+  moveName: string,
+  element: AttackElement,
+  motion: AttackMotionKind,
+  variant: AttackVfxVariant
+): SignatureVfxStyle {
+  const n = moveName.toLowerCase();
+
+  if (/poop|sludge|dirty|venom/.test(n)) return 'poop_splat';
+  if (/bubble|spit|pearl|dust|powder|jamming/.test(n)) return 'bubbles';
+  if (/terra force|terra destroyer|darkness zone|destiny destroyer|mega death|catastrophe|solblaster|gaia reactor|cosmo flash|nightmare syndrome|static force|soul core break/.test(n)) return 'nova_sphere';
+  if (/missile|giga blaster|barrage|grenade|bazooka|dynamo cannon|hyper cannon|genocide attack|energy shot|striver cannon/.test(n)) return 'twin_missiles';
+  if (/rapid fire|desperado|burst shot|gargo laser|double impact|carabine|bullet|shooter/.test(n)) return 'rapid_volley';
+  if (/v-wing|v-force|x-laser|v-breath/.test(n)) return 'v_x_wave';
+  if (/howling|cocytus|frost|ice breath/.test(n)) return 'frost_breath';
+  if (/breath|mega flame|exhaust flame|red blaze|blue prominence|heavy metal fire|hellfire|black flame|evil flame|wicked ember/.test(n)) return 'flame_breath';
+  if (/rocket|dash|headbutt|wheel rush|sliding|tri-horn|diamond shell|full throttle/.test(n)) return 'comet_rush';
+  if (/meteor wing|shadow wing|starlight explosion|kaiser phoenix|wing/.test(n)) return 'wing_storm';
+  if (/tornado|twister|hurricane|whirlwind|wind swift|gale/.test(n)) return 'tornado';
+  if (/thunder|shocker|lightning|mjolnir|bolt|electro|chrono|plug bomb|final strike/.test(n)) return 'thunder_strike';
+  if (/diamond|blizzard|crescent|bifrost|ice arrow|iceball|blazing ice|boomerang/.test(n)) return 'diamond_storm';
+  if (/ivy|sticky net|vine/.test(n)) return 'vine_whip';
+  if (/needle|spike|stinger|thorn|nuts|seed|dart/.test(n)) return 'needle_rain';
+  if (/flower|temptation|sunshine|dream|fantasia|bit bomb/.test(n)) return 'flower_burst';
+  if (/marching fish|striking fish/.test(n)) return 'fish_march';
+  if (/tidal|hydro|coral|ink|anchor/.test(n)) return 'tidal_wave';
+  if (/harpoon|trident/.test(n)) return 'harpoon_trident';
+  if (/arrow|javelin|judgment|shooting star|holy shot|baptisme|shirohane/.test(n)) return 'celestial_arrow';
+  if (/seven heavens|meteor squall|hearts attack/.test(n)) return 'holy_orbs';
+  if (/gate of destiny|mandala|bonhitsusen|aramitama|digitalize|rosetta|jihad|talisman|izuna|satori/.test(n)) return 'sacred_seal';
+  if (/beast king|hand of fate|hammer|tekken|justice kick|ice punch|oyaji|pummel|boring storm|paw|punch|knuckle|fist/.test(n)) return 'beast_fist';
+  if (/grisly wing|pandemonium|darkness wave|nightmare shock|bad message|trick or treat|masquerade/.test(n)) return 'bat_swarm';
+  if (/touch of evil|hell hand|gift of darkness|rostrum|phantom pain|decay|heartbreak/.test(n)) return 'shadow_hand';
+  if (/chopper|saber|trump sword|berserk sword|gram slash|heaven ripper|spectral rain|ghost slash|demon disaster|bloody finish|shuriken|blade|sword|slash|maru|seiryu|eiseiryu|twentieth|bunny blades|zweihander/.test(n)) return 'reaper_scythe';
+  if (/howl|symphony|musical|rock soul|dark spirits|ultrasonic|giggle|chirp|roar|lärm|larm/.test(n)) return 'sonic_wave';
+  if (/drill|rock|stone|pebble|gear|potato|clack/.test(n)) return 'drill_boulder';
+  if (/claw|nail|scratch|fang|rend|scissors|rake|lariat|pecker|gaken|tail blade|strike/.test(n) && motion === 'melee') {
+    return variant === 'slash' ? 'claw_slash' : 'beast_fist';
+  }
+  if (/eye|beam|ray|laser|cannon|blaster|heat|divert/.test(n)) {
+    return 'beam';
+  }
+
+  // Fallback by motion & element
+  if (motion === 'melee') {
+    if (element === 'filth') return 'beast_fist';
+    return variant === 'slash' ? 'claw_slash' : 'beast_fist';
+  }
+  if (element === 'filth') return 'poop_splat';
+  switch (variant) {
+    case 'bolt':
+      return 'thunder_strike';
+    case 'ice':
+      return 'diamond_storm';
+    case 'leaf':
+      return 'needle_rain';
+    case 'holy':
+      return 'sacred_seal';
+    case 'dark':
+      return 'dragon_fireball';
+    case 'missile':
+      return 'twin_missiles';
+    case 'filth':
+      return 'poop_splat';
+    case 'beam':
+      return 'beam';
+    case 'fireball':
+    default:
+      return element === 'ice' ? 'diamond_storm' : 'dragon_fireball';
+  }
+}
 
 function pickRangedVariant(element: AttackElement, moveName: string, soundType?: string): AttackVfxVariant {
   if (BEAM_MOVE_REGEX.test(moveName)) {
@@ -1531,6 +1766,8 @@ export function getBasicAttackVisual(
     variant: isSlash ? 'slash' : 'punch',
     colorHex: palette.colorHex,
     glowHex: palette.glowHex,
+    signatureStyle: isSlash ? 'claw_slash' : 'beast_fist',
+    speciesId: species?.id,
   };
 }
 
@@ -1539,12 +1776,14 @@ export function getRangedVolleyVisual(
   moveName = 'Energy Shot'
 ): AttackVisualSpec {
   const palette = ELEMENT_VISUAL_PALETTE[element] || ELEMENT_VISUAL_PALETTE.neutral;
+  const variant = pickRangedVariant(element, moveName, 'blast');
   return {
     motion: 'ranged',
     element,
-    variant: pickRangedVariant(element, moveName, 'blast'),
+    variant,
     colorHex: palette.colorHex,
     glowHex: palette.glowHex,
+    signatureStyle: inferSignatureStyleFromMove(moveName, element, 'ranged', variant),
   };
 }
 
@@ -1566,30 +1805,46 @@ export function classifyAttackVisual(
   const name = move.name || '';
   const soundType = move.soundType || 'blast';
 
+  // Check if this is the Digimon's canonical signature move override
+  const isSignatureMove =
+    species?.id &&
+    species.signatureMove?.name &&
+    species.signatureMove.name.toLowerCase() === name.toLowerCase();
+  const speciesOverride = isSignatureMove && species?.id ? SPECIES_SIGNATURE_OVERRIDES[species.id] : undefined;
+
   let motion: AttackMotionKind;
-  if (soundType === 'punch') {
+  if (speciesOverride?.motion) {
+    motion = speciesOverride.motion;
+  } else if (soundType === 'punch') {
     motion = PURE_PROJECTILE_REGEX.test(name) ? 'ranged' : 'melee';
   } else {
     const looksMelee = MELEE_MOVE_REGEX.test(name) && !RANGED_MOVE_REGEX.test(name);
     motion = looksMelee ? 'melee' : 'ranged';
   }
 
-  if (motion === 'melee') {
-    return {
-      motion: 'melee',
-      element,
-      variant: SLASH_MOVE_REGEX.test(name) || element === 'weapon' ? 'slash' : 'punch',
-      colorHex: palette.colorHex,
-      glowHex: palette.glowHex,
-    };
-  }
+  const variant: AttackVfxVariant =
+    speciesOverride?.variant ||
+    (motion === 'melee'
+      ? SLASH_MOVE_REGEX.test(name) || element === 'weapon'
+        ? 'slash'
+        : 'punch'
+      : pickRangedVariant(element, name, soundType));
+
+  const colorHex = speciesOverride?.colorHex || palette.colorHex;
+  const glowHex = speciesOverride?.glowHex || palette.glowHex;
+  const signatureStyle =
+    speciesOverride?.signatureStyle ||
+    inferSignatureStyleFromMove(name, element, motion, variant);
 
   return {
-    motion: 'ranged',
+    motion,
     element,
-    variant: pickRangedVariant(element, name, soundType),
-    colorHex: palette.colorHex,
-    glowHex: palette.glowHex,
+    variant,
+    colorHex,
+    glowHex,
+    accentHex: speciesOverride?.accentHex,
+    signatureStyle,
+    speciesId: species?.id,
   };
 }
 

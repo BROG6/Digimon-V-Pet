@@ -1296,7 +1296,7 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
     : null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-4 bg-slate-950/90 backdrop-blur-md android-safe-modal">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-4 bg-slate-950/95 android-safe-modal">
       <div className="relative w-full max-w-4xl bg-slate-900 border border-slate-700/80 rounded-3xl p-4 sm:p-6 shadow-2xl flex flex-col max-h-[94vh] overflow-hidden">
         {/* Top Modal Header */}
         <div className="flex items-center justify-between gap-3 pb-3 border-b border-slate-800 shrink-0">

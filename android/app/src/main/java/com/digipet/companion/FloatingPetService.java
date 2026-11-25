@@ -2768,11 +2768,24 @@ public class FloatingPetService extends Service {
         }
         if (floatingView != null && windowManager != null) {
             try {
+                floatingView.removeAllViews();
                 windowManager.removeView(floatingView);
             } catch (Exception e) {
                 // safe ignore
             }
             floatingView = null;
+        }
+        if (webView != null) {
+            try {
+                webView.stopLoading();
+                webView.onPause();
+                webView.clearHistory();
+                webView.removeAllViews();
+                webView.destroy();
+            } catch (Exception ignored) {
+                // safe ignore
+            }
+            webView = null;
         }
     }
 }

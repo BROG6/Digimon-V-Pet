@@ -486,6 +486,10 @@ export function advanceCareState(prev: PetState, now: number = Date.now()): Care
     events.criticalWarning = '🚨 CRITICAL! Feed, cure sickness & check lights right away!';
   }
 
+  const nextDiscipline = events.careMistakeAdded
+    ? Math.max(0, (prev.discipline ?? 50) - 5)
+    : (prev.discipline ?? 50);
+
   return {
     nextPet: {
       ...prev,
@@ -495,6 +499,7 @@ export function advanceCareState(prev: PetState, now: number = Date.now()): Care
       isSick,
       sickSince,
       careMistakes,
+      discipline: nextDiscipline,
       careCallStartedAt,
       sleepCallStartedAt,
       lastHungerDropAt,

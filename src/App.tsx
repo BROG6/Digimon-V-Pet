@@ -10,7 +10,8 @@ import {
   AdventureBattleResult,
   BattleHistoryEntry,
   TrainingStatKey,
-  ShopItemId
+  ShopItemId,
+  TamerBondProfile
 } from './types/digimon';
 import { DIGI_EGGS, DIGIMON_DATABASE, FURNITURE_SHOP, ROOM_THEMES, SPECIAL_ITEMS } from './data/digidex';
 import {
@@ -1077,12 +1078,14 @@ export default function App() {
     setPet((prev) => {
       const now = Date.now();
       const nextHunger = Math.min(100, prev.hunger + 25);
+      const overfed = prev.hunger >= 95;
       return {
         ...prev,
         bigMeatStock: prev.bigMeatStock - 1,
         hunger: nextHunger,
         weight: prev.weight + 2,
         happiness: Math.min(100, prev.happiness + 10),
+        discipline: overfed ? Math.max(0, (prev.discipline ?? 50) - 4) : (prev.discipline ?? 50),
         neglectTicks: 0,
         lastHungerDropAt: now,
         careCallStartedAt: nextHunger > 0 ? undefined : prev.careCallStartedAt,
@@ -1103,12 +1106,14 @@ export default function App() {
     setPet((prev) => {
       const now = Date.now();
       const nextHunger = Math.min(100, prev.hunger + 50);
+      const overfed = prev.hunger >= 95;
       return {
         ...prev,
         sirloinStock: Math.max(0, (prev.sirloinStock ?? 0) - 1),
         hunger: nextHunger,
         weight: prev.weight + 4,
         happiness: Math.min(100, prev.happiness + 20),
+        discipline: overfed ? Math.max(0, (prev.discipline ?? 50) - 4) : (prev.discipline ?? 50),
         neglectTicks: 0,
         lastHungerDropAt: now,
         careCallStartedAt: nextHunger > 0 ? undefined : prev.careCallStartedAt,
@@ -1205,6 +1210,7 @@ export default function App() {
         neglectTicks: 0,
         lastPoopAt: now,
         happiness: Math.min(100, prev.happiness + 5),
+        discipline: Math.min(100, (prev.discipline ?? 50) + 1),
       };
     });
     showNotification('Flushed and cleaned room spotless! 🧹');
@@ -1306,6 +1312,7 @@ export default function App() {
     setPet((prev) => ({
       ...prev,
       happiness: Math.min(100, prev.happiness + 15),
+      discipline: Math.min(100, (prev.discipline ?? 50) + 2),
     }));
     showNotification(`Pet ${pet.nickname?.trim() || currentSpecies?.name || 'Digimon'}! ❤️ Filled with affection!`);
   };
@@ -1358,6 +1365,7 @@ export default function App() {
         lastEnergyRegenAt: prev.energy >= 100 ? now : (prev.lastEnergyRegenAt ?? now),
         weight: Math.max(10, prev.weight - (success ? 2 : 1)),
         happiness: Math.min(100, prev.happiness + (success ? 15 : 6)),
+        discipline: Math.min(100, (prev.discipline ?? 50) + (success ? 5 : 2)),
         digiBits: prev.digiBits + (success ? 25 : 10),
         battleStats: outcome.nextStats,
         learnedAttackIds: nextLearned,
@@ -1399,6 +1407,7 @@ export default function App() {
         lastEnergyRegenAt: prev.energy >= 100 ? now : (prev.lastEnergyRegenAt ?? now),
         weight: Math.max(10, prev.weight - 1),
         happiness: Math.min(100, prev.happiness + 8),
+        discipline: Math.min(100, (prev.discipline ?? 50) + 3),
         digiBits: prev.digiBits + 12,
         battleStats: outcome.nextStats,
       };
@@ -1879,6 +1888,13 @@ export default function App() {
     );
   };
 
+  const handleUpdateTamerProfile = (profile: TamerBondProfile) => {
+    setPet((prev) => ({
+      ...prev,
+      tamerProfile: profile,
+    }));
+  };
+
   // NEW EGG / RESET (Places Egg onto Digivice to incubate for 1m before hatching)
   const handleSelectNewEgg = (egg: DigiEggInfo, nickname: string, playerName?: string) => {
     const starterSpecies = egg.baby1Id || 'botamon';
@@ -1893,6 +1909,7 @@ export default function App() {
       stage: 'egg',
       nickname: cleanNickname,
       playerName: playerName !== undefined ? playerName.trim() : (prev.playerName || ''),
+      tamerProfile: prev.tamerProfile,
       birthTimestamp: now,
       stageEnteredAt: now,
       evoGoalMetAt: undefined,
@@ -3187,6 +3204,7 @@ export default function App() {
         isOpen={isTalkModalOpen}
         onClose={() => setIsTalkModalOpen(false)}
         onUpdatePlayerName={handleUpdatePlayerName}
+        onUpdateTamerProfile={handleUpdateTamerProfile}
       />
 
       <EvolutionModal

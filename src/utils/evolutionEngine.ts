@@ -159,6 +159,529 @@ export function getStageBattleStats(pet: PetState): { won: number; total: number
   return { won, total, winRate };
 }
 
+export type StageEvoSourceKey = 'in-training' | 'rookie' | 'champion' | 'ultimate';
+export type CoreBranchArchetype = 'vaccine' | 'data' | 'virus' | 'corrupted';
+
+export interface StageBranchRequirement {
+  stage: StageEvoSourceKey;
+  targetStage: 'rookie' | 'champion' | 'ultimate' | 'mega';
+  archetype: CoreBranchArchetype;
+  timerLabel: string;
+  weightRangeLabel: { normal: string; heavy: string };
+  maxMistakes?: number;
+  minMistakes?: number;
+  minEffort?: number;
+  minBattles?: number;
+  minWinRate?: number;
+  weightClass?: WeightClass;
+  minHp?: number;
+  minMp?: number;
+  minOffense?: number;
+  minDefense?: number;
+  minSpeed?: number;
+  minBrains?: number;
+  minDiscipline?: number;
+  minHappiness?: number;
+  corruptedFallbackWinRate?: number;
+}
+
+export interface BranchReadinessMetric {
+  label: string;
+  current: string;
+  target: string;
+  met: boolean;
+}
+
+export interface BranchReadinessResult {
+  archetype: CoreBranchArchetype;
+  requirement: StageBranchRequirement;
+  met: boolean;
+  metrics: BranchReadinessMetric[];
+  missing: string[];
+  metCount: number;
+  totalCount: number;
+}
+
+const STAGE_WEIGHT_RANGES: Record<StageEvoSourceKey, { normal: string; heavy: string }> = {
+  'in-training': { normal: '16–28g', heavy: '>28g' },
+  rookie: { normal: '22–36g', heavy: '>36g' },
+  champion: { normal: '28–46g', heavy: '>46g' },
+  ultimate: { normal: '34–56g', heavy: '>56g' },
+};
+
+/**
+ * Shared Evolution Matrix combining:
+ * - Authentic Bandai Digivice (Pendulum / DMX / DM20th) escalating Battle Counts & Win Rates
+ * - Digimon World 1 / Next Order RPG Stat Pillars (HP, MP, OFF, DEF, SPD, BRN, Weight, Discipline, Happiness, CM, Effort)
+ */
+export const STAGE_BRANCH_REQUIREMENTS: Record<
+  StageEvoSourceKey,
+  Record<CoreBranchArchetype, StageBranchRequirement>
+> = {
+  'in-training': {
+    vaccine: {
+      stage: 'in-training',
+      targetStage: 'rookie',
+      archetype: 'vaccine',
+      timerLabel: '12h',
+      weightRangeLabel: STAGE_WEIGHT_RANGES['in-training'],
+      maxMistakes: 1,
+    },
+    data: {
+      stage: 'in-training',
+      targetStage: 'rookie',
+      archetype: 'data',
+      timerLabel: '12h',
+      weightRangeLabel: STAGE_WEIGHT_RANGES['in-training'],
+      maxMistakes: 1,
+      minEffort: 7,
+      minBrains: 24,
+    },
+    virus: {
+      stage: 'in-training',
+      targetStage: 'rookie',
+      archetype: 'virus',
+      timerLabel: '12h',
+      weightRangeLabel: STAGE_WEIGHT_RANGES['in-training'],
+      maxMistakes: 2,
+      minBattles: 8,
+      minOffense: 32,
+    },
+    corrupted: {
+      stage: 'in-training',
+      targetStage: 'rookie',
+      archetype: 'corrupted',
+      timerLabel: '12h',
+      weightRangeLabel: STAGE_WEIGHT_RANGES['in-training'],
+      minMistakes: 3,
+      corruptedFallbackWinRate: 40,
+    },
+  },
+  rookie: {
+    vaccine: {
+      stage: 'rookie',
+      targetStage: 'champion',
+      archetype: 'vaccine',
+      timerLabel: '24h',
+      weightRangeLabel: STAGE_WEIGHT_RANGES.rookie,
+      maxMistakes: 1,
+      minEffort: 6,
+      minBattles: 8,
+      minWinRate: 60,
+      minHp: 200,
+      minOffense: 66,
+      minDefense: 52,
+      minDiscipline: 55,
+    },
+    data: {
+      stage: 'rookie',
+      targetStage: 'champion',
+      archetype: 'data',
+      timerLabel: '24h',
+      weightRangeLabel: STAGE_WEIGHT_RANGES.rookie,
+      maxMistakes: 1,
+      minEffort: 8,
+      weightClass: 'Normal',
+      minBattles: 5,
+      minMp: 105,
+      minSpeed: 64,
+      minBrains: 42,
+    },
+    virus: {
+      stage: 'rookie',
+      targetStage: 'champion',
+      archetype: 'virus',
+      timerLabel: '24h',
+      weightRangeLabel: STAGE_WEIGHT_RANGES.rookie,
+      minMistakes: 1,
+      maxMistakes: 2,
+      weightClass: 'Heavy',
+      minBattles: 12,
+      minHp: 215,
+      minOffense: 74,
+    },
+    corrupted: {
+      stage: 'rookie',
+      targetStage: 'champion',
+      archetype: 'corrupted',
+      timerLabel: '24h',
+      weightRangeLabel: STAGE_WEIGHT_RANGES.rookie,
+      minMistakes: 3,
+      corruptedFallbackWinRate: 40,
+    },
+  },
+  champion: {
+    vaccine: {
+      stage: 'champion',
+      targetStage: 'ultimate',
+      archetype: 'vaccine',
+      timerLabel: '40h',
+      weightRangeLabel: STAGE_WEIGHT_RANGES.champion,
+      maxMistakes: 1,
+      minEffort: 8,
+      minBattles: 15,
+      minWinRate: 65,
+      minHp: 365,
+      minOffense: 124,
+      minDefense: 100,
+      minBrains: 58,
+      minDiscipline: 65,
+    },
+    data: {
+      stage: 'champion',
+      targetStage: 'ultimate',
+      archetype: 'data',
+      timerLabel: '40h',
+      weightRangeLabel: STAGE_WEIGHT_RANGES.champion,
+      maxMistakes: 1,
+      minEffort: 9,
+      weightClass: 'Normal',
+      minBattles: 10,
+      minWinRate: 50,
+      minMp: 160,
+      minDefense: 98,
+      minSpeed: 104,
+      minBrains: 72,
+    },
+    virus: {
+      stage: 'champion',
+      targetStage: 'ultimate',
+      archetype: 'virus',
+      timerLabel: '40h',
+      weightRangeLabel: STAGE_WEIGHT_RANGES.champion,
+      minMistakes: 1,
+      maxMistakes: 2,
+      weightClass: 'Heavy',
+      minBattles: 18,
+      minWinRate: 50,
+      minHp: 380,
+      minOffense: 134,
+      minDefense: 98,
+    },
+    corrupted: {
+      stage: 'champion',
+      targetStage: 'ultimate',
+      archetype: 'corrupted',
+      timerLabel: '40h',
+      weightRangeLabel: STAGE_WEIGHT_RANGES.champion,
+      minMistakes: 3,
+      corruptedFallbackWinRate: 40,
+    },
+  },
+  ultimate: {
+    vaccine: {
+      stage: 'ultimate',
+      targetStage: 'mega',
+      archetype: 'vaccine',
+      timerLabel: '48h',
+      weightRangeLabel: STAGE_WEIGHT_RANGES.ultimate,
+      maxMistakes: 1,
+      minEffort: 9,
+      minBattles: 22,
+      minWinRate: 75,
+      minHp: 560,
+      minMp: 180,
+      minOffense: 205,
+      minDefense: 165,
+      minSpeed: 145,
+      minBrains: 88,
+      minDiscipline: 75,
+      minHappiness: 75,
+    },
+    data: {
+      stage: 'ultimate',
+      targetStage: 'mega',
+      archetype: 'data',
+      timerLabel: '48h',
+      weightRangeLabel: STAGE_WEIGHT_RANGES.ultimate,
+      maxMistakes: 1,
+      minEffort: 10,
+      weightClass: 'Normal',
+      minBattles: 15,
+      minWinRate: 60,
+      minHp: 520,
+      minMp: 225,
+      minOffense: 190,
+      minDefense: 158,
+      minSpeed: 156,
+      minBrains: 110,
+      minDiscipline: 65,
+    },
+    virus: {
+      stage: 'ultimate',
+      targetStage: 'mega',
+      archetype: 'virus',
+      timerLabel: '48h',
+      weightRangeLabel: STAGE_WEIGHT_RANGES.ultimate,
+      minMistakes: 1,
+      maxMistakes: 2,
+      weightClass: 'Heavy',
+      minEffort: 7,
+      minBattles: 25,
+      minWinRate: 60,
+      minHp: 580,
+      minOffense: 215,
+      minDefense: 165,
+      minSpeed: 142,
+    },
+    corrupted: {
+      stage: 'ultimate',
+      targetStage: 'mega',
+      archetype: 'corrupted',
+      timerLabel: '48h',
+      weightRangeLabel: STAGE_WEIGHT_RANGES.ultimate,
+      minMistakes: 3,
+      corruptedFallbackWinRate: 40,
+    },
+  },
+};
+
+export function getStageBranchRequirements(
+  stage: DigimonStage
+): Record<CoreBranchArchetype, StageBranchRequirement> | null {
+  if (
+    stage === 'in-training' ||
+    stage === 'rookie' ||
+    stage === 'champion' ||
+    stage === 'ultimate'
+  ) {
+    return STAGE_BRANCH_REQUIREMENTS[stage];
+  }
+  return null;
+}
+
+export function getRequirementForTargetStage(
+  targetStage: 'rookie' | 'champion' | 'ultimate' | 'mega',
+  archetype: CoreBranchArchetype
+): StageBranchRequirement {
+  const sourceMap: Record<'rookie' | 'champion' | 'ultimate' | 'mega', StageEvoSourceKey> = {
+    rookie: 'in-training',
+    champion: 'rookie',
+    ultimate: 'champion',
+    mega: 'ultimate',
+  };
+  return STAGE_BRANCH_REQUIREMENTS[sourceMap[targetStage]][archetype];
+}
+
+export function formatBranchShortRule(
+  req: StageBranchRequirement,
+  opts?: { isCorruptedAlt?: boolean }
+): string {
+  if (req.archetype === 'corrupted') {
+    if (opts?.isCorruptedAlt) {
+      return `CM ≥ 3 · ${req.weightRangeLabel.heavy} or EF ≥ 5`;
+    }
+    return 'CM ≥ 3 (or CM 2 + WR < 40%)';
+  }
+  const parts: string[] = [];
+  if (typeof req.minMistakes === 'number' && typeof req.maxMistakes === 'number') {
+    parts.push(`CM ${req.minMistakes}–${req.maxMistakes}`);
+  } else if (typeof req.maxMistakes === 'number') {
+    parts.push(`CM ≤ ${req.maxMistakes}`);
+  }
+  if (typeof req.minEffort === 'number') {
+    parts.push(`EF ≥ ${req.minEffort}`);
+  }
+  if (req.weightClass) {
+    parts.push(`WT ${req.weightClass}`);
+  }
+  if (typeof req.minBattles === 'number') {
+    parts.push(
+      typeof req.minWinRate === 'number'
+        ? `${req.minBattles}+ Bat (${req.minWinRate}%+)`
+        : `${req.minBattles}+ Bat`
+    );
+  }
+  if (req.stage !== 'in-training') {
+    parts.push('Stats');
+  }
+  return parts.join(' · ');
+}
+
+export function formatBranchFullRule(
+  req: StageBranchRequirement,
+  opts?: { isCorruptedAlt?: boolean; hasCorruptedAlt?: boolean }
+): string {
+  const fromLabelMap: Record<StageEvoSourceKey, string> = {
+    'in-training': 'Baby II',
+    rookie: 'Rookie',
+    champion: 'Champion',
+    ultimate: 'Ultimate',
+  };
+  const fromLabel = fromLabelMap[req.stage];
+
+  if (req.archetype === 'corrupted') {
+    if (opts?.isCorruptedAlt) {
+      return `From ${fromLabel} (${req.timerLabel}): Care Mistakes ≥ 3 (or CM 2 with Battles & WR < 40%), plus Heavy Weight (${req.weightRangeLabel.heavy}) or Effort ≥ 5.`;
+    }
+    if (opts?.hasCorruptedAlt && req.stage !== 'in-training') {
+      return `From ${fromLabel} (${req.timerLabel}): 3+ Care Mistakes, or 2 Care Mistakes with ≥1 Battle & Win Rate < 40% (with Light/Normal Weight and Effort < 5).`;
+    }
+    return `From ${fromLabel} (${req.timerLabel}): 3+ Care Mistakes, or 2 Care Mistakes with ≥1 Battle & Win Rate < 40%.`;
+  }
+
+  const reqs: string[] = [];
+  if (typeof req.minMistakes === 'number' && typeof req.maxMistakes === 'number') {
+    reqs.push(`${req.minMistakes}–${req.maxMistakes} Care Mistakes`);
+  } else if (typeof req.maxMistakes === 'number') {
+    reqs.push(`Care Mistakes ≤ ${req.maxMistakes}`);
+  }
+  if (typeof req.minEffort === 'number') {
+    reqs.push(req.minEffort >= 10 ? 'Effort = 10' : `Effort ≥ ${req.minEffort}`);
+  }
+  if (req.weightClass === 'Normal') {
+    reqs.push(`Normal Weight (${req.weightRangeLabel.normal})`);
+  } else if (req.weightClass === 'Heavy') {
+    reqs.push(`Heavy Weight (${req.weightRangeLabel.heavy})`);
+  }
+  if (typeof req.minBattles === 'number') {
+    reqs.push(
+      typeof req.minWinRate === 'number'
+        ? `${req.minBattles}+ Battles (Win Rate ≥ ${req.minWinRate}%)`
+        : `${req.minBattles}+ Battles`
+    );
+  }
+  if (typeof req.minHp === 'number') reqs.push(`HP ≥ ${req.minHp}`);
+  if (typeof req.minMp === 'number') reqs.push(`MP ≥ ${req.minMp}`);
+  if (typeof req.minOffense === 'number') reqs.push(`OFF ≥ ${req.minOffense}`);
+  if (typeof req.minDefense === 'number') reqs.push(`DEF ≥ ${req.minDefense}`);
+  if (typeof req.minSpeed === 'number') reqs.push(`SPD ≥ ${req.minSpeed}`);
+  if (typeof req.minBrains === 'number') reqs.push(`BRN ≥ ${req.minBrains}`);
+  if (typeof req.minDiscipline === 'number') reqs.push(`Discipline ≥ ${req.minDiscipline}%`);
+  if (typeof req.minHappiness === 'number') reqs.push(`Happiness ≥ ${req.minHappiness}%`);
+
+  return `From ${fromLabel} (${req.timerLabel}): ${reqs.join(', ')}.`;
+}
+
+export function evaluateBranchReadiness(
+  pet: PetState,
+  species: DigimonSpecies | undefined,
+  req: StageBranchRequirement
+): BranchReadinessResult {
+  const resolvedSpecies = species || DIGIMON_DATABASE[pet.currentSpeciesId];
+  const stats = getEffectiveBattleStats(pet, resolvedSpecies);
+  const cm = pet.careMistakes || 0;
+  const ef = getStageEffort(pet);
+  const { total: tb, winRate: wr } = getStageBattleStats(pet);
+  const wt = getWeightClass(pet.weight || 15, pet.stage);
+  const discipline = Math.round(pet.discipline ?? 50);
+  const happiness = Math.round(pet.happiness ?? 50);
+
+  const metrics: BranchReadinessMetric[] = [];
+
+  if (req.archetype === 'corrupted') {
+    const cmOnly = cm >= (req.minMistakes ?? 3);
+    const cmBattle = cm >= 2 && tb > 0 && wr < (req.corruptedFallbackWinRate ?? 40);
+    const met = cmOnly || cmBattle;
+    metrics.push({
+      label: 'CM / Neglect',
+      current: `${cm} CM${tb > 0 ? ` (${wr}% WR)` : ''}`,
+      target: '3+ CM or 2 CM + WR < 40%',
+      met,
+    });
+    return {
+      archetype: 'corrupted',
+      requirement: req,
+      met,
+      metrics,
+      missing: met ? [] : ['CM 3+ (or CM 2 + <40% WR)'],
+      metCount: met ? 1 : 0,
+      totalCount: 1,
+    };
+  }
+
+  if (typeof req.minMistakes === 'number' && typeof req.maxMistakes === 'number') {
+    metrics.push({
+      label: 'CM',
+      current: `${cm}`,
+      target: `${req.minMistakes}–${req.maxMistakes}`,
+      met: cm >= req.minMistakes && cm <= req.maxMistakes,
+    });
+  } else if (typeof req.maxMistakes === 'number') {
+    metrics.push({
+      label: 'CM',
+      current: `${cm}`,
+      target: `≤ ${req.maxMistakes}`,
+      met: cm <= req.maxMistakes,
+    });
+  }
+
+  if (typeof req.minEffort === 'number') {
+    metrics.push({
+      label: 'Effort',
+      current: `${ef}`,
+      target: `≥ ${req.minEffort}`,
+      met: ef >= req.minEffort,
+    });
+  }
+
+  if (req.weightClass) {
+    metrics.push({
+      label: 'Weight',
+      current: `${wt}`,
+      target: req.weightClass,
+      met: wt === req.weightClass,
+    });
+  }
+
+  if (typeof req.minBattles === 'number') {
+    metrics.push({
+      label: 'Battles',
+      current: `${tb}`,
+      target: `≥ ${req.minBattles}`,
+      met: tb >= req.minBattles,
+    });
+  }
+
+  if (typeof req.minWinRate === 'number') {
+    metrics.push({
+      label: 'Win Rate',
+      current: `${wr}%`,
+      target: `≥ ${req.minWinRate}%`,
+      met: tb > 0 && wr >= req.minWinRate,
+    });
+  }
+
+  if (typeof req.minHp === 'number') {
+    metrics.push({ label: 'HP', current: `${stats.maxHp}`, target: `≥ ${req.minHp}`, met: stats.maxHp >= req.minHp });
+  }
+  if (typeof req.minMp === 'number') {
+    metrics.push({ label: 'MP', current: `${stats.maxMp}`, target: `≥ ${req.minMp}`, met: stats.maxMp >= req.minMp });
+  }
+  if (typeof req.minOffense === 'number') {
+    metrics.push({ label: 'OFF', current: `${stats.offense}`, target: `≥ ${req.minOffense}`, met: stats.offense >= req.minOffense });
+  }
+  if (typeof req.minDefense === 'number') {
+    metrics.push({ label: 'DEF', current: `${stats.defense}`, target: `≥ ${req.minDefense}`, met: stats.defense >= req.minDefense });
+  }
+  if (typeof req.minSpeed === 'number') {
+    metrics.push({ label: 'SPD', current: `${stats.speed}`, target: `≥ ${req.minSpeed}`, met: stats.speed >= req.minSpeed });
+  }
+  if (typeof req.minBrains === 'number') {
+    metrics.push({ label: 'BRN', current: `${stats.brains}`, target: `≥ ${req.minBrains}`, met: stats.brains >= req.minBrains });
+  }
+  if (typeof req.minDiscipline === 'number') {
+    metrics.push({ label: 'Disc', current: `${discipline}%`, target: `≥ ${req.minDiscipline}%`, met: discipline >= req.minDiscipline });
+  }
+  if (typeof req.minHappiness === 'number') {
+    metrics.push({ label: 'Happy', current: `${happiness}%`, target: `≥ ${req.minHappiness}%`, met: happiness >= req.minHappiness });
+  }
+
+  const metCount = metrics.filter((m) => m.met).length;
+  const totalCount = metrics.length;
+  const missing = metrics.filter((m) => !m.met).map((m) => `${m.label} ${m.current}/${m.target}`);
+
+  return {
+    archetype: req.archetype,
+    requirement: req,
+    met: metCount === totalCount,
+    metrics,
+    missing,
+    metCount,
+    totalCount,
+  };
+}
+
 export interface ArchetypeEvalResult {
   archetype: EvolutionArchetype;
   reason: string;
@@ -166,32 +689,21 @@ export interface ArchetypeEvalResult {
 }
 
 /**
- * Strictly evaluates the 15-Egg 4-Way Matrix & Raise Archetype System:
- * - Egg -> Baby I: Automatic after 1m
- * - Baby I -> Baby II: Automatic after 10m
- * - Baby II -> Rookie (12h):
- *   - Corrupted: CM >= 3 OR (CM >= 2 && TB > 0 && WR < 40%)
- *   - Virus: CM <= 2 && TB >= 8
- *   - Data: CM <= 1 && EF >= 7
- *   - Vaccine: CM <= 1
- * - Rookie -> Champion (24h), Champion -> Ultimate (40h), Ultimate -> Mega (48h):
- *   - Armor (Rookie only): Matching SP Relic equipped
- *   - Corrupted: CM >= 3 OR (CM >= 2 && TB > 0 && WR < 40%)
- *   - Vaccine: CM <= 1 && EF >= 6 && TB >= 1 && WR >= 60%
- *   - Data: CM <= 1 && EF >= 8 && WT === 'Normal'
- *   - Virus: CM >= 1 && CM <= 2 && TB >= 12 && WT === 'Heavy'
+ * Evaluates the 15-Egg 4-Way Matrix & Raise Archetype System using:
+ * - Digivice escalating stage battle counts & win rates
+ * - Digimon World RPG stats (HP, MP, OFF, DEF, SPD, BRN, Weight, Discipline, Happiness)
  */
 export function evaluateRaiseArchetype(
   pet: PetState,
-  _species?: DigimonSpecies
+  species?: DigimonSpecies
 ): ArchetypeEvalResult {
+  const resolvedSpecies = species || DIGIMON_DATABASE[pet.currentSpeciesId];
   const cm = pet.careMistakes || 0;
   const ef = getStageEffort(pet);
   const { total: tb, winRate: wr } = getStageBattleStats(pet);
   const wt = getWeightClass(pet.weight || 15, pet.stage);
   const matrix = EGG_LINE_MATRIX[pet.eggId];
 
-  // Egg -> Baby I
   if (pet.stage === 'egg') {
     return {
       archetype: 'data',
@@ -200,7 +712,6 @@ export function evaluateRaiseArchetype(
     };
   }
 
-  // Fresh -> In-Training is fixed Baby I -> Baby II
   if (pet.stage === 'fresh') {
     return {
       archetype: 'data',
@@ -209,7 +720,6 @@ export function evaluateRaiseArchetype(
     };
   }
 
-  // Armor Check (Rookie -> Armor Champion)
   if (
     pet.stage === 'rookie' &&
     pet.equippedSpecialItem &&
@@ -224,77 +734,23 @@ export function evaluateRaiseArchetype(
     };
   }
 
-  // In-Training -> Rookie Matrix Logic (Strict tree requirements)
-  if (pet.stage === 'in-training') {
-    if (cm >= 3 || (cm >= 2 && tb > 0 && wr < 40)) {
-      return {
-        archetype: 'corrupted',
-        reason:
-          cm >= 3
-            ? `Corrupted Mutant met (CM ${cm} >= 3)`
-            : `Corrupted Mutant met (CM ${cm} >= 2 & WR ${wr}% < 40%)`,
-        exactMatch: true,
-      };
-    }
-    if (cm <= 2 && tb >= 8 && !(cm <= 1 && ef >= 7 && wt !== 'Heavy')) {
-      return {
-        archetype: 'virus',
-        reason: `Virus Brawler met (TB ${tb} >= 8)`,
-        exactMatch: true,
-      };
-    }
-    if (cm <= 1 && ef >= 7) {
-      return {
-        archetype: 'data',
-        reason: `Data / Tech met (CM ${cm} <= 1 & Effort ${ef} >= 7)`,
-        exactMatch: true,
-      };
-    }
-    if (cm <= 1) {
-      return {
-        archetype: 'vaccine',
-        reason: `Vaccine High Care met (CM ${cm} <= 1)`,
-        exactMatch: true,
-      };
-    }
-    // CM === 2 and TB < 8 and (TB === 0 || WR >= 40%) -> no tree rule satisfied!
+  const stageReqs = getStageBranchRequirements(pet.stage);
+  if (!stageReqs) {
     return {
-      archetype: 'virus',
-      reason: `Needs Virus (TB ${tb}/8) or Corrupted (CM ${cm}/3 or WR < 40% with battles)`,
+      archetype: 'vaccine',
+      reason: 'Maximum stage reached.',
       exactMatch: false,
     };
   }
 
-  // Rookie -> Champion -> Ultimate -> Mega Strict Archetype Matrix
-  // 1. Vaccine / Holy (High Care)
-  if (cm <= 1 && ef >= 6 && tb >= 1 && wr >= 60) {
-    return {
-      archetype: 'vaccine',
-      reason: `Vaccine / Holy met (CM ${cm} <= 1, EF ${ef} >= 6, WR ${wr}% >= 60%)`,
-      exactMatch: true,
-    };
-  }
+  const stats = getEffectiveBattleStats(pet, resolvedSpecies);
+  const vacEval = evaluateBranchReadiness(pet, resolvedSpecies, stageReqs.vaccine);
+  const dataEval = evaluateBranchReadiness(pet, resolvedSpecies, stageReqs.data);
+  const virusEval = evaluateBranchReadiness(pet, resolvedSpecies, stageReqs.virus);
+  const corrEval = evaluateBranchReadiness(pet, resolvedSpecies, stageReqs.corrupted);
 
-  // 2. Data / Tech / Dragon (High Effort + Normal Weight)
-  if (cm <= 1 && ef >= 8 && wt === 'Normal') {
-    return {
-      archetype: 'data',
-      reason: `Data / Tech met (CM ${cm} <= 1, EF ${ef} >= 8, Weight Normal)`,
-      exactMatch: true,
-    };
-  }
-
-  // 3. Virus / Brawler (Combat Heavy)
-  if (cm >= 1 && cm <= 2 && tb >= 12 && wt === 'Heavy') {
-    return {
-      archetype: 'virus',
-      reason: `Virus / Brawler met (CM ${cm}, TB ${tb} >= 12, Weight Heavy)`,
-      exactMatch: true,
-    };
-  }
-
-  // 4. Corrupted / Mutant (Neglect / Dark)
-  if (cm >= 3 || (cm >= 2 && tb > 0 && wr < 40)) {
+  // 1. Corrupted (Neglect)
+  if (corrEval.met) {
     return {
       archetype: 'corrupted',
       reason:
@@ -305,31 +761,82 @@ export function evaluateRaiseArchetype(
     };
   }
 
-  // No exact archetype requirement met yet! Determine closest hint for UI without marking exactMatch.
-  if (cm >= 2) {
-    return {
-      archetype: 'corrupted',
-      reason: `Requirements not met: Hit TB ${tb}/12 + Heavy WT (Virus) or CM 3 / WR < 40% (Corrupted)`,
-      exactMatch: false,
-    };
-  }
-  if (wt === 'Heavy' && cm === 1) {
+  // 2. Virus / Brawler (Checked before Vaccine when intentionally Heavy + 1-2 CM + Battle Brawler)
+  if (virusEval.met) {
     return {
       archetype: 'virus',
-      reason: `Requirements not met: Virus needs TB ${tb}/12 (Heavy WT) — or reach EF ${ef}/6 & WR ${wr}%/60%`,
-      exactMatch: false,
+      reason: `Virus / Brawler met (CM ${cm}, TB ${tb}, Weight Heavy, Combat stats ready)`,
+      exactMatch: true,
     };
   }
-  if (ef >= 6 && wt === 'Normal' && (tb === 0 || wr < 60)) {
+
+  // 3. Vaccine vs Data specialization check when both qualify
+  if (vacEval.met && dataEval.met) {
+    const dataMargin =
+      (stats.brains - (stageReqs.data.minBrains || 0)) +
+      (stats.speed - (stageReqs.data.minSpeed || 0)) +
+      (stats.maxMp - (stageReqs.data.minMp || 0)) * 0.5;
+    const vacMargin =
+      (stats.offense - (stageReqs.vaccine.minOffense || 0)) +
+      (stats.defense - (stageReqs.vaccine.minDefense || 0)) +
+      (stats.maxHp - (stageReqs.vaccine.minHp || 0)) * 0.35 +
+      ((pet.discipline ?? 50) - (stageReqs.vaccine.minDiscipline || 0)) * 0.5;
+
+    if (wt === 'Normal' && dataMargin > vacMargin) {
+      return {
+        archetype: 'data',
+        reason: `Data / Tech met (CM ${cm}, EF ${ef}, Normal WT, Tech stats specialized)`,
+        exactMatch: true,
+      };
+    }
+    return {
+      archetype: 'vaccine',
+      reason: `Vaccine / Holy met (CM ${cm}, EF ${ef}, TB ${tb}, WR ${wr}%, Heroic stats ready)`,
+      exactMatch: true,
+    };
+  }
+
+  if (dataEval.met && pet.stage === 'in-training') {
     return {
       archetype: 'data',
-      reason: `Requirements not met: Data needs EF ${ef}/8 (WT Normal) or Vaccine needs 1+ battle with WR >= 60%`,
-      exactMatch: false,
+      reason: `Data / Tech met (CM ${cm} <= 1, Effort ${ef} >= 7, Brains ${stats.brains} >= 24)`,
+      exactMatch: true,
     };
   }
+
+  if (vacEval.met) {
+    return {
+      archetype: 'vaccine',
+      reason:
+        pet.stage === 'in-training'
+          ? `Vaccine High Care met (CM ${cm} <= 1)`
+          : `Vaccine / Holy met (CM ${cm}, EF ${ef}, ${tb} Battles, WR ${wr}%, Stats ready)`,
+      exactMatch: true,
+    };
+  }
+
+  if (dataEval.met) {
+    return {
+      archetype: 'data',
+      reason: `Data / Tech met (CM ${cm}, EF ${ef}, Normal WT, Tech stats ready)`,
+      exactMatch: true,
+    };
+  }
+
+  // Not yet met — identify closest target branch cleanly
+  const candidates = [vacEval, dataEval, virusEval].sort(
+    (a, b) => b.metCount / Math.max(1, b.totalCount) - a.metCount / Math.max(1, a.totalCount)
+  );
+  const closest = candidates[0];
+  const labelMap: Record<CoreBranchArchetype, string> = {
+    vaccine: 'Vaccine',
+    data: 'Data',
+    virus: 'Virus',
+    corrupted: 'Corrupted',
+  };
   return {
-    archetype: 'vaccine',
-    reason: `Requirements not met: Vaccine needs EF ${ef}/6 & WR >= 60% (${tb} battles), or Data needs EF ${ef}/8 & Normal WT`,
+    archetype: closest.archetype,
+    reason: `Closest (${labelMap[closest.archetype]}): needs ${closest.missing.slice(0, 4).join(', ')}`,
     exactMatch: false,
   };
 }
@@ -504,22 +1011,11 @@ export function checkEvolutionEligibility(
   }
 
   const goalsMet = archetypeEval.exactMatch;
-  const minEffort =
-    archetypeEval.archetype === 'data'
-      ? pet.stage === 'in-training'
-        ? 7
-        : 8
-      : archetypeEval.archetype === 'vaccine' && pet.stage !== 'in-training'
-      ? 6
-      : 0;
-  const minBattles =
-    archetypeEval.archetype === 'virus'
-      ? pet.stage === 'in-training'
-        ? 8
-        : 12
-      : archetypeEval.archetype === 'vaccine' && pet.stage !== 'in-training'
-      ? 1
-      : 0;
+  const stageReqs = getStageBranchRequirements(pet.stage);
+  const reqObj =
+    stageReqs && archetypeEval.archetype !== 'armor'
+      ? stageReqs[archetypeEval.archetype as CoreBranchArchetype]
+      : undefined;
 
   return {
     goalsMet,
@@ -533,8 +1029,8 @@ export function checkEvolutionEligibility(
     stageBattles,
     stageWins,
     minTraining: 0,
-    minBattles,
-    minEffort,
+    minBattles: reqObj?.minBattles ?? 0,
+    minEffort: reqObj?.minEffort ?? 0,
   };
 }
 
@@ -676,6 +1172,8 @@ function buildSpeciesOverlayVisualFields(species: DigimonSpecies | undefined, pl
   const speciesQuotes = [
     ...profile.catchphrases,
     ...profile.idleQuotes,
+    ...profile.selfStories,
+    ...profile.curiousQuestions.slice(0, 2),
     ...profile.happyQuotes,
     ...profile.hungryQuotes,
     ...profile.battleQuotes,

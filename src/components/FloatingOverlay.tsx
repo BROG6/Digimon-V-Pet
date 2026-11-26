@@ -670,6 +670,7 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
           crestName: egg?.crestName,
           tamerName: egg?.tamerName,
           playerName: pet.playerName,
+          tamerProfile: pet.tamerProfile,
           hunger: pet.hunger,
           happiness: pet.happiness,
           energy: pet.energy,
@@ -701,6 +702,7 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
         console.warn('Speech trigger error:', err);
         const fallback = getContextualQuote(pet.currentSpeciesId, {
           playerName: pet.playerName,
+          tamerProfile: pet.tamerProfile,
           isSick: pet.isSick,
           hunger: pet.hunger,
           poopCount: pet.poopCount,
@@ -716,6 +718,7 @@ export const FloatingOverlay: React.FC<FloatingOverlayProps> = ({
 
     const msg = getContextualQuote(pet.currentSpeciesId, {
       playerName: pet.playerName,
+      tamerProfile: pet.tamerProfile,
       isSick: pet.isSick,
       hunger: pet.hunger,
       poopCount: pet.poopCount,

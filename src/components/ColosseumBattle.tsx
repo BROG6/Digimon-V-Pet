@@ -302,7 +302,7 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
       maxHp: stats.maxHp,
       mp: stats.maxMp,
       maxMp: stats.maxMp,
-      sp: 50,
+      sp: 0,
       atk: stats.offense,
       def: stats.defense,
       spd: stats.speed,

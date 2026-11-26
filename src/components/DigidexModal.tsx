@@ -1,7 +1,12 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { CrestType, DigimonSpecies, DigimonStage, PetState } from '../types/digimon';
 import { DIGI_EGGS, DIGIMON_DATABASE, EGG_LINE_MATRIX, SPECIAL_ITEMS } from '../data/digidex';
-import { loadUnlockedSpeciesIds } from '../utils/evolutionEngine';
+import {
+  formatBranchFullRule,
+  formatBranchShortRule,
+  getRequirementForTargetStage,
+  loadUnlockedSpeciesIds,
+} from '../utils/evolutionEngine';
 import { DigimonSprite } from './DigimonSprite';
 import { BookOpen, X, Search, Shield, Lock, Info } from 'lucide-react';
 
@@ -12,7 +17,6 @@ interface EvolutionRouteHint {
   branchLabel: string;
   shortRule: string;
   fullRule: string;
-  avoidTip: string;
   badgeCls: string;
 }
 
@@ -26,7 +30,6 @@ function buildBranchRule(
       branchLabel: 'HATCH · BABY I',
       shortRule: 'Hatch · 1m',
       fullRule: 'Automatic hatch from Digitama after 1 minute.',
-      avoidTip: 'Choose a different Digi-Egg if aiming for another Baby line.',
       badgeCls: 'text-cyan-300 border-cyan-500/40 bg-cyan-950/50',
     };
   }
@@ -35,53 +38,9 @@ function buildBranchRule(
       branchLabel: 'GROWTH · BABY II',
       shortRule: 'Auto · 10m',
       fullRule: 'Automatic growth from Baby I after 10 minutes.',
-      avoidTip: 'Every Baby I on this Egg grows into this Baby II.',
       badgeCls: 'text-cyan-300 border-cyan-500/40 bg-cyan-950/50',
     };
   }
-  if (stage === 'rookie') {
-    if (branch === 'vaccine') {
-      return {
-        branchLabel: 'VACCINE · 12H',
-        shortRule: 'CM ≤ 1 · EF < 7',
-        fullRule: 'From Baby II (12h): Care Mistakes ≤ 1, Effort < 7, Stage Battles < 8.',
-        avoidTip: 'Train Effort ≥ 7 (Data) or clear 8+ battles (Virus) before 12h to branch.',
-        badgeCls: 'text-sky-300 border-sky-500/40 bg-sky-950/50',
-      };
-    }
-    if (branch === 'data') {
-      return {
-        branchLabel: 'DATA · 12H',
-        shortRule: 'CM ≤ 1 · EF ≥ 7',
-        fullRule: 'From Baby II (12h): Care Mistakes ≤ 1 and Effort ≥ 7 (keep Heavy Weight + 8+ Battles off).',
-        avoidTip: 'Keep Effort below 7 for Vaccine or reach 8+ Battles for Virus.',
-        badgeCls: 'text-emerald-300 border-emerald-500/40 bg-emerald-950/50',
-      };
-    }
-    if (branch === 'virus') {
-      return {
-        branchLabel: 'VIRUS · 12H',
-        shortRule: 'CM ≤ 2 · TB ≥ 8',
-        fullRule: 'From Baby II (12h): Care Mistakes ≤ 2 and 8+ Stage Battles (without CM ≤ 1 + EF ≥ 7 non-Heavy).',
-        avoidTip: 'Stay under 8 Stage Battles or focus Effort ≥ 7 with CM ≤ 1.',
-        badgeCls: 'text-rose-300 border-rose-500/40 bg-rose-950/50',
-      };
-    }
-    return {
-      branchLabel: 'CORRUPTED · 12H',
-      shortRule: 'CM ≥ 3 (or CM 2 + WR < 40%)',
-      fullRule: 'From Baby II (12h): 3+ Care Mistakes, or 2 Care Mistakes with ≥1 Battle & Win Rate < 40%.',
-      avoidTip: 'Keep Care Mistakes ≤ 1 (or keep Win Rate ≥ 40%) to prevent corruption.',
-      badgeCls: 'text-purple-300 border-purple-500/40 bg-purple-950/50',
-    };
-  }
-
-  const prevWeightMap: Record<'champion' | 'ultimate' | 'mega', { normal: string; heavy: string; timer: string }> = {
-    champion: { normal: '22–36g', heavy: '>36g', timer: '24h' },
-    ultimate: { normal: '28–46g', heavy: '>46g', timer: '40h' },
-    mega: { normal: '34–56g', heavy: '>56g', timer: '48h' },
-  };
-  const info = prevWeightMap[stage];
 
   if (branch === 'armor') {
     const relic = opts?.armorItemName || 'Egg Armor Relic';
@@ -89,54 +48,44 @@ function buildBranchRule(
       branchLabel: 'ARMOR · 24H',
       shortRule: `Equip ${relic}`,
       fullRule: `From Rookie (24h): Equip ${relic} before the evolution timer completes.`,
-      avoidTip: 'Unequip the Armor Relic before evolution finishes to evolve normally.',
       badgeCls: 'text-amber-300 border-amber-500/45 bg-amber-950/50',
     };
   }
-  if (branch === 'vaccine') {
-    return {
-      branchLabel: `VACCINE · ${info.timer.toUpperCase()}`,
-      shortRule: 'CM ≤ 1 · EF ≥ 6 · WR ≥ 60%',
-      fullRule: `After ${info.timer}: Care Mistakes ≤ 1, Effort ≥ 6, at least 1 Battle, and Win Rate ≥ 60%.`,
-      avoidTip: 'Avoid Vaccine by having 0 battles (or WR < 60%) with Normal Weight for Data, or Heavy Weight + 12+ Battles for Virus.',
+
+  const targetStage = stage as 'rookie' | 'champion' | 'ultimate' | 'mega';
+  const coreBranch = branch === 'corruptedAlt' ? 'corrupted' : branch;
+  const req = getRequirementForTargetStage(targetStage, coreBranch);
+  const timerUpper = req.timerLabel.toUpperCase();
+
+  const badgeMap = {
+    vaccine: {
+      branchLabel: `VACCINE · ${timerUpper}`,
       badgeCls: 'text-sky-300 border-sky-500/40 bg-sky-950/50',
-    };
-  }
-  if (branch === 'data') {
-    return {
-      branchLabel: `DATA · ${info.timer.toUpperCase()}`,
-      shortRule: `CM ≤ 1 · EF ≥ 8 · WT ${info.normal}`,
-      fullRule: `After ${info.timer}: Care Mistakes ≤ 1, Effort ≥ 8, Normal Weight (${info.normal}), without triggering Vaccine (0 battles or WR < 60%).`,
-      avoidTip: 'Win 1+ battle with ≥ 60% WR for Vaccine, or raise Weight above Normal.',
+    },
+    data: {
+      branchLabel: `DATA · ${timerUpper}`,
       badgeCls: 'text-emerald-300 border-emerald-500/40 bg-emerald-950/50',
-    };
-  }
-  if (branch === 'virus') {
-    return {
-      branchLabel: `VIRUS · ${info.timer.toUpperCase()}`,
-      shortRule: `CM 1–2 · TB ≥ 12 · WT ${info.heavy}`,
-      fullRule: `After ${info.timer}: 1–2 Care Mistakes, 12+ Stage Battles, and Heavy Weight (${info.heavy}).`,
-      avoidTip: 'Keep Weight at Normal or stay at 0 Care Mistakes to avoid the Virus branch.',
+    },
+    virus: {
+      branchLabel: `VIRUS · ${timerUpper}`,
       badgeCls: 'text-rose-300 border-rose-500/40 bg-rose-950/50',
-    };
-  }
-  if (branch === 'corruptedAlt') {
-    return {
-      branchLabel: `CORRUPTED ALT · ${info.timer.toUpperCase()}`,
-      shortRule: `CM ≥ 3 · ${info.heavy} or EF ≥ 5`,
-      fullRule: `After ${info.timer}: Corrupted care (CM ≥ 3, or CM 2 + WR < 40%) AND Heavy Weight (${info.heavy}) or Effort ≥ 5.`,
-      avoidTip: 'Keep Care Mistakes ≤ 1 to stay on Vaccine/Data/Virus; or keep Effort < 5 & non-Heavy Weight for primary Corrupted.',
+    },
+    corrupted: {
+      branchLabel:
+        branch === 'corruptedAlt'
+          ? `CORRUPTED ALT · ${timerUpper}`
+          : `CORRUPTED · ${timerUpper}`,
       badgeCls: 'text-purple-300 border-purple-500/40 bg-purple-950/50',
-    };
-  }
+    },
+  };
+
   return {
-    branchLabel: `CORRUPTED · ${info.timer.toUpperCase()}`,
-    shortRule: opts?.hasCorruptedAlt ? 'CM ≥ 3 · EF < 5 · Not Heavy' : 'CM ≥ 3 (or CM 2 + WR < 40%)',
-    fullRule: opts?.hasCorruptedAlt
-      ? `After ${info.timer}: Corrupted care (CM ≥ 3, or CM 2 + WR < 40%) while Effort < 5 and Weight not Heavy.`
-      : `After ${info.timer}: 3+ Care Mistakes, or 2 Care Mistakes with ≥1 Battle & Win Rate < 40%.`,
-    avoidTip: 'Keep Care Mistakes ≤ 1 (flush poop, feed, cure sickness & turn lights off on time) to avoid corruption.',
-    badgeCls: 'text-purple-300 border-purple-500/40 bg-purple-950/50',
+    ...badgeMap[coreBranch],
+    shortRule: formatBranchShortRule(req, { isCorruptedAlt: branch === 'corruptedAlt' }),
+    fullRule: formatBranchFullRule(req, {
+      isCorruptedAlt: branch === 'corruptedAlt',
+      hasCorruptedAlt: opts?.hasCorruptedAlt,
+    }),
   };
 }
 
@@ -420,7 +369,7 @@ export const DigidexModal: React.FC<DigidexModalProps> = ({
             ? 'bg-emerald-950/70 border-emerald-400 ring-1 ring-emerald-400/50'
             : 'bg-slate-950/85 border-slate-700/80 hover:border-cyan-500/60'
         }`}
-        title={`${sp.name} (${sp.stage}) — Tap for evolution stats & tips`}
+        title={`${sp.name} (${sp.stage}) — Tap for evolution requirements`}
       >
         {tag && (
           <span
@@ -823,7 +772,7 @@ export const DigidexModal: React.FC<DigidexModalProps> = ({
           </div>
         )}
 
-        {/* Unlocked Species Evolution Requirements & Raise/Avoid Guide */}
+        {/* Unlocked Species Evolution Requirements */}
         {inspectedSpeciesId && DIGIMON_DATABASE[inspectedSpeciesId] && unlockedSet.has(inspectedSpeciesId) && (() => {
           const sp = DIGIMON_DATABASE[inspectedSpeciesId];
           const hints = getSpeciesEvolutionHints(sp.id);
@@ -871,9 +820,6 @@ export const DigidexModal: React.FC<DigidexModalProps> = ({
                         </div>
                         <div className="text-cyan-100 leading-snug">
                           <span className="font-bold text-emerald-300">How to get:</span> {h.fullRule}
-                        </div>
-                        <div className="text-slate-300 leading-snug text-[11px]">
-                          <span className="font-bold text-amber-300">How to avoid:</span> {h.avoidTip}
                         </div>
                       </div>
                     ))}

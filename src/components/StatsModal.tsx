@@ -5,7 +5,10 @@ import { DIGIMON_DATABASE, SPECIAL_ITEMS } from '../data/digidex';
 import {
   checkEvolutionEligibility,
   computeNaturalEvoTiming,
+  CoreBranchArchetype,
+  evaluateBranchReadiness,
   formatDurationMs,
+  getStageBranchRequirements,
 } from '../utils/evolutionEngine';
 import {
   formatBedtimeLabel,
@@ -740,7 +743,9 @@ export const StatsModal: React.FC<StatsModalProps> = ({
                     style={{ width: `${pet.discipline}%` }}
                   />
                 </div>
-                <div className="text-[9px] text-slate-400">Trained reflexes and obedience</div>
+                <div className="text-[9px] text-slate-400">
+                  Trained obedience (+Gym / +Petting / -Overfeeding · Used by higher evolutions)
+                </div>
               </div>
             </div>
 
@@ -999,22 +1004,91 @@ export const StatsModal: React.FC<StatsModalProps> = ({
                 </div>
               )}
 
-              {/* Strict Tree Requirements Reference */}
-              {pet.stage === 'in-training' ? (
-                <div className="grid grid-cols-2 gap-1.5 pt-2 border-t border-slate-800/80 text-[10px] font-chakra text-slate-400">
-                  <div><span className="text-sky-300 font-bold">Vaccine (12h):</span> CM ≤ 1</div>
-                  <div><span className="text-emerald-300 font-bold">Data (12h):</span> CM ≤ 1, EF ≥ 7</div>
-                  <div><span className="text-rose-300 font-bold">Virus (12h):</span> TB ≥ 8 (CM ≤ 2)</div>
-                  <div><span className="text-purple-300 font-bold">Corrupted (12h):</span> CM ≥ 3 (or CM ≥ 2 &amp; WR &lt; 40%)</div>
-                </div>
-              ) : (
-                <div className="grid grid-cols-2 gap-1.5 pt-2 border-t border-slate-800/80 text-[10px] font-chakra text-slate-400">
-                  <div><span className="text-sky-300 font-bold">Vaccine:</span> CM ≤ 1, EF ≥ 6, TB ≥ 1 &amp; WR ≥ 60%</div>
-                  <div><span className="text-emerald-300 font-bold">Data:</span> CM ≤ 1, EF ≥ 8, WT = Normal</div>
-                  <div><span className="text-rose-300 font-bold">Virus:</span> CM 1–2, TB ≥ 12, WT = Heavy</div>
-                  <div><span className="text-purple-300 font-bold">Corrupted:</span> CM ≥ 3 (or CM ≥ 2 &amp; WR &lt; 40%)</div>
-                </div>
-              )}
+              {/* Digivice Battles + Digimon World Stat Requirements for Current Stage */}
+              {(() => {
+                const stageReqs = getStageBranchRequirements(pet.stage);
+                if (!stageReqs) return null;
+                const branches: Array<{
+                  key: CoreBranchArchetype;
+                  title: string;
+                  titleCls: string;
+                  borderCls: string;
+                }> = [
+                  {
+                    key: 'vaccine',
+                    title: 'Vaccine Pathway',
+                    titleCls: 'text-sky-300',
+                    borderCls: 'border-sky-500/30 bg-sky-950/20',
+                  },
+                  {
+                    key: 'data',
+                    title: 'Data Pathway',
+                    titleCls: 'text-emerald-300',
+                    borderCls: 'border-emerald-500/30 bg-emerald-950/20',
+                  },
+                  {
+                    key: 'virus',
+                    title: 'Virus Pathway',
+                    titleCls: 'text-rose-300',
+                    borderCls: 'border-rose-500/30 bg-rose-950/20',
+                  },
+                  {
+                    key: 'corrupted',
+                    title: 'Corrupted Pathway',
+                    titleCls: 'text-purple-300',
+                    borderCls: 'border-purple-500/30 bg-purple-950/20',
+                  },
+                ];
+                return (
+                  <div className="pt-2 border-t border-slate-800/80 space-y-2">
+                    <div className="text-[10px] font-pixel text-slate-300">
+                      CURRENT STAGE EVOLUTION TARGETS ({stageReqs.vaccine.timerLabel.toUpperCase()})
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {branches.map((b) => {
+                        const readiness = evaluateBranchReadiness(pet, species, stageReqs[b.key]);
+                        return (
+                          <div
+                            key={b.key}
+                            className={`p-2.5 rounded-xl border space-y-1.5 ${
+                              readiness.met
+                                ? 'border-emerald-400/60 bg-emerald-950/25'
+                                : b.borderCls
+                            }`}
+                          >
+                            <div className="flex items-center justify-between gap-2 text-[10px] font-pixel">
+                              <span className={b.titleCls}>{b.title}</span>
+                              <span
+                                className={
+                                  readiness.met ? 'text-emerald-300 font-bold' : 'text-slate-400'
+                                }
+                              >
+                                {readiness.met
+                                  ? '✓ READY'
+                                  : `${readiness.metCount}/${readiness.totalCount}`}
+                              </span>
+                            </div>
+                            <div className="flex flex-wrap gap-1">
+                              {readiness.metrics.map((m) => (
+                                <span
+                                  key={`${b.key}-${m.label}`}
+                                  className={`px-1.5 py-0.5 rounded text-[9px] font-chakra border tabular-nums ${
+                                    m.met
+                                      ? 'bg-emerald-950/60 border-emerald-500/40 text-emerald-200'
+                                      : 'bg-slate-900/90 border-slate-700/80 text-slate-300'
+                                  }`}
+                                >
+                                  {m.label}: {m.current}/{m.target.replace('≥ ', '')}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
               <div className="text-[10px] font-pixel text-slate-500 pt-1">
                 PENDULUM V20 TIMERS: Egg 1m · Baby I 10m · Baby II 12h · Rookie 24h · Champion 40h · Ultimate 48h
               </div>

@@ -1,8 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { PetState, DigimonSpecies, DigiEggInfo } from '../types/digimon';
+import { PetState, DigimonSpecies, DigiEggInfo, TamerBondProfile } from '../types/digimon';
 import { DigimonSprite } from './DigimonSprite';
-import { fetchDigimonAiDialogue, DigimonChatTurn } from '../utils/digimonPersonality';
+import {
+  extractTamerProfileFacts,
+  fetchDigimonAiDialogue,
+  pickDigimonTalkGreeting,
+  DigimonChatTurn,
+} from '../utils/digimonPersonality';
 import { getCustomUpdateUrl, setCustomUpdateUrl } from '../utils/appUpdater';
 import { sound } from '../utils/audio';
 import { Capacitor } from '@capacitor/core';
@@ -15,6 +20,7 @@ interface DigimonTalkModalProps {
   isOpen: boolean;
   onClose: () => void;
   onUpdatePlayerName?: (name: string) => void;
+  onUpdateTamerProfile?: (profile: TamerBondProfile) => void;
 }
 
 export const DigimonTalkModal: React.FC<DigimonTalkModalProps> = ({
@@ -24,6 +30,7 @@ export const DigimonTalkModal: React.FC<DigimonTalkModalProps> = ({
   isOpen,
   onClose,
   onUpdatePlayerName,
+  onUpdateTamerProfile,
 }) => {
   const [messages, setMessages] = useState<DigimonChatTurn[]>([]);
   const [inputText, setInputText] = useState<string>('');
@@ -43,8 +50,25 @@ export const DigimonTalkModal: React.FC<DigimonTalkModalProps> = ({
       setIsEditingName(!saved.trim());
       setConnectionError(null);
       setServerUrlDraft(getCustomUpdateUrl());
+      setMessages((prev) => {
+        if (prev.length > 0) return prev;
+        const opener = pickDigimonTalkGreeting(pet.currentSpeciesId, {
+          playerName: saved,
+          tamerProfile: pet.tamerProfile,
+          hunger: pet.hunger,
+          happiness: pet.happiness,
+          isSick: pet.isSick,
+        });
+        if (opener.askedQuestion && onUpdateTamerProfile) {
+          onUpdateTamerProfile({
+            ...(pet.tamerProfile || {}),
+            lastQuestionAskedAt: Date.now(),
+          });
+        }
+        return [{ role: 'model', text: opener.text }];
+      });
     }
-  }, [isOpen, pet.playerName]);
+  }, [isOpen, pet.playerName, pet.currentSpeciesId]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -97,6 +121,12 @@ export const DigimonTalkModal: React.FC<DigimonTalkModalProps> = ({
         ]
       : trimmedHistory;
 
+    const extractedProfile = extractTamerProfileFacts(clean, pet.tamerProfile);
+    const activeTamerProfile = extractedProfile || pet.tamerProfile;
+    if (extractedProfile && onUpdateTamerProfile) {
+      onUpdateTamerProfile(extractedProfile);
+    }
+
     try {
       const result = await fetchDigimonAiDialogue({
         speciesName,
@@ -109,6 +139,7 @@ export const DigimonTalkModal: React.FC<DigimonTalkModalProps> = ({
         crestName: egg?.crestName,
         tamerName: egg?.tamerName,
         playerName: activePlayerName || undefined,
+        tamerProfile: activeTamerProfile,
         hunger: pet.hunger,
         happiness: pet.happiness,
         energy: pet.energy,
@@ -185,6 +216,11 @@ export const DigimonTalkModal: React.FC<DigimonTalkModalProps> = ({
             <p className="text-[11px] text-slate-400 leading-snug line-clamp-2">
               {species?.description || `Your ${pet.stage} companion is ready to chat about adventures, training, or anything on your mind.`}
             </p>
+            {pet.tamerProfile?.recentFacts && pet.tamerProfile.recentFacts.length > 0 && (
+              <div className="mt-1 text-[10px] text-cyan-200/80 truncate">
+                Remembers: {pet.tamerProfile.recentFacts.slice(0, 2).join(' · ')}
+              </div>
+            )}
           </div>
         </div>
 
@@ -324,9 +360,9 @@ export const DigimonTalkModal: React.FC<DigimonTalkModalProps> = ({
         <div className="flex flex-wrap gap-1.5 mb-2.5">
           {[
             'How are you feeling today?',
-            'Tell me about your special attack!',
+            'Tell me something about yourself!',
+            'Ask me a question about myself!',
             'Got any training advice?',
-            'Are you hungry for meat?',
           ].map((prompt, i) => (
             <button
               key={i}

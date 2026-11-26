@@ -161,6 +161,7 @@ export const DigiChat: React.FC<DigiChatProps> = ({
         description: species?.description,
         signatureMove: species?.signatureMove?.name,
         playerName: activePlayerName || undefined,
+        tamerProfile: pet.tamerProfile,
         hunger: pet.hunger,
         happiness: pet.happiness,
         energy: pet.energy,

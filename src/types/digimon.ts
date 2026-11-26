@@ -210,12 +210,23 @@ export type ShopItemId =
   | 'miracle_elixir'
   | 'sovereign_core';
 
+export interface TamerBondProfile {
+  favoriteFood?: string;
+  hobbies?: string[];
+  favoriteColor?: string;
+  moodNote?: string;
+  recentFacts?: string[];
+  lastCuriousTopic?: string;
+  lastQuestionAskedAt?: number;
+}
+
 export interface PetState {
   eggId: string;
   currentSpeciesId: string;
   stage: DigimonStage;
   nickname: string;
   playerName?: string;
+  tamerProfile?: TamerBondProfile;
   birthTimestamp: number;
   hunger: number; // 0 (starving) to 100 (full)
   energy: number; // 0 (exhausted) to 100 (ready)

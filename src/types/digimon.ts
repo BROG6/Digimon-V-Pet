@@ -210,6 +210,8 @@ export type ShopItemId =
   | 'miracle_elixir'
   | 'sovereign_core';
 
+export type RoomWeatherTheme = 'sunny' | 'rainy' | 'snowy';
+
 export interface TamerBondProfile {
   favoriteFood?: string;
   hobbies?: string[];
@@ -257,6 +259,8 @@ export interface PetState {
   berryStock?: number;
   vitaminStock: number;
   activeRoomTheme: string;
+  roomWeather?: RoomWeatherTheme;
+  lastWeatherHappinessAt?: number;
   placedFurniture: PlacedFurniture[];
   lastCareCheck: number;
   stageEnteredAt?: number;

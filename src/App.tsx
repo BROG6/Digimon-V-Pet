@@ -11,7 +11,8 @@ import {
   BattleHistoryEntry,
   TrainingStatKey,
   ShopItemId,
-  TamerBondProfile
+  TamerBondProfile,
+  RoomWeatherTheme
 } from './types/digimon';
 import { DIGI_EGGS, DIGIMON_DATABASE, FURNITURE_SHOP, ROOM_THEMES, SPECIAL_ITEMS } from './data/digidex';
 import {
@@ -110,6 +111,11 @@ import {
   getTamerRankTier,
   isRankRequirementMet,
 } from './utils/tamerRank';
+import {
+  advanceWeatherHappiness,
+  getRoomWeatherSpec,
+  normalizeRoomWeather,
+} from './utils/roomWeather';
 import confetti from 'canvas-confetti';
 import { sound, triggerHaptic } from './utils/audio';
 import { battleSoundLibrary, BATTLE_SFX_CHANGED_EVENT } from './utils/battleSoundLibrary';
@@ -192,6 +198,8 @@ export default function App() {
           battleHistory: Array.isArray(parsed.battleHistory) ? parsed.battleHistory.slice(0, 10) : [],
           currentWinStreak: typeof parsed.currentWinStreak === 'number' ? Math.max(0, parsed.currentWinStreak) : 0,
           activeRoomTheme: syncedTheme,
+          roomWeather: normalizeRoomWeather(parsed.roomWeather),
+          lastWeatherHappinessAt: parsed.lastWeatherHappinessAt || parsed.lastCareCheck || Date.now(),
           stageEnteredAt: parsed.stageEnteredAt || Date.now(),
           lastHungerDropAt: parsed.lastHungerDropAt || parsed.lastCareCheck || Date.now(),
           lastPoopAt: parsed.lastPoopAt || parsed.lastCareCheck || Date.now(),
@@ -239,6 +247,8 @@ export default function App() {
       berryStock: 0,
       vitaminStock: 5,
       activeRoomTheme: syncRoomThemeForLightCycle('file-island', initialNight),
+      roomWeather: 'sunny',
+      lastWeatherHappinessAt: Date.now(),
       placedFurniture: [
         { instanceId: 'init-1', furnitureId: 'meat-grill', x: 28, y: 68 },
         { instanceId: 'init-2', furnitureId: 'cozy-cushion', x: 74, y: 72 },
@@ -494,7 +504,7 @@ export default function App() {
       setPet((prev) => {
         const res = advanceCareState(prev, now);
         lastStepEventsRef.current = res.events;
-        return res.nextPet;
+        return advanceWeatherHappiness(res.nextPet, now);
       });
     };
 
@@ -1353,6 +1363,7 @@ export default function App() {
         }
       }
       const nextEnergy = Math.max(0, prev.energy - TRAINING_ENERGY_COST);
+      const weatherSpec = getRoomWeatherSpec(prev.roomWeather);
 
       return {
         ...prev,
@@ -1364,7 +1375,7 @@ export default function App() {
         energy: nextEnergy,
         lastEnergyRegenAt: prev.energy >= 100 ? now : (prev.lastEnergyRegenAt ?? now),
         weight: Math.max(10, prev.weight - (success ? 2 : 1)),
-        happiness: Math.min(100, prev.happiness + (success ? 15 : 6)),
+        happiness: Math.max(0, Math.min(100, prev.happiness + (success ? 15 : 6) + weatherSpec.trainingHappinessBonus)),
         discipline: Math.min(100, (prev.discipline ?? 50) + (success ? 5 : 2)),
         digiBits: prev.digiBits + (success ? 25 : 10),
         battleStats: outcome.nextStats,
@@ -1384,11 +1395,12 @@ export default function App() {
       .filter(Boolean)
       .join(', ');
 
+    const weatherSuffix = outcome.weatherLabel ? ` · ${outcome.weatherLabel}` : '';
     if (outcome.newlyLearnedMoves.length > 0) {
       const learnedNames = outcome.newlyLearnedMoves.map((m) => m.name).join(', ');
-      showNotification(`💡 Learned ${learnedNames}! (${statGainSummary})`);
+      showNotification(`💡 Learned ${learnedNames}! (${statGainSummary}${weatherSuffix})`);
     } else {
-      showNotification(`Gym Session Complete: ${statGainSummary} (+${success ? 2 : 1} Effort)`);
+      showNotification(`Gym Session Complete: ${statGainSummary} (+${success ? 2 : 1} Effort${weatherSuffix})`);
     }
   };
 
@@ -1396,6 +1408,7 @@ export default function App() {
     setPet((prev) => {
       const now = Date.now();
       const nextEnergy = Math.max(0, prev.energy - TRAINING_ENERGY_COST);
+      const weatherSpec = getRoomWeatherSpec(prev.roomWeather);
       return {
         ...prev,
         trainingCount: prev.trainingCount + 1,
@@ -1406,7 +1419,7 @@ export default function App() {
         energy: nextEnergy,
         lastEnergyRegenAt: prev.energy >= 100 ? now : (prev.lastEnergyRegenAt ?? now),
         weight: Math.max(10, prev.weight - 1),
-        happiness: Math.min(100, prev.happiness + 8),
+        happiness: Math.max(0, Math.min(100, prev.happiness + 8 + weatherSpec.trainingHappinessBonus)),
         discipline: Math.min(100, (prev.discipline ?? 50) + 3),
         digiBits: prev.digiBits + 12,
         battleStats: outcome.nextStats,
@@ -1420,8 +1433,11 @@ export default function App() {
       outcome.deltas.defense ||
       outcome.deltas.speed ||
       outcome.deltas.brains;
+    const weatherPct = Math.round((outcome.weatherMultiplier - 1) * 100);
+    const weatherTag =
+      weatherPct !== 0 ? ` (${outcome.weatherIcon} ${weatherPct > 0 ? `+${weatherPct}%` : `${weatherPct}%`})` : '';
     showNotification(
-      `Pendulum Complete (${outcome.clampedShakes}/${outcome.maxShakes} shakes): +${gainAmount} ${outcome.statLabel}!`
+      `Pendulum Complete (${outcome.clampedShakes}/${outcome.maxShakes} shakes): +${gainAmount} ${outcome.statLabel}!${weatherTag}`
     );
   };
 
@@ -1841,6 +1857,18 @@ export default function App() {
     }));
   };
 
+  const handleChangeRoomWeather = (nextWeather: RoomWeatherTheme) => {
+    const normalized = normalizeRoomWeather(nextWeather);
+    const spec = getRoomWeatherSpec(normalized);
+    const now = Date.now();
+    setPet((prev) => ({
+      ...prev,
+      roomWeather: normalized,
+      lastWeatherHappinessAt: now,
+    }));
+    showNotification(`${spec.icon} Room weather set to ${spec.label} (${spec.trainingEffectLabel})`);
+  };
+
   const handleCycleDayNight = () => {
     const order: DayNightPreference[] = ['auto', 'night', 'day'];
     const nextPref = order[(order.indexOf(dayNightPref) + 1) % order.length];
@@ -1950,6 +1978,8 @@ export default function App() {
       berryStock: prev.berryStock ?? 0,
       vitaminStock: Math.max(5, prev.vitaminStock),
       activeRoomTheme: prev.activeRoomTheme || 'file-island',
+      roomWeather: normalizeRoomWeather(prev.roomWeather),
+      lastWeatherHappinessAt: now,
       placedFurniture: prev.placedFurniture?.length
         ? prev.placedFurniture
         : [{ instanceId: 'init-1', furnitureId: 'meat-grill', x: 28, y: 68 }],
@@ -3097,6 +3127,8 @@ export default function App() {
         onRemoveFurniture={handleRemoveFurniture}
         onUpdateFurniturePosition={handleUpdateFurniturePosition}
         onChangeTheme={handleChangeTheme}
+        weather={normalizeRoomWeather(pet.roomWeather)}
+        onChangeWeather={handleChangeRoomWeather}
         isNightTime={isNightMode}
         dayNightPref={dayNightPref}
         onCycleDayNight={handleCycleDayNight}

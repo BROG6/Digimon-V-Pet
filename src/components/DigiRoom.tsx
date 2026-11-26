@@ -1,11 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { PetState, DigimonSpecies, FurnitureItem } from '../types/digimon';
+import { PetState, DigimonSpecies, FurnitureItem, RoomWeatherTheme } from '../types/digimon';
 import { FURNITURE_SHOP, ROOM_THEMES } from '../data/digidex';
 import { DigimonSprite } from './DigimonSprite';
 import { PixelMeatIcon } from './PixelItemIcons';
 import { sound } from '../utils/audio';
 import { computeTamerRankProgress, getTamerRankTier } from '../utils/tamerRank';
+import {
+  ROOM_WEATHER_ORDER,
+  ROOM_WEATHER_SPECS,
+  getRoomWeatherSpec,
+  normalizeRoomWeather,
+} from '../utils/roomWeather';
 import {
   Home,
   X,
@@ -14,6 +20,7 @@ import {
   Moon,
   Sun,
   CloudRain,
+  Snowflake,
   Lock,
   Award,
   ChevronLeft,
@@ -21,59 +28,22 @@ import {
 } from 'lucide-react';
 import type { DayNightPreference } from '../utils/dayNightCycle';
 
-type WeatherKind = 'clear' | 'rain' | 'snow' | 'petals' | 'cyber-rain' | 'fireflies';
-
-const WEATHER_LABELS: Record<WeatherKind, { icon: string; label: string }> = {
-  clear: { icon: '✨', label: 'CLEAR' },
-  rain: { icon: '🌧️', label: 'RAIN' },
-  snow: { icon: '❄️', label: 'SNOW' },
-  petals: { icon: '🌸', label: 'PETALS' },
-  'cyber-rain': { icon: '💠', label: 'DATA STREAM' },
-  fireflies: { icon: '🌟', label: 'FIREFLIES' },
-};
-
-const WEATHER_ORDER: WeatherKind[] = ['clear', 'rain', 'snow', 'petals', 'cyber-rain', 'fireflies'];
-
-function pickThemeWeather(themeId: string, isNight: boolean, seed: number): WeatherKind {
-  if (themeId === 'cyber-matrix' || themeId === 'neon-arcade') {
-    return seed % 3 === 0 ? 'clear' : 'cyber-rain';
-  }
-  if (themeId === 'primary-village') {
-    const cycle: WeatherKind[] = isNight ? ['fireflies', 'clear', 'petals'] : ['petals', 'clear', 'snow'];
-    return cycle[seed % cycle.length];
-  }
-  if (themeId === 'starlit-island' || themeId === 'infinity-nexus') {
-    const cycle: WeatherKind[] = ['fireflies', 'clear', 'snow'];
-    return cycle[seed % cycle.length];
-  }
-  if (themeId === 'ancient-temple') {
-    const cycle: WeatherKind[] = ['fireflies', 'petals', 'rain', 'clear'];
-    return cycle[seed % cycle.length];
-  }
-  if (themeId === 'celestial-sky') {
-    const cycle: WeatherKind[] = ['clear', 'petals', 'snow'];
-    return cycle[seed % cycle.length];
-  }
-  if (themeId === 'sovereign-throne') {
-    const cycle: WeatherKind[] = ['fireflies', 'clear'];
-    return cycle[seed % cycle.length];
-  }
-  if (themeId === 'colosseum-arena') {
-    const cycle: WeatherKind[] = ['clear', 'rain', 'fireflies'];
-    return cycle[seed % cycle.length];
-  }
-  const cycle: WeatherKind[] = isNight ? ['fireflies', 'rain', 'clear'] : ['clear', 'rain', 'snow'];
-  return cycle[seed % cycle.length];
-}
-
-const WEATHER_PARTICLES = Array.from({ length: 24 }, (_, idx) => ({
+const WEATHER_PARTICLES = Array.from({ length: 28 }, (_, idx) => ({
   id: idx,
-  left: ((idx * 17 + 7) % 96) + 2,
-  delay: ((idx * 0.37) % 3.2).toFixed(2),
-  duration: (2.2 + ((idx * 0.43) % 2.4)).toFixed(2),
-  drift: idx % 2 === 0 ? 14 : -14,
-  char: idx % 3 === 0 ? '0' : idx % 3 === 1 ? '1' : 'F',
+  left: ((idx * 17 + 7) % 94) + 3,
+  delay: ((idx * 0.31) % 2.8).toFixed(2),
+  duration: (2.0 + ((idx * 0.39) % 2.2)).toFixed(2),
+  drift: idx % 2 === 0 ? 16 : -16,
+  size: idx % 3 === 0 ? 'lg' : idx % 3 === 1 ? 'md' : 'sm',
 }));
+
+const RAIN_SPLASHES = [
+  { id: 0, left: '16%', bottom: '12%', delay: '0.1s' },
+  { id: 1, left: '37%', bottom: '20%', delay: '0.7s' },
+  { id: 2, left: '58%', bottom: '10%', delay: '1.2s' },
+  { id: 3, left: '78%', bottom: '24%', delay: '0.45s' },
+  { id: 4, left: '88%', bottom: '14%', delay: '1.55s' },
+];
 
 interface RoomFurnitureDisplaySpec {
   emojiClass: string;
@@ -150,6 +120,8 @@ interface DigiRoomProps {
   onRemoveFurniture: (instanceId: string) => void;
   onUpdateFurniturePosition?: (instanceId: string, x: number, y: number) => void;
   onChangeTheme: (themeId: string) => void;
+  weather?: RoomWeatherTheme;
+  onChangeWeather?: (weather: RoomWeatherTheme) => void;
   isNightTime?: boolean;
   dayNightPref?: DayNightPreference;
   onCycleDayNight?: () => void;
@@ -555,6 +527,8 @@ export const DigiRoom: React.FC<DigiRoomProps> = ({
   onRemoveFurniture,
   onUpdateFurniturePosition,
   onChangeTheme,
+  weather,
+  onChangeWeather,
   isNightTime = false,
   dayNightPref = 'auto',
   onCycleDayNight,
@@ -563,8 +537,6 @@ export const DigiRoom: React.FC<DigiRoomProps> = ({
   const [activeTab, setActiveTab] = useState<'room' | 'shop' | 'themes'>('room');
   const [interactMsg, setInteractMsg] = useState<string | null>(null);
   const [selectedFurnitureId, setSelectedFurnitureId] = useState<string | null>(null);
-  const [weatherMode, setWeatherMode] = useState<'auto' | WeatherKind>('auto');
-  const [weatherSeed, setWeatherSeed] = useState<number>(1);
   const [outgoingThemeId, setOutgoingThemeId] = useState<string | null>(null);
   const [themeTransitionEpoch, setThemeTransitionEpoch] = useState<number>(0);
   const prevThemeIdRef = useRef<string>(pet.activeRoomTheme);
@@ -607,14 +579,6 @@ export const DigiRoom: React.FC<DigiRoomProps> = ({
       prevThemeIdRef.current = pet.activeRoomTheme;
     }
   }, [isOpen, activeTab, pet.activeRoomTheme]);
-
-  useEffect(() => {
-    if (!isOpen || weatherMode !== 'auto') return;
-    const timer = window.setInterval(() => {
-      setWeatherSeed((s) => s + 1);
-    }, 35000);
-    return () => window.clearInterval(timer);
-  }, [isOpen, weatherMode]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -665,22 +629,19 @@ export const DigiRoom: React.FC<DigiRoomProps> = ({
     const nextIdx = (curIdx + delta + unlockedThemes.length) % unlockedThemes.length;
     onChangeTheme(unlockedThemes[nextIdx].id);
   };
-  const activeWeather: WeatherKind =
-    weatherMode === 'auto'
-      ? pickThemeWeather(currentTheme.id, isNightTime, weatherSeed)
-      : weatherMode;
-  const cycleWeather = () => {
+  const activeWeather: RoomWeatherTheme = normalizeRoomWeather(weather ?? pet.roomWeather);
+  const activeWeatherSpec = getRoomWeatherSpec(activeWeather);
+  const handleSelectWeather = (nextWeather: RoomWeatherTheme) => {
     sound.playButton();
-    if (weatherMode === 'auto') {
-      setWeatherMode(WEATHER_ORDER[0]);
-      return;
-    }
-    const idx = WEATHER_ORDER.indexOf(weatherMode);
-    if (idx === -1 || idx === WEATHER_ORDER.length - 1) {
-      setWeatherMode('auto');
-    } else {
-      setWeatherMode(WEATHER_ORDER[idx + 1]);
-    }
+    onChangeWeather?.(nextWeather);
+    const nextSpec = getRoomWeatherSpec(nextWeather);
+    setInteractMsg(`${nextSpec.icon} ${nextSpec.label} Weather: ${nextSpec.trainingEffectLabel}`);
+    setTimeout(() => setInteractMsg(null), 2800);
+  };
+  const cycleWeather = () => {
+    const idx = ROOM_WEATHER_ORDER.indexOf(activeWeather);
+    const nextWeather = ROOM_WEATHER_ORDER[(idx + 1) % ROOM_WEATHER_ORDER.length];
+    handleSelectWeather(nextWeather);
   };
 
   const handleFurnitureClick = (item: FurnitureItem, instanceId: string) => {
@@ -752,14 +713,18 @@ export const DigiRoom: React.FC<DigiRoomProps> = ({
           <div className="flex flex-wrap items-center gap-2 sm:gap-2.5 shrink-0">
             <button
               onClick={cycleWeather}
-              className="min-h-[44px] flex items-center gap-1.5 px-3 py-1.5 rounded-full font-pixel text-[9px] border bg-sky-950/70 border-sky-400/50 text-sky-200 hover:bg-sky-900/70 cursor-pointer transition-colors whitespace-nowrap shrink-0"
-              title="Cycle Room Weather (Auto / Rain / Snow / Petals / Data / Fireflies)"
+              className={`min-h-[44px] flex items-center gap-1.5 px-3 py-1.5 rounded-full font-pixel text-[9px] border cursor-pointer transition-colors whitespace-nowrap shrink-0 ${activeWeatherSpec.badgeClasses}`}
+              title="Toggle Room Weather (Sunny / Rainy / Snowy)"
             >
-              <CloudRain className="w-3.5 h-3.5 text-sky-300" />
+              {activeWeather === 'sunny' ? (
+                <Sun className="w-3.5 h-3.5 text-amber-300" />
+              ) : activeWeather === 'rainy' ? (
+                <CloudRain className="w-3.5 h-3.5 text-sky-300" />
+              ) : (
+                <Snowflake className="w-3.5 h-3.5 text-cyan-200" />
+              )}
               <span>
-                {weatherMode === 'auto'
-                  ? `AUTO: ${WEATHER_LABELS[activeWeather].icon}`
-                  : `${WEATHER_LABELS[activeWeather].icon} ${WEATHER_LABELS[activeWeather].label}`}
+                {activeWeatherSpec.icon} {activeWeatherSpec.shortLabel}
               </span>
             </button>
             {onCycleDayNight && (
@@ -901,118 +866,153 @@ export const DigiRoom: React.FC<DigiRoomProps> = ({
               </div>
             )}
 
-            {/* Dynamic Theme Weather Overlay */}
-            {activeWeather !== 'clear' && (
-              <div className="absolute inset-0 pointer-events-none z-15 overflow-hidden">
-                {activeWeather === 'rain' && <div className="absolute inset-0 bg-sky-950/20" />}
-                {WEATHER_PARTICLES.map((p) => {
-                  if (activeWeather === 'rain') {
-                    return (
-                      <motion.div
-                        key={`rain-${p.id}`}
-                        initial={{ y: -24, x: 0, opacity: 0.7 }}
-                        animate={{ y: 460, x: -24, opacity: [0.25, 0.75, 0.3] }}
-                        transition={{
-                          repeat: Infinity,
-                          duration: Number(p.duration) * 0.45,
-                          delay: Number(p.delay) * 0.35,
-                          ease: 'linear',
-                        }}
-                        style={{ left: `${p.left}%` }}
-                        className="absolute top-0 w-[1.5px] h-4 bg-gradient-to-b from-sky-200/10 via-sky-300/80 to-cyan-200 rounded-full"
-                      />
-                    );
-                  }
-                  if (activeWeather === 'snow') {
-                    return (
-                      <motion.div
-                        key={`snow-${p.id}`}
-                        initial={{ y: -16, x: 0, opacity: 0.8 }}
-                        animate={{ y: 440, x: p.drift, opacity: [0.3, 0.9, 0.2] }}
-                        transition={{
-                          repeat: Infinity,
-                          duration: Number(p.duration) * 1.45,
-                          delay: Number(p.delay),
-                          ease: 'linear',
-                        }}
-                        style={{ left: `${p.left}%` }}
-                        className="absolute top-0 w-2 h-2 rounded-full bg-white/90 shadow-[0_0_6px_rgba(255,255,255,0.8)]"
-                      />
-                    );
-                  }
-                  if (activeWeather === 'petals') {
-                    return (
-                      <motion.div
-                        key={`petal-${p.id}`}
-                        initial={{ y: -16, x: 0, rotate: 0, opacity: 0.85 }}
-                        animate={{ y: 440, x: p.drift * 1.8, rotate: 240, opacity: [0.35, 0.95, 0.2] }}
-                        transition={{
-                          repeat: Infinity,
-                          duration: Number(p.duration) * 1.5,
-                          delay: Number(p.delay),
-                          ease: 'easeInOut',
-                        }}
-                        style={{ left: `${p.left}%` }}
-                        className="absolute top-0 w-2.5 h-1.5 rounded-full bg-pink-300/90 shadow-[0_0_6px_rgba(244,114,182,0.55)]"
-                      />
-                    );
-                  }
-                  if (activeWeather === 'cyber-rain') {
-                    return (
-                      <motion.span
-                        key={`cyber-${p.id}`}
-                        initial={{ y: -20, opacity: 0.8 }}
-                        animate={{ y: 440, opacity: [0.15, 0.85, 0.15] }}
-                        transition={{
-                          repeat: Infinity,
-                          duration: Number(p.duration) * 0.9,
-                          delay: Number(p.delay) * 0.5,
-                          ease: 'linear',
-                        }}
-                        style={{ left: `${p.left}%` }}
-                        className="absolute top-0 font-mono text-[10px] font-bold text-emerald-300/80 drop-shadow-[0_0_4px_rgba(52,211,153,0.75)]"
-                      >
-                        {p.char}
-                      </motion.span>
-                    );
-                  }
-                  return (
+            {/* Weather System Atmospheric Overlay (Sunny / Rainy / Snowy) */}
+            <div className="absolute inset-0 pointer-events-none z-15 overflow-hidden">
+              {activeWeather === 'sunny' && (
+                <>
+                  {/* Warm Sunlit Ambience + Sunbeam Shafts */}
+                  <div className="absolute inset-0 bg-gradient-to-br from-amber-300/18 via-transparent to-amber-500/10" />
+                  <div className="absolute -top-8 -left-6 w-36 h-36 rounded-full bg-amber-200/35 blur-2xl animate-pulse" />
+                  <div className="absolute -top-6 left-[18%] w-24 h-[120%] bg-gradient-to-b from-amber-200/24 via-amber-100/8 to-transparent -skew-x-12" />
+                  <div className="absolute -top-6 left-[46%] w-16 h-[120%] bg-gradient-to-b from-yellow-100/18 via-amber-100/5 to-transparent -skew-x-12" />
+                  <div className="absolute -top-6 right-[16%] w-20 h-[120%] bg-gradient-to-b from-amber-200/16 via-transparent to-transparent -skew-x-12" />
+                  {WEATHER_PARTICLES.slice(0, 14).map((p) => (
                     <motion.div
-                      key={`firefly-${p.id}`}
-                      initial={{ y: 120 + (p.id % 6) * 35, x: 0, opacity: 0.1 }}
+                      key={`sun-mote-${p.id}`}
+                      initial={{ y: 240 + (p.id % 5) * 28, x: 0, opacity: 0.1 }}
                       animate={{
-                        y: [110 + (p.id % 5) * 40, 80 + (p.id % 5) * 40, 130 + (p.id % 5) * 40],
-                        x: [0, p.drift, -p.drift * 0.5],
-                        opacity: [0.15, 0.95, 0.2],
+                        y: [220 + (p.id % 5) * 25, 110 + (p.id % 4) * 30, 60 + (p.id % 3) * 30],
+                        x: [0, p.drift * 0.7, p.drift * 0.2],
+                        opacity: [0.15, 0.85, 0.15],
                       }}
                       transition={{
                         repeat: Infinity,
-                        duration: Number(p.duration) * 1.6,
+                        duration: Number(p.duration) * 1.9,
                         delay: Number(p.delay),
                         ease: 'easeInOut',
                       }}
                       style={{ left: `${p.left}%` }}
-                      className="absolute top-0 w-1.5 h-1.5 rounded-full bg-amber-200 shadow-[0_0_8px_rgba(253,224,71,0.95)]"
+                      className="absolute top-0 w-1.5 h-1.5 rounded-full bg-amber-200 shadow-[0_0_8px_rgba(253,224,71,0.9)]"
                     />
-                  );
-                })}
-              </div>
-            )}
+                  ))}
+                </>
+              )}
+
+              {activeWeather === 'rainy' && (
+                <>
+                  {/* Overcast Storm Tint & Mist */}
+                  <div className="absolute inset-0 bg-gradient-to-b from-slate-900/38 via-sky-950/28 to-slate-950/32" />
+                  <div className="absolute top-0 inset-x-0 h-16 bg-gradient-to-b from-slate-900/45 to-transparent" />
+                  {WEATHER_PARTICLES.map((p) => (
+                    <motion.div
+                      key={`rain-${p.id}`}
+                      initial={{ y: -28, x: 0, opacity: 0.75 }}
+                      animate={{ y: 455, x: -32, opacity: [0.3, 0.85, 0.25] }}
+                      transition={{
+                        repeat: Infinity,
+                        duration: Number(p.duration) * 0.4,
+                        delay: Number(p.delay) * 0.32,
+                        ease: 'linear',
+                      }}
+                      style={{ left: `${p.left}%` }}
+                      className={`absolute top-0 w-[1.5px] rounded-full bg-gradient-to-b from-sky-200/15 via-sky-300/85 to-cyan-100 ${
+                        p.size === 'lg' ? 'h-5' : p.size === 'md' ? 'h-4' : 'h-3'
+                      }`}
+                    />
+                  ))}
+                  {RAIN_SPLASHES.map((splash) => (
+                    <motion.div
+                      key={`splash-${splash.id}`}
+                      initial={{ scale: 0.2, opacity: 0.8 }}
+                      animate={{ scale: [0.2, 1.4], opacity: [0.8, 0] }}
+                      transition={{
+                        repeat: Infinity,
+                        duration: 1.15,
+                        delay: parseFloat(splash.delay),
+                        ease: 'easeOut',
+                      }}
+                      style={{ left: splash.left, bottom: splash.bottom }}
+                      className="absolute w-5 h-2 rounded-full border border-sky-200/70"
+                    />
+                  ))}
+                </>
+              )}
+
+              {activeWeather === 'snowy' && (
+                <>
+                  {/* Frost Vignette & Winter Chill */}
+                  <div className="absolute inset-0 bg-gradient-to-b from-sky-100/14 via-cyan-100/8 to-white/15 shadow-[inset_0_0_28px_rgba(186,230,253,0.32)]" />
+                  {WEATHER_PARTICLES.map((p) => (
+                    <motion.div
+                      key={`snow-${p.id}`}
+                      initial={{ y: -20, x: 0, opacity: 0.85 }}
+                      animate={{
+                        y: 440,
+                        x: [0, p.drift, -p.drift * 0.6, p.drift * 0.4],
+                        opacity: [0.35, 0.95, 0.85, 0.2],
+                      }}
+                      transition={{
+                        repeat: Infinity,
+                        duration: Number(p.duration) * 1.45,
+                        delay: Number(p.delay),
+                        ease: 'linear',
+                      }}
+                      style={{ left: `${p.left}%` }}
+                      className={`absolute top-0 rounded-full bg-white/95 shadow-[0_0_6px_rgba(224,242,254,0.9)] ${
+                        p.size === 'lg'
+                          ? 'w-2.5 h-2.5'
+                          : p.size === 'md'
+                          ? 'w-2 h-2'
+                          : 'w-1.5 h-1.5 opacity-80'
+                      }`}
+                    />
+                  ))}
+                </>
+              )}
+            </div>
 
             {/* Hint Overlay */}
-            <div className="absolute top-3 left-3 z-30 bg-slate-950/70 backdrop-blur-sm px-2.5 py-1 rounded-lg text-[9px] font-pixel text-slate-300 border border-slate-700 flex items-center gap-1.5 pointer-events-none">
+            <div className="hidden sm:flex absolute top-2.5 left-2.5 z-30 bg-slate-950/75 backdrop-blur-sm px-2.5 py-1 rounded-lg text-[9px] font-pixel text-slate-300 border border-slate-700 items-center gap-1.5 pointer-events-none">
               <span>💡</span>
-              <span>Drag furniture to arrange • Tap Digimon to cheer</span>
+              <span>Drag furniture • Tap Digimon to cheer</span>
+            </div>
+
+            {/* Interactive Weather System Overlay Segmented Toggle */}
+            <div
+              className="absolute top-2.5 right-2.5 z-30 bg-slate-950/80 backdrop-blur-sm p-1 rounded-xl border border-slate-700/90 flex items-center gap-1 shadow-lg"
+              role="group"
+              aria-label="Room Weather Theme"
+            >
+              {ROOM_WEATHER_ORDER.map((wId) => {
+                const spec = ROOM_WEATHER_SPECS[wId];
+                const isActive = activeWeather === wId;
+                return (
+                  <button
+                    key={wId}
+                    type="button"
+                    onClick={() => handleSelectWeather(wId)}
+                    title={`${spec.label}: ${spec.happinessEffectLabel} | ${spec.trainingEffectLabel}`}
+                    className={`px-2 py-1 rounded-lg font-chakra text-[11px] font-bold border transition-all flex items-center gap-1 cursor-pointer whitespace-nowrap ${
+                      isActive
+                        ? spec.activeButtonClasses
+                        : 'bg-slate-900/85 border-transparent text-slate-300 hover:bg-slate-800 hover:text-white'
+                    }`}
+                  >
+                    <span>{spec.icon}</span>
+                    <span>{spec.label}</span>
+                  </button>
+                );
+              })}
             </div>
 
             {/* Interactive Message Banner */}
             <AnimatePresence>
               {interactMsg && (
                 <motion.div
-                  initial={{ y: -20, opacity: 0 }}
+                  initial={{ y: -16, opacity: 0 }}
                   animate={{ y: 0, opacity: 1 }}
-                  exit={{ y: -20, opacity: 0 }}
-                  className="relative top-3 mx-auto z-40 bg-slate-900/95 border border-emerald-400 text-emerald-300 font-pixel text-xs px-4 py-2 rounded-full shadow-lg"
+                  exit={{ y: -16, opacity: 0 }}
+                  className="absolute top-12 left-1/2 -translate-x-1/2 z-40 bg-slate-900/95 border border-emerald-400 text-emerald-300 font-pixel text-[10px] sm:text-xs px-3.5 py-1.5 rounded-full shadow-lg whitespace-nowrap max-w-[92%] truncate"
                 >
                   {interactMsg}
                 </motion.div>
@@ -1110,35 +1110,43 @@ export const DigiRoom: React.FC<DigiRoomProps> = ({
               />
             </motion.div>
 
-            {/* Room Name, Quick Theme Switcher & Weather Strip */}
-            <div className="relative bottom-2 left-2 z-30 self-start bg-slate-900/85 px-2.5 py-1 rounded-xl text-slate-300 font-pixel text-[10px] border border-slate-700 flex items-center gap-1.5">
-              {unlockedThemes.length > 1 && (
-                <button
-                  type="button"
-                  onClick={() => stepTheme(-1)}
-                  className="p-0.5 rounded hover:bg-slate-700 text-slate-300 hover:text-white cursor-pointer"
-                  aria-label="Previous room theme"
-                  title="Previous room theme"
-                >
-                  <ChevronLeft className="w-3.5 h-3.5" />
-                </button>
-              )}
-              <span>{currentTheme.name}</span>
-              {unlockedThemes.length > 1 && (
-                <button
-                  type="button"
-                  onClick={() => stepTheme(1)}
-                  className="p-0.5 rounded hover:bg-slate-700 text-slate-300 hover:text-white cursor-pointer"
-                  aria-label="Next room theme"
-                  title="Next room theme"
-                >
-                  <ChevronRight className="w-3.5 h-3.5" />
-                </button>
-              )}
-              <span className="text-slate-500">·</span>
-              <span className="text-sky-300">
-                {WEATHER_LABELS[activeWeather].icon} {WEATHER_LABELS[activeWeather].label}
-              </span>
+            {/* Bottom Overlay Row: Room Theme Switcher + Active Weather Effects */}
+            <div className="absolute bottom-2 inset-x-2 z-30 flex flex-wrap items-center justify-between gap-1.5 pointer-events-none">
+              <div className="pointer-events-auto bg-slate-900/88 backdrop-blur-sm px-2.5 py-1 rounded-xl text-slate-200 font-pixel text-[9px] sm:text-[10px] border border-slate-700 flex items-center gap-1.5">
+                {unlockedThemes.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => stepTheme(-1)}
+                    className="p-0.5 rounded hover:bg-slate-700 text-slate-300 hover:text-white cursor-pointer"
+                    aria-label="Previous room theme"
+                    title="Previous room theme"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5" />
+                  </button>
+                )}
+                <span>{currentTheme.name}</span>
+                {unlockedThemes.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => stepTheme(1)}
+                    className="p-0.5 rounded hover:bg-slate-700 text-slate-300 hover:text-white cursor-pointer"
+                    aria-label="Next room theme"
+                    title="Next room theme"
+                  >
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+
+              <div
+                className={`pointer-events-auto backdrop-blur-sm px-2.5 py-1 rounded-xl border font-chakra text-[11px] font-semibold flex items-center gap-1.5 bg-slate-950/82 ${activeWeatherSpec.badgeClasses}`}
+              >
+                <span>{activeWeatherSpec.icon}</span>
+                <span className="font-bold">{activeWeatherSpec.label}:</span>
+                <span className="truncate max-w-[230px] sm:max-w-none">
+                  {activeWeatherSpec.happinessEffectLabel.split('·')[0].trim()} · {activeWeatherSpec.trainingEffectLabel}
+                </span>
+              </div>
             </div>
           </div>
         )}

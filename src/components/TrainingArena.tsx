@@ -30,6 +30,7 @@ import {
   PixelWaterfallBackdrop,
 } from './PixelGymProps';
 import { sound, triggerHaptic } from '../utils/audio';
+import { formatWeatherBonusTag, getRoomWeatherSpec, normalizeRoomWeather } from '../utils/roomWeather';
 import { Dumbbell, X, Flame, Check, Lock, Swords, Activity, Smartphone, Sparkles } from 'lucide-react';
 
 interface GymStationVisualProps {
@@ -41,6 +42,7 @@ interface GymStationVisualProps {
   round: number;
   actionSprite: 'idle' | 'attack' | 'happy';
   roundResult: { text: string; isCrit: boolean } | null;
+  roomWeather?: PetState['roomWeather'];
 }
 
 const STATION_SIGN_LABELS: Record<TrainingStatKey, string> = {
@@ -61,7 +63,9 @@ const GymStationVisual: React.FC<GymStationVisualProps> = ({
   round,
   actionSprite,
   roundResult,
+  roomWeather,
 }) => {
+  const weatherTheme = normalizeRoomWeather(roomWeather);
   return (
     <div
       className="relative w-full h-56 rounded-2xl border-2 border-emerald-700/60 overflow-hidden flex items-end justify-center pb-5 px-4 select-none shadow-inner"
@@ -72,6 +76,16 @@ const GymStationVisual: React.FC<GymStationVisualProps> = ({
             : 'linear-gradient(180deg, #1d3523 0%, #2a472a 58%, #34522f 100%)',
       }}
     >
+      {/* Subtle DigiRoom Weather Ambience in Gym */}
+      {weatherTheme === 'sunny' && (
+        <div className="absolute inset-0 bg-gradient-to-br from-amber-300/15 via-transparent to-transparent pointer-events-none z-[1]" />
+      )}
+      {weatherTheme === 'rainy' && (
+        <div className="absolute inset-0 bg-sky-950/30 pointer-events-none z-[1]" />
+      )}
+      {weatherTheme === 'snowy' && (
+        <div className="absolute inset-0 bg-cyan-100/10 shadow-[inset_0_0_24px_rgba(186,230,253,0.22)] pointer-events-none z-[1]" />
+      )}
       {/* Digimon World 1 Green Gym Pixel Turf Texture + Back Fence */}
       <div
         className="absolute inset-0 opacity-25 pointer-events-none"
@@ -729,6 +743,7 @@ export const TrainingArena: React.FC<TrainingArenaProps> = ({
   const equippedMoves = getEquippedBattleMoves(pet, species);
   const equippedIds = new Set(equippedMoves.map((m) => m.id));
   const activeStation = GYM_STATIONS.find((s) => s.id === selectedStat) || GYM_STATIONS[2];
+  const activeWeatherSpec = getRoomWeatherSpec(pet.roomWeather);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-950/88 backdrop-blur-md android-safe-modal">
@@ -859,9 +874,23 @@ export const TrainingArena: React.FC<TrainingArenaProps> = ({
               </span>
             </div>
 
+            {/* Active DigiRoom Weather Modifier Banner */}
+            <div
+              className={`px-3 py-2 rounded-xl border flex flex-wrap items-center justify-between gap-2 text-xs font-chakra ${activeWeatherSpec.badgeClasses}`}
+            >
+              <span className="font-bold flex items-center gap-1.5">
+                <span>{activeWeatherSpec.icon}</span>
+                <span>Room Weather: {activeWeatherSpec.label}</span>
+              </span>
+              <span className="text-[11px] font-semibold">
+                {activeWeatherSpec.trainingEffectLabel} · {activeWeatherSpec.happinessEffectLabel.split('·')[1]?.trim() || activeWeatherSpec.happinessEffectLabel}
+              </span>
+            </div>
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               {GYM_STATIONS.map((station) => {
                 const pref = getStationPreferenceMultiplier(station.id, species);
+                const weatherTag = formatWeatherBonusTag(pet.roomWeather, station.id);
                 return (
                   <button
                     key={station.id}
@@ -878,11 +907,18 @@ export const TrainingArena: React.FC<TrainingArenaProps> = ({
                         <span className="font-chakra font-bold text-white text-sm">
                           {station.statLabel} · {station.stationName}
                         </span>
-                        {pref.multiplier !== 1.0 && (
-                          <span className="text-[11px] font-chakra font-semibold opacity-90 whitespace-nowrap">
-                            {pref.label}
-                          </span>
-                        )}
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {weatherTag && (
+                            <span className="text-[10px] font-chakra font-bold px-1.5 py-0.5 rounded bg-slate-950/60 border border-white/15 whitespace-nowrap">
+                              {weatherTag}
+                            </span>
+                          )}
+                          {pref.multiplier !== 1.0 && (
+                            <span className="text-[11px] font-chakra font-semibold opacity-90 whitespace-nowrap">
+                              {pref.label}
+                            </span>
+                          )}
+                        </div>
                       </div>
                       <p className="text-[11px] text-slate-300/90 mt-1 leading-snug">
                         {station.description}
@@ -1057,9 +1093,19 @@ export const TrainingArena: React.FC<TrainingArenaProps> = ({
                         Rolled <strong className="text-amber-300">{pendulumResult.statLabel}</strong> ({pendulumResult.clampedShakes}/{pendulumResult.maxShakes} shakes)
                       </span>
                     </div>
-                    <span className="font-pixel text-[11px] text-emerald-300 font-bold shrink-0">
-                      +{rolledGain} {pendulumResult.statLabel.toUpperCase()}
-                    </span>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {Math.abs(pendulumResult.weatherMultiplier - 1) >= 0.001 && (
+                        <span className="font-chakra text-[11px] text-sky-300 font-semibold">
+                          {pendulumResult.weatherIcon}{' '}
+                          {pendulumResult.weatherMultiplier > 1
+                            ? `+${Math.round((pendulumResult.weatherMultiplier - 1) * 100)}%`
+                            : `${Math.round((pendulumResult.weatherMultiplier - 1) * 100)}%`}
+                        </span>
+                      )}
+                      <span className="font-pixel text-[11px] text-emerald-300 font-bold">
+                        +{rolledGain} {pendulumResult.statLabel.toUpperCase()}
+                      </span>
+                    </div>
                   </motion.div>
                 ) : (
                   <div className="w-full space-y-1.5 z-20">
@@ -1264,6 +1310,7 @@ export const TrainingArena: React.FC<TrainingArenaProps> = ({
               round={round}
               actionSprite={actionSprite}
               roundResult={roundResult}
+              roomWeather={pet.roomWeather}
             />
 
             <div className="w-full mt-3.5">

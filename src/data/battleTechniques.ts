@@ -9,6 +9,11 @@ import {
   PetState,
   TrainingStatKey,
 } from '../types/digimon';
+import {
+  formatWeatherBonusTag,
+  getRoomWeatherSpec,
+  getWeatherTrainingMultiplier,
+} from '../utils/roomWeather';
 
 export const MAX_EQUIPPED_ATTACKS = 4;
 
@@ -1231,6 +1236,7 @@ export interface TrainingGainOutcome {
   deltas: BattleStats;
   newlyLearnedMoves: LearnableBattleMove[];
   prefLabel: string;
+  weatherLabel: string | null;
 }
 
 export function calculateTrainingOutcome(
@@ -1243,10 +1249,19 @@ export function calculateTrainingOutcome(
   const current = getEffectiveBattleStats(pet, species);
   const stageMult = STAGE_TRAINING_MULT[pet.stage] ?? 1.0;
   const { multiplier: prefMult, label: prefLabel } = getStationPreferenceMultiplier(statKey, species);
+  const weatherPrimaryMult = getWeatherTrainingMultiplier(pet.roomWeather, station.primaryStat);
+  const weatherSecondaryMult = getWeatherTrainingMultiplier(pet.roomWeather, station.secondaryStat);
+  const weatherLabel = formatWeatherBonusTag(pet.roomWeather, station.primaryStat);
   const hitMult = hits >= 3 ? 1.25 : hits === 2 ? 1.0 : hits === 1 ? 0.78 : 0.55;
 
-  const primaryDelta = Math.max(1, Math.round(station.basePrimaryGain * stageMult * prefMult * hitMult));
-  const secondaryDelta = Math.max(1, Math.round(station.baseSecondaryGain * stageMult * prefMult * hitMult));
+  const primaryDelta = Math.max(
+    1,
+    Math.round(station.basePrimaryGain * stageMult * prefMult * hitMult * weatherPrimaryMult)
+  );
+  const secondaryDelta = Math.max(
+    1,
+    Math.round(station.baseSecondaryGain * stageMult * prefMult * hitMult * weatherSecondaryMult)
+  );
 
   const deltas: BattleStats = {
     maxHp: 0,
@@ -1299,6 +1314,7 @@ export function calculateTrainingOutcome(
     deltas,
     newlyLearnedMoves,
     prefLabel,
+    weatherLabel,
   };
 }
 
@@ -1312,6 +1328,8 @@ export interface PendulumTrainingOutcome {
   maxShakes: number;
   nextStats: BattleStats;
   deltas: BattleStats;
+  weatherIcon: string;
+  weatherMultiplier: number;
 }
 
 const PENDULUM_STAT_LABELS: Record<TrainingStatKey, string> = {
@@ -1366,6 +1384,12 @@ export function calculatePendulumTrainingOutcome(
     coreGain = 2;
   }
 
+  const weatherSpec = getRoomWeatherSpec(pet.roomWeather);
+  const weatherMult = getWeatherTrainingMultiplier(pet.roomWeather, statKey);
+  hpGain = Math.max(1, Math.round(hpGain * weatherMult));
+  mpGain = Math.max(1, Math.round(mpGain * weatherMult));
+  coreGain = Math.max(1, Math.round(coreGain * weatherMult));
+
   const deltas: BattleStats = {
     maxHp: statKey === 'hp' ? hpGain : 0,
     maxMp: statKey === 'mp' ? mpGain : 0,
@@ -1392,6 +1416,8 @@ export function calculatePendulumTrainingOutcome(
     maxShakes: MAX_PENDULUM_SHAKES,
     nextStats,
     deltas,
+    weatherIcon: weatherSpec.icon,
+    weatherMultiplier: weatherMult,
   };
 }
 

@@ -72,7 +72,7 @@ function getMoodKind(hunger?: number, happiness?: number): MoodKind | null {
 const PixelMoodIcon: React.FC<{ mood: MoodKind }> = ({ mood }) => {
   if (mood === 'heart') {
     return (
-      <svg viewBox="0 0 16 16" className="w-4 h-4 drop-shadow-[0_1px_2px_rgba(0,0,0,0.85)]" shapeRendering="crispEdges">
+      <svg viewBox="0 0 16 16" className="w-4 h-4" shapeRendering="crispEdges">
         <rect x="2" y="2" width="4" height="2" fill="#9f1239" />
         <rect x="10" y="2" width="4" height="2" fill="#9f1239" />
         <rect x="1" y="4" width="14" height="4" fill="#f43f5e" />
@@ -88,7 +88,7 @@ const PixelMoodIcon: React.FC<{ mood: MoodKind }> = ({ mood }) => {
   }
   if (mood === 'angry') {
     return (
-      <svg viewBox="0 0 16 16" className="w-4 h-4 drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]" shapeRendering="crispEdges">
+      <svg viewBox="0 0 16 16" className="w-4 h-4" shapeRendering="crispEdges">
         <rect x="1" y="1" width="14" height="14" rx="2" fill="#7f1d1d" opacity="0.85" />
         {/* Classic 4-corner comic/V-pet anger vein */}
         <path d="M3,6 L6,6 L6,3 M10,3 L10,6 L13,6 M3,10 L6,10 L6,13 M10,13 L10,10 L13,10" stroke="#fca5a5" strokeWidth="2" fill="none" />
@@ -98,7 +98,7 @@ const PixelMoodIcon: React.FC<{ mood: MoodKind }> = ({ mood }) => {
   }
   if (mood === 'sweat') {
     return (
-      <svg viewBox="0 0 16 16" className="w-4 h-4 drop-shadow-[0_1px_2px_rgba(0,0,0,0.85)]" shapeRendering="crispEdges">
+      <svg viewBox="0 0 16 16" className="w-4 h-4" shapeRendering="crispEdges">
         <rect x="7" y="1" width="2" height="2" fill="#0369a1" />
         <rect x="6" y="3" width="4" height="2" fill="#38bdf8" />
         <rect x="5" y="5" width="6" height="3" fill="#38bdf8" />
@@ -110,7 +110,7 @@ const PixelMoodIcon: React.FC<{ mood: MoodKind }> = ({ mood }) => {
     );
   }
   return (
-    <svg viewBox="0 0 16 16" className="w-4 h-4 drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]" shapeRendering="crispEdges">
+    <svg viewBox="0 0 16 16" className="w-4 h-4" shapeRendering="crispEdges">
       <rect x="2" y="1" width="12" height="14" rx="3" fill="#0f172a" opacity="0.88" />
       <rect x="5" y="3" width="6" height="2" fill="#fbbf24" />
       <rect x="9" y="5" width="2" height="2" fill="#fbbf24" />
@@ -242,8 +242,13 @@ export const DigimonSprite: React.FC<DigimonSpriteProps> = ({
     'standing'
   );
 
-  // Frame animation counter & custom sprite revision
-  const [frameIndex, setFrameIndex] = useState<number>(0);
+  // Frame animation counter keyed by pose+species so pose transitions never paint a 1-frame stale index
+  const spriteLookupKey = `${activePose}-${species?.spriteId || species?.id || 'none'}-${facing}`;
+  const [frameState, setFrameState] = useState<{ key: string; idx: number }>({
+    key: spriteLookupKey,
+    idx: 0,
+  });
+  const frameIndex = frameState.key === spriteLookupKey ? frameState.idx : 0;
   const [eatBeat, setEatBeat] = useState<number>(0);
   const [spriteRevision, setSpriteRevision] = useState<number>(0);
   const [moodPulseKey, setMoodPulseKey] = useState<number>(0);
@@ -311,7 +316,7 @@ export const DigimonSprite: React.FC<DigimonSpriteProps> = ({
   }, [activePose, species?.id]);
 
   useEffect(() => {
-    setFrameIndex(0);
+    setFrameState({ key: spriteLookupKey, idx: 0 });
 
     let count = 4;
     let hasSharedStage = false;
@@ -348,16 +353,17 @@ export const DigimonSprite: React.FC<DigimonSpriteProps> = ({
         : 320;
 
     const timer = setInterval(() => {
-      setFrameIndex((prev) => {
-        if (isPlayOncePose) {
-          return prev < count - 1 ? prev + 1 : prev;
-        }
-        return (prev + 1) % count;
+      setFrameState((prev) => {
+        const cur = prev.key === spriteLookupKey ? prev.idx : 0;
+        const nextIdx = isPlayOncePose
+          ? (cur < count - 1 ? cur + 1 : cur)
+          : (cur + 1) % count;
+        return { key: spriteLookupKey, idx: nextIdx };
       });
     }, intervalTime);
 
     return () => clearInterval(timer);
-  }, [activePose, species?.id, facing, spriteRevision]);
+  }, [activePose, species?.id, species?.spriteId, facing, spriteRevision, spriteLookupKey]);
 
   // MEMORIAL / GRAVE RENDERER (When neglected to death)
   if (activePose === 'dead') {
@@ -435,9 +441,10 @@ export const DigimonSprite: React.FC<DigimonSpriteProps> = ({
         {isHatchAnim && (
           <motion.div
             initial={{ opacity: 0.3, scale: 0.7 }}
-            animate={{ opacity: [0.4, 1, 0.2], scale: [0.9, 1.55, 1.85] }}
+            animate={{ opacity: [0.35, 0.75, 0.25], scale: [0.9, 1.45, 1.75] }}
             transition={{ repeat: Infinity, duration: 0.7 }}
-            className="absolute inset-0 -m-4 rounded-full bg-amber-300/45 blur-md pointer-events-none"
+            style={{ background: 'radial-gradient(circle, rgba(252,211,77,0.5) 0%, transparent 70%)' }}
+            className="absolute inset-0 -m-4 rounded-full pointer-events-none"
           />
         )}
 
@@ -460,9 +467,9 @@ export const DigimonSprite: React.FC<DigimonSpriteProps> = ({
             duration: isHatchAnim ? 0.36 : isCracking ? 0.55 : activePose === 'happy' ? 0.6 : 1.8,
             ease: 'easeInOut' as const,
           }}
-          className="relative w-20 h-28 flex items-center justify-center filter drop-shadow-xl"
+          className="relative w-20 h-28 flex items-center justify-center"
         >
-          <div className="absolute -bottom-2 w-20 h-5 bg-black/30 rounded-full blur-[2px]" />
+          <div className="absolute -bottom-2 w-20 h-5 bg-black/25 rounded-full" />
           <svg viewBox="0 0 100 130" className="w-full h-full overflow-visible">
             <defs>
               <radialGradient id={`eggGrad-${eggInfo.id}`} cx="35%" cy="30%" r="70%">
@@ -628,7 +635,7 @@ export const DigimonSprite: React.FC<DigimonSpriteProps> = ({
     return (
       <div
         onClick={onClick}
-        className={`relative inline-block cursor-pointer select-none filter drop-shadow-md ${className}`}
+        className={`relative inline-block cursor-pointer select-none ${className}`}
         style={{
           transform: `scaleX(${facing === 'left' ? -1 : 1})`,
         }}
@@ -669,17 +676,17 @@ export const DigimonSprite: React.FC<DigimonSpriteProps> = ({
               className="relative"
             >
               {eatItem === 'vitamin' ? (
-                <PixelVitaminIcon className="w-6 h-6 drop-shadow-[0_2px_3px_rgba(0,0,0,0.75)]" />
+                <PixelVitaminIcon className="w-6 h-6" />
               ) : eatItem === 'sirloin' ? (
-                <PixelSirloinIcon className="w-7 h-7 drop-shadow-[0_2px_3px_rgba(0,0,0,0.75)]" />
+                <PixelSirloinIcon className="w-7 h-7" />
               ) : eatItem === 'mushroom' ? (
-                <PixelMushroomIcon className="w-6 h-6 drop-shadow-[0_2px_3px_rgba(0,0,0,0.75)]" />
+                <PixelMushroomIcon className="w-6 h-6" />
               ) : eatItem === 'berry' ? (
-                <PixelBerryIcon className="w-6 h-6 drop-shadow-[0_2px_3px_rgba(0,0,0,0.75)]" />
+                <PixelBerryIcon className="w-6 h-6" />
               ) : (
                 <PixelMeatIcon
                   biteStage={eatBeat === 0 ? 0 : eatBeat === 1 ? 1 : eatBeat === 2 ? 2 : 3}
-                  className="w-7 h-7 drop-shadow-[0_2px_3px_rgba(0,0,0,0.75)]"
+                  className="w-7 h-7"
                 />
               )}
 
@@ -709,7 +716,7 @@ export const DigimonSprite: React.FC<DigimonSpriteProps> = ({
                 animate={{ y: -16, opacity: [0, 1, 0], scale: 1.05 }}
                 transition={{ duration: 0.4 }}
                 style={{ transform: facing === 'left' ? 'scaleX(-1)' : undefined }}
-                className="absolute -top-4 -left-4 font-pixel text-[8px] font-bold text-amber-300 drop-shadow-[0_1px_1px_rgba(0,0,0,0.9)] whitespace-nowrap"
+                className="absolute -top-4 -left-4 font-pixel text-[8px] font-bold text-amber-300 [text-shadow:0_1px_2px_rgba(0,0,0,0.95)] whitespace-nowrap"
               >
                 NOM!
               </motion.span>
@@ -992,7 +999,7 @@ export const DigimonSprite: React.FC<DigimonSpriteProps> = ({
   return (
     <div
       onClick={onClick}
-      className={`relative inline-block cursor-pointer select-none filter drop-shadow-md ${className}`}
+      className={`relative inline-block cursor-pointer select-none ${className}`}
       style={{
         transform: `scale(${scale * 0.656}) scaleX(${facing === 'left' ? -1 : 1})`,
       }}

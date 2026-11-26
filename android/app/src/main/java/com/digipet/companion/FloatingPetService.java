@@ -465,6 +465,9 @@ public class FloatingPetService extends Service {
         viewH = dpToPx(184);
         footOffsetPx = dpToPx(6);
         webView = new WebView(this);
+        // Render tiny overlay sprite on a dedicated software layer so it never shares or disrupts
+        // MainActivity's Chromium GPU compositor surfaces (prevents battle white-screen flashes).
+        webView.setLayerType(View.LAYER_TYPE_SOFTWARE, null);
         webView.setBackgroundColor(Color.TRANSPARENT);
         webView.setClickable(false);
         webView.setFocusable(false);
@@ -2089,7 +2092,7 @@ public class FloatingPetService extends Service {
                     syncVisualState("idle", exitToRight, "", null);
                     break;
                 }
-                float exitSpeed = isDepartingForBattle ? dpToPx(4) : speed;
+                float exitSpeed = isDepartingForBattle ? dpToPx(6) : speed;
                 posX += exitToRight ? exitSpeed : -exitSpeed;
                 applyWindowPosition();
                 syncVisualState("walk", exitToRight, carriedItem, null);
@@ -2099,6 +2102,10 @@ public class FloatingPetService extends Service {
                     if (isDepartingForBattle) {
                         isDepartingForBattle = false;
                         hideNativeBubble();
+                        if (floatingView != null) {
+                            floatingView.setAlpha(0f);
+                            floatingView.setVisibility(View.GONE);
+                        }
                         stopSelf();
                     } else {
                         offScreenPhase = OffScreenPhase.HIDDEN;
@@ -2428,16 +2435,16 @@ public class FloatingPetService extends Service {
             "#petWrap.evolving #evoAura { display:block; animation:evoBurst 1.3s ease-out forwards; }" +
             "#petWrap.evolving #spriteBox { animation:evoFlash 1.3s ease-in-out; }" +
             "@keyframes evoBurst { 0% { transform:scale(0.4); opacity:0; } 30% { transform:scale(1.45); opacity:1; } 100% { transform:scale(1.9); opacity:0; } }" +
-            "@keyframes evoFlash { 0%, 100% { filter:brightness(1); transform:scale(1); } 25% { filter:brightness(2.8) drop-shadow(0 0 12px #fde047); transform:scale(1.18); } 60% { filter:brightness(2.0) drop-shadow(0 0 10px #38bdf8); transform:scale(1.08); } }" +
+            "@keyframes evoFlash { 0%, 100% { opacity:1; transform:scale(1); } 25% { opacity:0.92; transform:scale(1.18); } 60% { opacity:1; transform:scale(1.08); } }" +
             "#sleepBadge { display:none; position:absolute; top:-12px; right:2px; z-index:22; color:#67e8f9; font-family:monospace; font-weight:900; font-size:12px; text-shadow:0 1px 4px rgba(15,23,42,0.95), 0 0 8px rgba(56,189,248,0.7); pointer-events:none; }" +
             "#petWrap.sleeping #sleepBadge { display:block; animation:zzzFloat 1.8s ease-out infinite; }" +
-            "#petWrap.sleeping #spriteBox { filter:brightness(0.88); }" +
+            "#petWrap.sleeping #spriteBox { opacity:0.88; }" +
             "#petWrap.sleeping #frameClip { transform-origin:bottom center; animation:sleepBreathe 2.6s ease-in-out infinite; }" +
             "@keyframes sleepBreathe { 0%, 100% { transform:scale(1, 1); } 50% { transform:scale(1.035, 1.045); } }" +
             "@keyframes zzzFloat { 0% { transform:translate(0px, 2px) scale(0.85); opacity:0; } 35% { opacity:1; } 100% { transform:translate(8px, -14px) scale(1.1); opacity:0; } }" +
             "#carryBadge { display:none; position:absolute; top:-12px; right:-4px; z-index:20; background:#1e1b4b; border:1.5px solid #fbbf24; border-radius:8px; padding:2px; box-shadow:0 2px 6px rgba(0,0,0,0.5); }" +
             "#carryBadge.show { display:block; }" +
-            "#moodBadge { display:none; position:absolute; top:-16px; left:50%; transform:translateX(-50%); z-index:24; pointer-events:none; filter:drop-shadow(0 1px 3px rgba(0,0,0,0.85)); }" +
+            "#moodBadge { display:none; position:absolute; top:-16px; left:50%; transform:translateX(-50%); z-index:24; pointer-events:none; }" +
             "#moodBadge.show { display:block; animation:moodPop 2.2s ease-out forwards; }" +
             "#moodInner { display:inline-block; font-size:12px; line-height:1; }" +
             "@keyframes moodPop { 0% { opacity:0; transform:translateX(-50%) translateY(4px) scale(0.7); } 20% { opacity:1; transform:translateX(-50%) translateY(-2px) scale(1.1); } 80% { opacity:0.95; transform:translateX(-50%) translateY(-7px) scale(1); } 100% { opacity:0; transform:translateX(-50%) translateY(-11px) scale(0.85); } }" +
@@ -2685,6 +2692,7 @@ public class FloatingPetService extends Service {
             "};" +
 
             "setInterval(function() {" +
+            "  if (window.__overlayStopped) return;" +
             "  if (isSleeping) {" +
             "    if (sleepFrameIdx < sleepingFrames.length - 1) sleepFrameIdx++;" +
             "    renderFrame(sleepingFrames[Math.min(sleepFrameIdx, sleepingFrames.length - 1)]);" +
@@ -2768,16 +2776,26 @@ public class FloatingPetService extends Service {
         }
         if (floatingView != null && windowManager != null) {
             try {
-                floatingView.removeAllViews();
-                windowManager.removeView(floatingView);
+                floatingView.setAlpha(0f);
+                floatingView.setVisibility(View.GONE);
+                if (floatingView instanceof android.view.ViewGroup) {
+                    ((android.view.ViewGroup) floatingView).removeAllViews();
+                }
+                windowManager.removeViewImmediate(floatingView);
             } catch (Exception e) {
-                // safe ignore
+                try {
+                    windowManager.removeView(floatingView);
+                } catch (Exception ignored) {
+                    // safe ignore
+                }
             }
             floatingView = null;
         }
         if (webView != null) {
             try {
+                webView.evaluateJavascript("window.__overlayStopped=true;", null);
                 webView.stopLoading();
+                webView.loadUrl("about:blank");
                 webView.onPause();
                 webView.clearHistory();
                 webView.removeAllViews();

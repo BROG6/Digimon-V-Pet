@@ -115,8 +115,8 @@ const ColosseumBackdropArt: React.FC<{ arena: ColosseumArenaTheme }> = ({ arena 
     {/* Stadium / Biome Midground Architecture */}
     {arena.id === 'cyber-dome' && (
       <>
-        <div className="absolute -top-10 left-[14%] w-24 h-44 bg-cyan-400/10 rotate-12 blur-md" />
-        <div className="absolute -top-10 right-[14%] w-24 h-44 bg-indigo-400/10 -rotate-12 blur-md" />
+        <div className="absolute -top-10 left-[14%] w-24 h-44 bg-cyan-400/10 rotate-12" />
+        <div className="absolute -top-10 right-[14%] w-24 h-44 bg-indigo-400/10 -rotate-12" />
         <div className="absolute top-6 left-1/2 -translate-x-1/2 w-56 h-24 rounded-full border border-cyan-400/20" />
         <div className="absolute bottom-14 inset-x-0 h-20 flex items-end justify-around opacity-40 px-4">
           <div className="w-10 h-16 bg-indigo-900/70 border-t border-cyan-400/35 rounded-t-sm" />
@@ -130,7 +130,7 @@ const ColosseumBackdropArt: React.FC<{ arena: ColosseumArenaTheme }> = ({ arena 
 
     {arena.id === 'volcanic-ring' && (
       <>
-        <div className="absolute -top-8 left-1/2 -translate-x-1/2 w-72 h-24 rounded-full bg-orange-500/15 blur-xl" />
+        <div className="absolute -top-8 left-1/2 -translate-x-1/2 w-72 h-24 rounded-full bg-gradient-to-b from-orange-500/20 to-transparent" />
         <div className="absolute bottom-14 inset-x-0 h-24 flex items-end justify-around opacity-70 px-2">
           <div className="w-0 h-0 border-l-[34px] border-r-[34px] border-b-[76px] border-l-transparent border-r-transparent border-b-stone-900/90" />
           <div className="w-0 h-0 border-l-[46px] border-r-[46px] border-b-[96px] border-l-transparent border-r-transparent border-b-red-950/90" />
@@ -144,9 +144,9 @@ const ColosseumBackdropArt: React.FC<{ arena: ColosseumArenaTheme }> = ({ arena 
 
     {arena.id === 'celestial-spire' && (
       <>
-        <div className="absolute -top-12 left-1/2 -translate-x-1/2 w-64 h-28 rounded-full bg-amber-300/15 blur-xl" />
-        <div className="absolute top-10 left-[14%] w-24 h-7 rounded-full bg-white/10 blur-[1px]" />
-        <div className="absolute top-14 right-[14%] w-28 h-8 rounded-full bg-amber-100/10 blur-[1px]" />
+        <div className="absolute -top-12 left-1/2 -translate-x-1/2 w-64 h-28 rounded-full bg-gradient-to-b from-amber-300/20 to-transparent" />
+        <div className="absolute top-10 left-[14%] w-24 h-7 rounded-full bg-white/10" />
+        <div className="absolute top-14 right-[14%] w-28 h-8 rounded-full bg-amber-100/10" />
         <div className="absolute bottom-14 inset-x-0 h-24 flex items-end justify-around opacity-55 px-6">
           <div className="w-7 h-24 bg-slate-300/20 border-x border-t border-amber-200/35 rounded-t-sm" />
           <div className="w-7 h-18 bg-slate-300/15 border-x border-t border-amber-200/30 rounded-t-sm" />
@@ -180,7 +180,7 @@ const ColosseumBackdropArt: React.FC<{ arena: ColosseumArenaTheme }> = ({ arena 
 
     {arena.id === 'glacier-vault' && (
       <>
-        <div className="absolute -top-6 inset-x-10 h-16 bg-gradient-to-r from-cyan-400/10 via-emerald-300/15 to-sky-400/10 blur-lg" />
+        <div className="absolute -top-6 inset-x-10 h-16 bg-gradient-to-b from-cyan-400/15 via-emerald-300/10 to-transparent" />
         <div className="absolute bottom-14 inset-x-0 h-24 flex items-end justify-around opacity-65 px-3">
           <div className="w-0 h-0 border-l-[24px] border-r-[24px] border-b-[72px] border-l-transparent border-r-transparent border-b-sky-800/70" />
           <div className="w-0 h-0 border-l-[34px] border-r-[34px] border-b-[92px] border-l-transparent border-r-transparent border-b-cyan-800/65" />
@@ -234,13 +234,12 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
   const [opponentEffect, setOpponentEffect] = useState<'none' | 'lunge' | 'melee_rush' | 'ranged_cast' | 'hit'>('none');
   const [activeVfx, setActiveVfx] = useState<ActiveBattleVfx | null>(null);
   const [arenaShake, setArenaShake] = useState<boolean>(false);
-  const [screenFlash, setScreenFlash] = useState<'none' | 'white' | 'red' | 'special'>('none');
   const [damagePopups, setDamagePopups] = useState<{ id: number; target: 'player' | 'opponent'; text: string; color: string }[]>([]);
 
   const triggerAttackVfx = (
     attacker: 'player' | 'opponent',
     spec: AttackVisualSpec,
-    opts?: { isCrit?: boolean; isSuperEffective?: boolean; moveName?: string }
+    opts?: { isCrit?: boolean; isSuperEffective?: boolean; isSignature?: boolean; moveName?: string }
   ) => {
     setActiveVfx({
       id: Date.now() + Math.random(),
@@ -248,6 +247,7 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
       spec,
       isCrit: opts?.isCrit,
       isSuperEffective: opts?.isSuperEffective,
+      isSignature: opts?.isSignature,
       moveName: opts?.moveName,
     });
   };
@@ -258,11 +258,6 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
     setTimeout(() => {
       setDamagePopups((prev) => prev.filter((p) => p.id !== id));
     }, 1050);
-  };
-
-  const triggerScreenFlash = (type: 'white' | 'red' | 'special') => {
-    setScreenFlash(type);
-    setTimeout(() => setScreenFlash('none'), 350);
   };
 
   const triggerArenaShake = () => {
@@ -285,7 +280,6 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
       setOpponentEffect('none');
       setActiveVfx(null);
       setArenaShake(false);
-      setScreenFlash('none');
       setDamagePopups([]);
     }
   }, [isOpen]);
@@ -308,7 +302,7 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
       maxHp: stats.maxHp,
       mp: stats.maxMp,
       maxMp: stats.maxMp,
-      sp: 25,
+      sp: 50,
       atk: stats.offense,
       def: stats.defense,
       spd: stats.speed,
@@ -428,6 +422,7 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
         triggerAttackVfx('opponent', oppSpec, {
           isCrit: crit.isCrit,
           isSuperEffective: typeMult > 1,
+          isSignature: true,
           moveName: opponentFighter.signatureMove.name,
         });
 
@@ -445,7 +440,6 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
 
         setTimeout(() => {
           setPlayerEffect('hit');
-          triggerScreenFlash(crit.isCrit ? 'special' : 'special');
           triggerArenaShake();
           showDamagePopup(
             'player',
@@ -460,7 +454,7 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
           setPlayerFighter((prev) =>
             prev ? { ...prev, currentHp: Math.max(0, prev.currentHp - finalDamage) } : null
           );
-        }, 250);
+        }, 460);
 
         setBattleLogs((logs) => [
           {
@@ -506,7 +500,6 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
 
         setTimeout(() => {
           setPlayerEffect('hit');
-          triggerScreenFlash(crit.isCrit ? 'special' : 'red');
           triggerArenaShake();
           showDamagePopup(
             'player',
@@ -540,7 +533,7 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
         setPlayerEffect('none');
         setActiveVfx(null);
         setIsPlayerTurn(true);
-      }, 760);
+      }, shouldUseSpecial ? 1020 : 760);
     }, 1050);
 
     return () => clearTimeout(timer);
@@ -606,7 +599,6 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
 
     setTimeout(() => {
       setOpponentEffect('hit');
-      triggerScreenFlash(crit.isCrit ? 'special' : 'white');
       triggerArenaShake();
       showDamagePopup(
         'opponent',
@@ -666,6 +658,7 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
     triggerAttackVfx('player', moveSpec, {
       isCrit: crit.isCrit,
       isSuperEffective: typeMult > 1,
+      isSignature: true,
       moveName: playerFighter.signatureMove.name,
     });
 
@@ -683,7 +676,6 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
 
     setTimeout(() => {
       setOpponentEffect('hit');
-      triggerScreenFlash('special');
       triggerArenaShake();
       showDamagePopup(
         'opponent',
@@ -698,7 +690,7 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
       setOpponentFighter((prev) =>
         prev ? { ...prev, currentHp: Math.max(0, prev.currentHp - damage) } : null
       );
-    }, 260);
+    }, 460);
 
     setBattleLogs((logs) => [
       {
@@ -714,7 +706,7 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
       setPlayerEffect('none');
       setOpponentEffect('none');
       setActiveVfx(null);
-    }, 780);
+    }, 1020);
   };
 
   const handleUseLearnedTechnique = (move: BattleMove) => {
@@ -769,7 +761,6 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
 
     setTimeout(() => {
       setOpponentEffect('hit');
-      triggerScreenFlash(crit.isCrit || typeMult > 1 ? 'special' : 'white');
       triggerArenaShake();
       showDamagePopup(
         'opponent',
@@ -1026,23 +1017,11 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
           <div className="flex flex-col space-y-3 py-2">
             {/* Arena Battle Stage */}
             <div
-              className={`relative w-full h-56 sm:h-64 bg-gradient-to-b ${arenaTheme.skyGradient} rounded-2xl border ${arenaTheme.borderClass} p-3.5 sm:p-4 flex justify-between items-center overflow-hidden scanlines transition-transform [--battle-dash:125px] sm:[--battle-dash:260px] ${
+              className={`relative w-full h-56 sm:h-64 bg-gradient-to-b ${arenaTheme.skyGradient} rounded-2xl border ${arenaTheme.borderClass} p-3.5 sm:p-4 flex justify-between items-center overflow-hidden transition-transform [--battle-dash:125px] sm:[--battle-dash:260px] ${
                 arenaShake ? 'battle-arena-shake' : ''
               }`}
             >
               <ColosseumBackdropArt arena={arenaTheme} />
-
-              {screenFlash !== 'none' && (
-                <div
-                  className={`absolute inset-0 pointer-events-none z-30 ${
-                    screenFlash === 'white'
-                      ? 'battle-flash-white'
-                      : screenFlash === 'red'
-                      ? 'battle-flash-red'
-                      : 'battle-flash-special'
-                  }`}
-                />
-              )}
 
               <BattleAttackVfx activeVfx={activeVfx} />
 
@@ -1105,6 +1084,13 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
                     scale={1.0}
                   />
 
+                  {activeVfx?.isSignature && activeVfx.attacker === 'player' && (
+                    <div
+                      className="absolute inset-0 -m-3 rounded-full border-2 animate-ping pointer-events-none z-20 opacity-75"
+                      style={{ borderColor: activeVfx.spec.colorHex }}
+                    />
+                  )}
+
                   {(isDefending || playerEffect === 'shield') && (
                     <div className="absolute inset-0 -m-3 rounded-full border-2 border-cyan-400 bg-cyan-400/20 battle-shield-aura pointer-events-none z-20 flex items-center justify-center">
                       <Shield className="w-7 h-7 text-cyan-300" />
@@ -1122,7 +1108,7 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
                     .map((p) => (
                       <div
                         key={p.id}
-                        className={`absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap font-pixel text-xs drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] pointer-events-none z-40 battle-damage-float ${p.color}`}
+                        className={`absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap font-pixel text-xs [text-shadow:0_2px_4px_rgba(0,0,0,0.95)] pointer-events-none z-40 battle-damage-float ${p.color}`}
                       >
                         {p.text}
                       </div>
@@ -1184,12 +1170,19 @@ export const ColosseumBattle: React.FC<ColosseumBattleProps> = ({
                     scale={1.0}
                   />
 
+                  {activeVfx?.isSignature && activeVfx.attacker === 'opponent' && (
+                    <div
+                      className="absolute inset-0 -m-3 rounded-full border-2 animate-ping pointer-events-none z-20 opacity-75"
+                      style={{ borderColor: activeVfx.spec.colorHex }}
+                    />
+                  )}
+
                   {damagePopups
                     .filter((p) => p.target === 'opponent')
                     .map((p) => (
                       <div
                         key={p.id}
-                        className={`absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap font-pixel text-xs drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] pointer-events-none z-40 battle-damage-float ${p.color}`}
+                        className={`absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap font-pixel text-xs [text-shadow:0_2px_4px_rgba(0,0,0,0.95)] pointer-events-none z-40 battle-damage-float ${p.color}`}
                       >
                         {p.text}
                       </div>

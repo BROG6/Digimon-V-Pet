@@ -168,9 +168,9 @@ const BiomeBackdropArt: React.FC<{ biome: BiomeStyleConfig; animatedWalk?: boole
       )}
       {biome.props === 'spire' && (
         <>
-          <div className="w-24 h-10 rounded-full bg-violet-400/20 blur-[1px] mb-12" />
+          <div className="w-24 h-10 rounded-full bg-violet-400/20 mb-12" />
           <div className="w-14 h-28 rounded-t-lg bg-indigo-900/55 border-t border-violet-300/30" />
-          <div className="w-28 h-12 rounded-full bg-slate-200/15 blur-[1px] mb-14" />
+          <div className="w-28 h-12 rounded-full bg-slate-200/15 mb-14" />
           <div className="w-12 h-24 rounded-t-lg bg-violet-900/55 border-t border-violet-300/30" />
         </>
       )}
@@ -377,7 +377,6 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
   const [opponentEffect, setOpponentEffect] = useState<'none' | 'lunge' | 'melee_rush' | 'ranged_cast' | 'hit'>('none');
   const [activeVfx, setActiveVfx] = useState<ActiveBattleVfx | null>(null);
   const [arenaShake, setArenaShake] = useState<boolean>(false);
-  const [screenFlash, setScreenFlash] = useState<'none' | 'white' | 'red' | 'special'>('none');
   const [damagePopups, setDamagePopups] = useState<{ id: number; target: 'player' | 'opponent'; text: string; color: string }[]>([]);
 
   // Field supplies used in the current encounter
@@ -433,7 +432,6 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
       setOpponentEffect('none');
       setActiveVfx(null);
       setArenaShake(false);
-      setScreenFlash('none');
       setDamagePopups([]);
       setMeatUsed(0);
       setVitaminsUsed(0);
@@ -450,7 +448,7 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
   const triggerAttackVfx = (
     attacker: 'player' | 'opponent',
     spec: AttackVisualSpec,
-    opts?: { isCrit?: boolean; isSuperEffective?: boolean; moveName?: string }
+    opts?: { isCrit?: boolean; isSuperEffective?: boolean; isSignature?: boolean; moveName?: string }
   ) => {
     setActiveVfx({
       id: Date.now() + Math.random(),
@@ -458,6 +456,7 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
       spec,
       isCrit: opts?.isCrit,
       isSuperEffective: opts?.isSuperEffective,
+      isSignature: opts?.isSignature,
       moveName: opts?.moveName,
     });
   };
@@ -468,11 +467,6 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
     setTimeout(() => {
       setDamagePopups((prev) => prev.filter((p) => p.id !== id));
     }, 1000);
-  };
-
-  const triggerScreenFlash = (type: 'white' | 'red' | 'special') => {
-    setScreenFlash(type);
-    setTimeout(() => setScreenFlash('none'), 350);
   };
 
   const triggerArenaShake = () => {
@@ -510,7 +504,7 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
       maxHp: stats.maxHp,
       mp: stats.maxMp,
       maxMp: stats.maxMp,
-      sp: 35,
+      sp: 50,
       atk: stats.offense,
       def: stats.defense,
       spd: stats.speed,
@@ -674,6 +668,7 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
         triggerAttackVfx('opponent', oppSpec, {
           isCrit: crit.isCrit,
           isSuperEffective: typeMult > 1,
+          isSignature: true,
           moveName: opponentFighter.signatureMove.name,
         });
 
@@ -691,7 +686,6 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
 
         setTimeout(() => {
           setPlayerEffect('hit');
-          triggerScreenFlash('special');
           triggerArenaShake();
           showDamagePopup(
             'player',
@@ -705,7 +699,7 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
           setPlayerFighter((prev) =>
             prev ? { ...prev, currentHp: Math.max(0, prev.currentHp - finalDamage) } : null
           );
-        }, 250);
+        }, 460);
 
         setBattleLogs((logs) => [
           {
@@ -755,7 +749,6 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
 
         setTimeout(() => {
           setPlayerEffect('hit');
-          triggerScreenFlash(crit.isCrit ? 'special' : 'red');
           triggerArenaShake();
           showDamagePopup(
             'player',
@@ -788,7 +781,7 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
         setPlayerEffect('none');
         setActiveVfx(null);
         setIsPlayerTurn(true);
-      }, 760);
+      }, shouldUseSpecial ? 1020 : 760);
     }, 1050);
 
     return () => clearTimeout(timer);
@@ -943,7 +936,6 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
 
     setTimeout(() => {
       setOpponentEffect('hit');
-      triggerScreenFlash(crit.isCrit ? 'special' : 'white');
       triggerArenaShake();
       showDamagePopup(
         'opponent',
@@ -1003,6 +995,7 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
     triggerAttackVfx('player', moveSpec, {
       isCrit: crit.isCrit,
       isSuperEffective: typeMult > 1,
+      isSignature: true,
       moveName: playerFighter.signatureMove.name,
     });
 
@@ -1021,7 +1014,6 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
 
     setTimeout(() => {
       setOpponentEffect('hit');
-      triggerScreenFlash('special');
       triggerArenaShake();
       showDamagePopup(
         'opponent',
@@ -1035,7 +1027,7 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
       setOpponentFighter((prev) =>
         prev ? { ...prev, currentHp: Math.max(0, prev.currentHp - damage) } : null
       );
-    }, 260);
+    }, 460);
 
     setBattleLogs((logs) => [
       {
@@ -1051,7 +1043,7 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
       setPlayerEffect('none');
       setOpponentEffect('none');
       setActiveVfx(null);
-    }, 780);
+    }, 1020);
   };
 
   const handleUseLearnedTechnique = (move: BattleMove) => {
@@ -1108,7 +1100,6 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
 
     setTimeout(() => {
       setOpponentEffect('hit');
-      triggerScreenFlash(crit.isCrit || typeMult > 1 ? 'special' : 'white');
       triggerArenaShake();
       showDamagePopup(
         'opponent',
@@ -1593,19 +1584,6 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
               >
                 <BiomeBackdropArt biome={activeBiome} />
 
-                {/* Screen Impact Flash */}
-                {screenFlash !== 'none' && (
-                  <div
-                    className={`absolute inset-0 pointer-events-none z-30 ${
-                      screenFlash === 'white'
-                        ? 'battle-flash-white'
-                        : screenFlash === 'red'
-                        ? 'battle-flash-red'
-                        : 'battle-flash-special'
-                    }`}
-                  />
-                )}
-
                 <BattleAttackVfx activeVfx={activeVfx} />
 
                 {/* Turn Status Banner */}
@@ -1670,6 +1648,13 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
                       scale={1.0}
                     />
 
+                    {activeVfx?.isSignature && activeVfx.attacker === 'player' && (
+                      <div
+                        className="absolute inset-0 -m-3 rounded-full border-2 animate-ping pointer-events-none z-20 opacity-75"
+                        style={{ borderColor: activeVfx.spec.colorHex }}
+                      />
+                    )}
+
                     {(isDefending || playerEffect === 'shield') && (
                       <div className="absolute inset-0 -m-3 rounded-full border-2 border-cyan-400 bg-cyan-400/20 battle-shield-aura pointer-events-none z-20 flex items-center justify-center">
                         <Shield className="w-7 h-7 text-cyan-300" />
@@ -1687,7 +1672,7 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
                       .map((p) => (
                         <div
                           key={p.id}
-                          className={`absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap font-pixel text-xs drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] pointer-events-none z-40 battle-damage-float ${p.color}`}
+                          className={`absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap font-pixel text-xs [text-shadow:0_2px_4px_rgba(0,0,0,0.95)] pointer-events-none z-40 battle-damage-float ${p.color}`}
                         >
                           {p.text}
                         </div>
@@ -1748,12 +1733,19 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
                       scale={1.0}
                     />
 
+                    {activeVfx?.isSignature && activeVfx.attacker === 'opponent' && (
+                      <div
+                        className="absolute inset-0 -m-3 rounded-full border-2 animate-ping pointer-events-none z-20 opacity-75"
+                        style={{ borderColor: activeVfx.spec.colorHex }}
+                      />
+                    )}
+
                     {damagePopups
                       .filter((p) => p.target === 'opponent')
                       .map((p) => (
                         <div
                           key={p.id}
-                          className={`absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap font-pixel text-xs drop-shadow-[0_2px_4px_rgba(0,0,0,0.9)] pointer-events-none z-40 battle-damage-float ${p.color}`}
+                          className={`absolute -top-6 left-1/2 -translate-x-1/2 whitespace-nowrap font-pixel text-xs [text-shadow:0_2px_4px_rgba(0,0,0,0.95)] pointer-events-none z-40 battle-damage-float ${p.color}`}
                         >
                           {p.text}
                         </div>

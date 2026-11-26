@@ -275,7 +275,11 @@ public class OverlayPlugin extends Plugin {
         serviceIntent.putExtra("nextEvoPayloadJson", nextEvoPayloadJson != null ? nextEvoPayloadJson : "");
 
         try {
-            ctx.startService(serviceIntent);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                ctx.startForegroundService(serviceIntent);
+            } else {
+                ctx.startService(serviceIntent);
+            }
         } catch (Exception ex) {
             call.reject("Failed to start overlay service: " + ex.getMessage());
             return;
@@ -289,6 +293,10 @@ public class OverlayPlugin extends Plugin {
     @PluginMethod
     public void stopOverlay(PluginCall call) {
         Context ctx = getActivity() != null ? getActivity() : getContext();
+        ctx.getSharedPreferences("digipet_overlay_sync", Context.MODE_PRIVATE)
+            .edit()
+            .putBoolean("overlayShouldRun", false)
+            .apply();
         Intent serviceIntent = new Intent(ctx, FloatingPetService.class);
         ctx.stopService(serviceIntent);
 
@@ -311,7 +319,11 @@ public class OverlayPlugin extends Plugin {
         serviceIntent.setAction("DEPART_BATTLE");
         serviceIntent.putExtra("reason", reason != null ? reason : "battle");
         try {
-            ctx.startService(serviceIntent);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                ctx.startForegroundService(serviceIntent);
+            } else {
+                ctx.startService(serviceIntent);
+            }
             JSObject ret = new JSObject();
             ret.put("started", true);
             call.resolve(ret);

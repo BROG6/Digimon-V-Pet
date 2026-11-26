@@ -29,7 +29,13 @@
         <service
             android:name=".FloatingPetService"
             android:enabled="true"
-            android:exported="false" />
+            android:exported="false"
+            android:stopWithTask="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Persistent floating digital companion overlay across apps and screen lock" />
+        </service>
 
         <receiver
             android:name=".CareAlarmReceiver"

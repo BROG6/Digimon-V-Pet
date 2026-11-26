@@ -1,9 +1,17 @@
 package com.digipet.companion;
 
+import android.app.AlarmManager;
+import android.app.Notification;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.app.Service;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.content.SharedPreferences;
+import android.content.pm.ServiceInfo;
 import android.graphics.Color;
 import android.graphics.PixelFormat;
 import android.graphics.Typeface;
@@ -12,6 +20,8 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
+import android.os.PowerManager;
+import android.os.SystemClock;
 import android.provider.Settings;
 import android.text.SpannableStringBuilder;
 import android.text.Spanned;
@@ -33,6 +43,7 @@ import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import androidx.core.app.NotificationCompat;
 import java.util.Random;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -40,6 +51,8 @@ import org.json.JSONObject;
 public class FloatingPetService extends Service {
     public static boolean isRunning = false;
     private static final int FRAME_MS = 33; // ~30 fps physics step
+    private static final int FOREGROUND_NOTIF_ID = 4102;
+    private static final String FOREGROUND_CHANNEL_ID = "digipet_overlay_silent_v2";
 
     private enum PetState {
         WALKING_GRID,
@@ -219,11 +232,60 @@ public class FloatingPetService extends Service {
     private boolean facingRight = true;
     private boolean isUserDragging = false;
     private boolean physicsStarted = false;
+    private boolean isScreenInteractive = true;
+    private boolean screenReceiverRegistered = false;
+    private boolean foregroundActive = false;
+
+    private final BroadcastReceiver screenStateReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (intent == null || intent.getAction() == null) return;
+            String action = intent.getAction();
+            if (Intent.ACTION_SCREEN_OFF.equals(action)) {
+                isScreenInteractive = false;
+                physicsHandler.removeCallbacks(physicsRunnable);
+                physicsStarted = false;
+                if (webView != null) {
+                    try {
+                        webView.evaluateJavascript("window.__overlayPaused=true;", null);
+                        webView.onPause();
+                    } catch (Exception ignored) {}
+                }
+            } else if (Intent.ACTION_SCREEN_ON.equals(action) || Intent.ACTION_USER_PRESENT.equals(action)) {
+                isScreenInteractive = true;
+                if (webView != null) {
+                    try {
+                        webView.onResume();
+                        webView.evaluateJavascript("window.__overlayPaused=false;", null);
+                    } catch (Exception ignored) {}
+                }
+                if (isRunning && floatingView != null && params != null) {
+                    long nowMs = System.currentTimeMillis();
+                    advanceOverlayHungerClock(nowMs);
+                    if (nextEvoTriggerMs > 0L && nowMs >= nextEvoTriggerMs && nextEvoPayloadJson != null && !nextEvoPayloadJson.isEmpty()) {
+                        performNativeBackgroundEvolution(nowMs);
+                    }
+                    refreshScreenMetrics();
+                    if (!isFlyingPet && petState != PetState.OFF_SCREEN) {
+                        currentRowIndex = Math.max(0, Math.min(currentRowIndex, rowYs.length - 1));
+                        posY = getTopYForFootY(rowYs[currentRowIndex]);
+                        applyWindowPosition();
+                    }
+                    if (!physicsStarted) {
+                        physicsStarted = true;
+                        physicsHandler.postDelayed(physicsRunnable, 120);
+                    }
+                    OverlayPlugin.notifyOverlayStateChanged(true);
+                }
+            }
+        }
+    };
 
     private final Runnable physicsRunnable = new Runnable() {
         @Override
         public void run() {
-            if (!isRunning || floatingView == null || params == null) {
+            if (!isRunning || floatingView == null || params == null || !isScreenInteractive) {
+                physicsStarted = false;
                 return;
             }
             stepPhysics(System.currentTimeMillis());
@@ -237,8 +299,165 @@ public class FloatingPetService extends Service {
     }
 
     @Override
+    public void onCreate() {
+        super.onCreate();
+        PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+        if (pm != null) {
+            isScreenInteractive = Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT_WATCH
+                ? pm.isInteractive()
+                : pm.isScreenOn();
+        }
+        ensureForegroundStarted();
+        registerScreenReceiver();
+    }
+
+    private void registerScreenReceiver() {
+        if (screenReceiverRegistered) return;
+        try {
+            IntentFilter filter = new IntentFilter();
+            filter.addAction(Intent.ACTION_SCREEN_OFF);
+            filter.addAction(Intent.ACTION_SCREEN_ON);
+            filter.addAction(Intent.ACTION_USER_PRESENT);
+            if (Build.VERSION.SDK_INT >= 33) {
+                registerReceiver(screenStateReceiver, filter, Context.RECEIVER_EXPORTED);
+            } else {
+                registerReceiver(screenStateReceiver, filter);
+            }
+            screenReceiverRegistered = true;
+        } catch (Exception ignored) {
+            screenReceiverRegistered = false;
+        }
+    }
+
+    private void unregisterScreenReceiver() {
+        if (!screenReceiverRegistered) return;
+        try {
+            unregisterReceiver(screenStateReceiver);
+        } catch (Exception ignored) {}
+        screenReceiverRegistered = false;
+    }
+
+    private void markOverlayShouldRun(boolean shouldRun) {
+        getSharedPreferences("digipet_overlay_sync", MODE_PRIVATE)
+            .edit()
+            .putBoolean("overlayShouldRun", shouldRun)
+            .apply();
+    }
+
+    private void saveOverlayLaunchConfig(Intent intent) {
+        if (intent == null) return;
+        SharedPreferences.Editor ed = getSharedPreferences("digipet_overlay_sync", MODE_PRIVATE).edit();
+        ed.putBoolean("overlayShouldRun", true);
+        if (intent.hasExtra("speciesName")) ed.putString("savedSpeciesName", intent.getStringExtra("speciesName"));
+        if (intent.hasExtra("spriteUrl")) ed.putString("savedSpriteUrl", intent.getStringExtra("spriteUrl"));
+        if (intent.hasExtra("sheetWidth")) ed.putInt("savedSheetWidth", intent.getIntExtra("sheetWidth", 200));
+        if (intent.hasExtra("sheetHeight")) ed.putInt("savedSheetHeight", intent.getIntExtra("sheetHeight", 200));
+        if (intent.hasExtra("stageWidth")) ed.putInt("savedStageWidth", intent.getIntExtra("stageWidth", 0));
+        if (intent.hasExtra("stageHeight")) ed.putInt("savedStageHeight", intent.getIntExtra("stageHeight", 0));
+        if (intent.hasExtra("groundOffset")) ed.putInt("savedGroundOffset", intent.getIntExtra("groundOffset", 0));
+        if (intent.hasExtra("frameX")) ed.putInt("savedFrameX", intent.getIntExtra("frameX", 2));
+        if (intent.hasExtra("frameY")) ed.putInt("savedFrameY", intent.getIntExtra("frameY", 2));
+        if (intent.hasExtra("frameW")) ed.putInt("savedFrameW", intent.getIntExtra("frameW", 48));
+        if (intent.hasExtra("frameH")) ed.putInt("savedFrameH", intent.getIntExtra("frameH", 48));
+        if (intent.hasExtra("frameRotate")) ed.putInt("savedFrameRotate", intent.getIntExtra("frameRotate", 0));
+        if (intent.hasExtra("standingFramesJson")) ed.putString("savedStandingFramesJson", intent.getStringExtra("standingFramesJson"));
+        if (intent.hasExtra("walkingFramesJson")) ed.putString("savedWalkingFramesJson", intent.getStringExtra("walkingFramesJson"));
+        if (intent.hasExtra("sleepingFramesJson")) ed.putString("savedSleepingFramesJson", intent.getStringExtra("sleepingFramesJson"));
+        if (intent.hasExtra("quotesJson")) ed.putString("savedQuotesJson", intent.getStringExtra("quotesJson"));
+        if (intent.hasExtra("gridRowRatiosJson")) ed.putString("savedGridRowRatiosJson", intent.getStringExtra("gridRowRatiosJson"));
+        if (intent.hasExtra("isFlying")) ed.putBoolean("savedIsFlying", intent.getBooleanExtra("isFlying", false));
+        if (intent.hasExtra("isSleeping")) ed.putBoolean("savedIsSleeping", intent.getBooleanExtra("isSleeping", false));
+        if (intent.hasExtra("nextEvoTriggerMsStr")) ed.putString("savedNextEvoTriggerMsStr", intent.getStringExtra("nextEvoTriggerMsStr"));
+        if (intent.hasExtra("nextEvoPayloadJson")) ed.putString("savedNextEvoPayloadJson", intent.getStringExtra("nextEvoPayloadJson"));
+        ed.apply();
+    }
+
+    private void ensureForegroundStarted() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+                if (nm != null) {
+                    NotificationChannel ch = new NotificationChannel(
+                        FOREGROUND_CHANNEL_ID,
+                        "Floating Digimon Companion",
+                        NotificationManager.IMPORTANCE_MIN
+                    );
+                    ch.setDescription("Keeps your floating Digimon active across apps and screen lock.");
+                    ch.setShowBadge(false);
+                    ch.setSound(null, null);
+                    ch.enableVibration(false);
+                    ch.enableLights(false);
+                    ch.setLockscreenVisibility(Notification.VISIBILITY_SECRET);
+                    nm.createNotificationChannel(ch);
+                }
+            }
+
+            int piFlags = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
+                ? PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE
+                : PendingIntent.FLAG_UPDATE_CURRENT;
+
+            Intent openIntent = new Intent(this, MainActivity.class);
+            openIntent.setFlags(
+                Intent.FLAG_ACTIVITY_NEW_TASK |
+                Intent.FLAG_ACTIVITY_SINGLE_TOP |
+                Intent.FLAG_ACTIVITY_REORDER_TO_FRONT
+            );
+            PendingIntent openPi = PendingIntent.getActivity(this, 4101, openIntent, piFlags);
+
+            Intent stopIntent = new Intent(this, FloatingPetService.class);
+            stopIntent.setAction("STOP");
+            PendingIntent stopPi = PendingIntent.getService(this, 4102, stopIntent, piFlags);
+
+            String petTitle = (currentSpeciesName != null && !currentSpeciesName.isEmpty())
+                ? currentSpeciesName + " is roaming"
+                : "Digimon companion is roaming";
+
+            Notification notification = new NotificationCompat.Builder(this, FOREGROUND_CHANNEL_ID)
+                .setSmallIcon(R.mipmap.ic_launcher)
+                .setContentTitle(petTitle)
+                .setContentText("Tap to open Digivice")
+                .setPriority(NotificationCompat.PRIORITY_MIN)
+                .setCategory(NotificationCompat.CATEGORY_SERVICE)
+                .setVisibility(NotificationCompat.VISIBILITY_SECRET)
+                .setOngoing(true)
+                .setSilent(true)
+                .setShowWhen(false)
+                .setLocalOnly(true)
+                .setForegroundServiceBehavior(NotificationCompat.FOREGROUND_SERVICE_DEFERRED)
+                .setContentIntent(openPi)
+                .addAction(0, "Close", stopPi)
+                .build();
+
+            if (Build.VERSION.SDK_INT >= 34) {
+                startForeground(FOREGROUND_NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
+            } else {
+                startForeground(FOREGROUND_NOTIF_ID, notification);
+            }
+            foregroundActive = true;
+        } catch (Exception ignored) {
+            // Safe guard
+        }
+    }
+
+    private void stopForegroundCompat() {
+        if (!foregroundActive) return;
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                stopForeground(STOP_FOREGROUND_REMOVE);
+            } else {
+                stopForeground(true);
+            }
+        } catch (Exception ignored) {}
+        foregroundActive = false;
+    }
+
+    @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        ensureForegroundStarted();
+
         if (intent != null && "STOP".equals(intent.getAction())) {
+            markOverlayShouldRun(false);
+            stopForegroundCompat();
             stopSelf();
             return START_NOT_STICKY;
         }
@@ -249,31 +468,74 @@ public class FloatingPetService extends Service {
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
+            markOverlayShouldRun(false);
+            stopForegroundCompat();
             stopSelf();
             return START_NOT_STICKY;
         }
 
-        parseConfigFromIntent(intent);
+        SharedPreferences syncPrefs = getSharedPreferences("digipet_overlay_sync", MODE_PRIVATE);
+        final boolean isRestoreIntent = (intent == null) || "RESTORE_STICKY".equals(intent.getAction());
+        if (isRestoreIntent && !syncPrefs.getBoolean("overlayShouldRun", false)) {
+            stopForegroundCompat();
+            stopSelf();
+            return START_NOT_STICKY;
+        }
+
+        Intent effectiveIntent = isRestoreIntent ? null : intent;
+        if (effectiveIntent != null) {
+            saveOverlayLaunchConfig(effectiveIntent);
+        }
+
+        parseConfigFromIntent(effectiveIntent);
+        ensureForegroundStarted();
 
         if (floatingView == null) {
-            setupFloatingView(intent);
-        } else {
-            updateFloatingView(intent);
+            setupFloatingView(effectiveIntent);
+        } else if (effectiveIntent != null) {
+            updateFloatingView(effectiveIntent);
         }
 
         isRunning = true;
         OverlayPlugin.notifyOverlayStateChanged(true);
-        if (!physicsStarted) {
+        if (isScreenInteractive && !physicsStarted) {
             physicsStarted = true;
             physicsHandler.postDelayed(physicsRunnable, 250);
         }
-        return START_NOT_STICKY;
+        return START_STICKY;
     }
 
     private void parseConfigFromIntent(Intent intent) {
         SharedPreferences syncPrefs = getSharedPreferences("digipet_overlay_sync", MODE_PRIVATE);
         long nowMs = System.currentTimeMillis();
         if (intent == null) {
+            isFlyingPet = syncPrefs.getBoolean("savedIsFlying", isFlyingPet);
+            isPetSleeping = syncPrefs.getBoolean("savedIsSleeping", isPetSleeping);
+            currentSpeciesName = syncPrefs.getString("savedSpeciesName", currentSpeciesName);
+            currentQuotesJson = syncPrefs.getString("savedQuotesJson", currentQuotesJson);
+            String savedTrigger = syncPrefs.getString("savedNextEvoTriggerMsStr", "0");
+            try {
+                nextEvoTriggerMs = savedTrigger != null && !savedTrigger.isEmpty() ? Long.parseLong(savedTrigger) : 0L;
+            } catch (Exception ignored) {
+                nextEvoTriggerMs = 0L;
+            }
+            nextEvoPayloadJson = syncPrefs.getString("savedNextEvoPayloadJson", "");
+            String savedRatios = syncPrefs.getString("savedGridRowRatiosJson", "");
+            if (savedRatios != null && !savedRatios.isEmpty()) {
+                try {
+                    JSONArray arr = new JSONArray(savedRatios);
+                    if (arr.length() > 0) {
+                        double[] parsed = new double[arr.length()];
+                        for (int i = 0; i < arr.length(); i++) {
+                            double val = arr.optDouble(i, 0.90);
+                            if (val < 0.12) val = 0.12;
+                            if (val > 0.96) val = 0.96;
+                            parsed[i] = val;
+                        }
+                        rowRatios = parsed;
+                    }
+                } catch (Exception ignored) {}
+            }
             int pendingMeat = Math.max(0, syncPrefs.getInt("pendingMeatUsed", 0));
             int pendingVit = Math.max(0, syncPrefs.getInt("pendingVitUsed", 0));
             petHunger = syncPrefs.getInt("lastKnownHunger", petHunger);
@@ -284,8 +546,12 @@ public class FloatingPetService extends Service {
             isPetFrozen = syncPrefs.getBoolean("isPetFrozen", isPetFrozen);
             hungerHeartMs = syncPrefs.getLong("hungerHeartMs", hungerHeartMs);
             lastHungerDropAtMs = syncPrefs.getLong("lastHungerDropAtMs", nowMs);
+            if (lastOffScreenAtMs == 0L) {
+                lastOffScreenAtMs = nowMs;
+            }
             advanceOverlayHungerClock(nowMs);
             updateHudStatsText();
+            refreshScreenMetrics();
             return;
         }
         isFlyingPet = intent.getBooleanExtra("isFlying", false);
@@ -611,6 +877,8 @@ public class FloatingPetService extends Service {
                             setHudVisible(false);
                             setChatBarVisible(false);
                             hideNativeBubble();
+                            markOverlayShouldRun(false);
+                            stopForegroundCompat();
                             stopSelf();
                             return true;
                         }
@@ -2016,6 +2284,8 @@ public class FloatingPetService extends Service {
 
     private void startBattleDepartureSequence(String reason) {
         if (!isRunning || floatingView == null || params == null) {
+            markOverlayShouldRun(false);
+            stopForegroundCompat();
             stopSelf();
             return;
         }
@@ -2023,6 +2293,8 @@ public class FloatingPetService extends Service {
             return;
         }
         if (offScreenPhase == OffScreenPhase.HIDDEN || floatingView.getVisibility() != View.VISIBLE) {
+            markOverlayShouldRun(false);
+            stopForegroundCompat();
             stopSelf();
             return;
         }
@@ -2106,6 +2378,8 @@ public class FloatingPetService extends Service {
                             floatingView.setAlpha(0f);
                             floatingView.setVisibility(View.GONE);
                         }
+                        markOverlayShouldRun(false);
+                        stopForegroundCompat();
                         stopSelf();
                     } else {
                         offScreenPhase = OffScreenPhase.HIDDEN;
@@ -2260,38 +2534,39 @@ public class FloatingPetService extends Service {
     }
 
     private void loadWebViewFromIntent(Intent intent, String evolvedMessage) {
+        SharedPreferences syncPrefs = getSharedPreferences("digipet_overlay_sync", MODE_PRIVATE);
         String speciesName = intent != null && intent.getStringExtra("speciesName") != null
             ? intent.getStringExtra("speciesName")
-            : "Digimon";
+            : syncPrefs.getString("savedSpeciesName", "Digimon");
         String rawSpriteUrl = intent != null && intent.getStringExtra("spriteUrl") != null
             ? intent.getStringExtra("spriteUrl")
-            : "assets/digidestined/agumon.png";
+            : syncPrefs.getString("savedSpriteUrl", "assets/digidestined/agumon.png");
         loadedSpeciesKey = speciesName + "|" + rawSpriteUrl;
 
         loadWebViewFromFields(
             rawSpriteUrl,
-            intent != null ? intent.getIntExtra("sheetWidth", 200) : 200,
-            intent != null ? intent.getIntExtra("sheetHeight", 200) : 200,
-            intent != null ? intent.getIntExtra("stageWidth", 0) : 0,
-            intent != null ? intent.getIntExtra("stageHeight", 0) : 0,
-            intent != null ? intent.getIntExtra("groundOffset", 0) : 0,
-            intent != null ? intent.getIntExtra("frameX", 2) : 2,
-            intent != null ? intent.getIntExtra("frameY", 2) : 2,
-            intent != null ? intent.getIntExtra("frameW", 48) : 48,
-            intent != null ? intent.getIntExtra("frameH", 48) : 48,
-            intent != null ? intent.getIntExtra("frameRotate", 0) : 0,
+            intent != null ? intent.getIntExtra("sheetWidth", 200) : syncPrefs.getInt("savedSheetWidth", 200),
+            intent != null ? intent.getIntExtra("sheetHeight", 200) : syncPrefs.getInt("savedSheetHeight", 200),
+            intent != null ? intent.getIntExtra("stageWidth", 0) : syncPrefs.getInt("savedStageWidth", 0),
+            intent != null ? intent.getIntExtra("stageHeight", 0) : syncPrefs.getInt("savedStageHeight", 0),
+            intent != null ? intent.getIntExtra("groundOffset", 0) : syncPrefs.getInt("savedGroundOffset", 0),
+            intent != null ? intent.getIntExtra("frameX", 2) : syncPrefs.getInt("savedFrameX", 2),
+            intent != null ? intent.getIntExtra("frameY", 2) : syncPrefs.getInt("savedFrameY", 2),
+            intent != null ? intent.getIntExtra("frameW", 48) : syncPrefs.getInt("savedFrameW", 48),
+            intent != null ? intent.getIntExtra("frameH", 48) : syncPrefs.getInt("savedFrameH", 48),
+            intent != null ? intent.getIntExtra("frameRotate", 0) : syncPrefs.getInt("savedFrameRotate", 0),
             intent != null && intent.getStringExtra("standingFramesJson") != null
                 ? intent.getStringExtra("standingFramesJson")
-                : "[]",
+                : syncPrefs.getString("savedStandingFramesJson", "[]"),
             intent != null && intent.getStringExtra("walkingFramesJson") != null
                 ? intent.getStringExtra("walkingFramesJson")
-                : "[]",
+                : syncPrefs.getString("savedWalkingFramesJson", "[]"),
             intent != null && intent.getStringExtra("sleepingFramesJson") != null
                 ? intent.getStringExtra("sleepingFramesJson")
-                : "[]",
+                : syncPrefs.getString("savedSleepingFramesJson", "[]"),
             intent != null && intent.getStringExtra("quotesJson") != null
                 ? intent.getStringExtra("quotesJson")
-                : "[]",
+                : syncPrefs.getString("savedQuotesJson", "[]"),
             evolvedMessage,
             isPetSleeping
         );
@@ -2692,7 +2967,7 @@ public class FloatingPetService extends Service {
             "};" +
 
             "setInterval(function() {" +
-            "  if (window.__overlayStopped) return;" +
+            "  if (window.__overlayStopped || window.__overlayPaused) return;" +
             "  if (isSleeping) {" +
             "    if (sleepFrameIdx < sleepingFrames.length - 1) sleepFrameIdx++;" +
             "    renderFrame(sleepingFrames[Math.min(sleepFrameIdx, sleepingFrames.length - 1)]);" +
@@ -2727,11 +3002,46 @@ public class FloatingPetService extends Service {
     }
 
     @Override
+    public void onTaskRemoved(Intent rootIntent) {
+        super.onTaskRemoved(rootIntent);
+        SharedPreferences syncPrefs = getSharedPreferences("digipet_overlay_sync", MODE_PRIVATE);
+        boolean shouldKeepRunning = syncPrefs.getBoolean("overlayShouldRun", false)
+            && !isDepartingForBattle
+            && (Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(this));
+        if (!shouldKeepRunning) {
+            return;
+        }
+        try {
+            Intent restartIntent = new Intent(getApplicationContext(), FloatingPetService.class);
+            restartIntent.setAction("RESTORE_STICKY");
+            int piFlags = Build.VERSION.SDK_INT >= Build.VERSION_CODES.M
+                ? PendingIntent.FLAG_ONE_SHOT | PendingIntent.FLAG_IMMUTABLE
+                : PendingIntent.FLAG_ONE_SHOT;
+            PendingIntent pi = Build.VERSION.SDK_INT >= Build.VERSION_CODES.O
+                ? PendingIntent.getForegroundService(getApplicationContext(), 4199, restartIntent, piFlags)
+                : PendingIntent.getService(getApplicationContext(), 4199, restartIntent, piFlags);
+            AlarmManager am = (AlarmManager) getSystemService(Context.ALARM_SERVICE);
+            if (am != null) {
+                long triggerAt = SystemClock.elapsedRealtime() + 600L;
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                    am.setAndAllowWhileIdle(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pi);
+                } else {
+                    am.set(AlarmManager.ELAPSED_REALTIME_WAKEUP, triggerAt, pi);
+                }
+            }
+        } catch (Exception ignored) {
+            // Safe guard
+        }
+    }
+
+    @Override
     public void onDestroy() {
         super.onDestroy();
         isRunning = false;
         isDepartingForBattle = false;
         physicsStarted = false;
+        unregisterScreenReceiver();
+        stopForegroundCompat();
         physicsHandler.removeCallbacksAndMessages(null);
         OverlayPlugin.notifyOverlayStateChanged(false);
         if (chatContainer != null && windowManager != null) {

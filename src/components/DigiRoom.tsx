@@ -75,6 +75,71 @@ const WEATHER_PARTICLES = Array.from({ length: 24 }, (_, idx) => ({
   char: idx % 3 === 0 ? '0' : idx % 3 === 1 ? '1' : 'F',
 }));
 
+interface RoomFurnitureDisplaySpec {
+  emojiClass: string;
+  meatClass?: string;
+  shadowClass: string;
+  isWallDecor?: boolean;
+}
+
+const ROOM_FURNITURE_DISPLAY: Record<string, RoomFurnitureDisplaySpec> = {
+  'meat-grill': {
+    emojiClass: 'text-2xl sm:text-3xl leading-none',
+    meatClass: 'w-7 h-7 sm:w-8 sm:h-8',
+    shadowClass: 'w-7 sm:w-8 h-1.5 -mt-0.5 bg-black/35',
+  },
+  'digivice-pedestal': {
+    emojiClass: 'text-[2.125rem] sm:text-[2.5rem] leading-none',
+    shadowClass: 'w-8 sm:w-9 h-1.5 -mt-0.5 bg-black/30',
+  },
+  'colosseum-trophy': {
+    emojiClass: 'text-[2.375rem] sm:text-[2.875rem] leading-none',
+    shadowClass: 'w-9 sm:w-11 h-1.5 -mt-0.5 bg-black/30',
+  },
+  'egg-incubator': {
+    emojiClass: 'text-[2.75rem] sm:text-[3.25rem] leading-none',
+    shadowClass: 'w-10 sm:w-12 h-2 -mt-1 bg-black/30',
+  },
+  'punching-bag': {
+    emojiClass: 'text-[3.5rem] sm:text-[4.25rem] leading-none',
+    shadowClass: 'w-12 sm:w-14 h-2 -mt-1 bg-black/30',
+  },
+  'crest-banner': {
+    emojiClass: 'text-[3.75rem] sm:text-[4.5rem] leading-none',
+    shadowClass: 'w-10 sm:w-12 h-1.5 mt-0.5 bg-black/20',
+    isWallDecor: true,
+  },
+  'knight-statue': {
+    emojiClass: 'text-[4.25rem] sm:text-[4.875rem] leading-none',
+    shadowClass: 'w-14 sm:w-16 h-2 -mt-1 bg-black/35',
+  },
+  'neon-arcade-cab': {
+    emojiClass: 'text-[4.375rem] sm:text-[5.125rem] leading-none',
+    shadowClass: 'w-16 sm:w-18 h-2.5 -mt-1.5 bg-black/35',
+  },
+  'sovereign-throne': {
+    emojiClass: 'text-[4.5rem] sm:text-[5.25rem] leading-none',
+    shadowClass: 'w-16 sm:w-20 h-2.5 -mt-1.5 bg-black/35',
+  },
+  'cozy-cushion': {
+    emojiClass: 'text-[5.25rem] sm:text-[6.25rem] leading-none',
+    shadowClass: 'w-20 sm:w-24 h-2.5 -mt-2 bg-black/35',
+  },
+};
+
+function getRoomFurnitureDisplay(item: FurnitureItem): RoomFurnitureDisplaySpec {
+  if (ROOM_FURNITURE_DISPLAY[item.id]) {
+    return ROOM_FURNITURE_DISPLAY[item.id];
+  }
+  if (item.category === 'bed') {
+    return ROOM_FURNITURE_DISPLAY['cozy-cushion'];
+  }
+  if (item.category === 'toy') {
+    return ROOM_FURNITURE_DISPLAY['punching-bag'];
+  }
+  return ROOM_FURNITURE_DISPLAY['colosseum-trophy'];
+}
+
 interface DigiRoomProps {
   pet: PetState;
   species?: DigimonSpecies;
@@ -959,53 +1024,71 @@ export const DigiRoom: React.FC<DigiRoomProps> = ({
               const item = FURNITURE_SHOP.find((f) => f.id === placed.furnitureId);
               if (!item) return null;
               const isSelected = selectedFurnitureId === placed.instanceId;
+              const displaySpec = getRoomFurnitureDisplay(item);
+              const depthZIndex = displaySpec.isWallDecor ? 16 : placed.y >= 78 ? 22 : 18;
 
               return (
-                <motion.div
-                  key={placed.instanceId}
-                  drag
-                  dragMomentum={false}
-                  dragConstraints={roomContainerRef}
-                  onDragEnd={(_e, info) => {
-                    if (roomContainerRef.current && onUpdateFurniturePosition) {
-                      const rect = roomContainerRef.current.getBoundingClientRect();
-                      const xPercent = Math.min(88, Math.max(12, placed.x + (info.offset.x / rect.width) * 100));
-                      const yPercent = Math.min(84, Math.max(30, placed.y + (info.offset.y / rect.height) * 100));
-                      onUpdateFurniturePosition(placed.instanceId, Math.round(xPercent), Math.round(yPercent));
-                    }
-                  }}
-                  whileHover={{ scale: 1.08 }}
-                  onClick={() => handleFurnitureClick(item, placed.instanceId)}
-                  className={`absolute cursor-grab active:cursor-grabbing filter drop-shadow-xl z-20 flex flex-col items-center group touch-none ${
-                    isSelected ? 'ring-2 ring-amber-400 rounded-2xl p-1 bg-black/20' : ''
-                  }`}
+                <div
+                  key={`${placed.instanceId}-${placed.x}-${placed.y}`}
+                  className="absolute -translate-x-1/2 -translate-y-1/2"
                   style={{
                     left: `${placed.x}%`,
                     top: `${placed.y}%`,
-                    transform: 'translate(-50%, -50%)',
+                    zIndex: isSelected ? 25 : depthZIndex,
                   }}
                 >
-                  {item.id === 'meat-grill' ? (
-                    <PixelMeatIcon className="w-11 h-11 sm:w-12 sm:h-12 select-none pointer-events-none" />
-                  ) : (
-                    <span className="text-4xl sm:text-5xl select-none pointer-events-none">{item.icon}</span>
-                  )}
+                  <motion.div
+                    drag
+                    dragMomentum={false}
+                    dragConstraints={roomContainerRef}
+                    onDragEnd={(_e, info) => {
+                      if (roomContainerRef.current && onUpdateFurniturePosition) {
+                        const rect = roomContainerRef.current.getBoundingClientRect();
+                        const xPercent = Math.min(88, Math.max(12, placed.x + (info.offset.x / rect.width) * 100));
+                        const yPercent = Math.min(86, Math.max(28, placed.y + (info.offset.y / rect.height) * 100));
+                        onUpdateFurniturePosition(placed.instanceId, Math.round(xPercent), Math.round(yPercent));
+                      }
+                    }}
+                    whileHover={{ scale: 1.06 }}
+                    onClick={() => handleFurnitureClick(item, placed.instanceId)}
+                    className={`cursor-grab active:cursor-grabbing flex flex-col items-center group touch-none ${
+                      isSelected ? 'ring-2 ring-amber-400 rounded-2xl p-1.5 bg-black/25' : ''
+                    }`}
+                  >
+                    <div className="relative flex flex-col items-center pointer-events-none select-none">
+                      <div className="filter drop-shadow-[0_4px_6px_rgba(0,0,0,0.45)] flex items-center justify-center">
+                        {item.id === 'meat-grill' ? (
+                          <PixelMeatIcon className={displaySpec.meatClass || 'w-7 h-7 sm:w-8 sm:h-8'} />
+                        ) : (
+                          <span className={displaySpec.emojiClass}>{item.icon}</span>
+                        )}
+                      </div>
+                      <div
+                        aria-hidden="true"
+                        className={`rounded-full blur-[2px] ${displaySpec.shadowClass}`}
+                      />
+                    </div>
 
-                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity bg-slate-900/95 text-white text-[9px] font-pixel px-2 py-0.5 rounded-full mt-1 border border-slate-700 shadow-lg">
-                    <span>{item.name}</span>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        sound.playAlert();
-                        onRemoveFurniture(placed.instanceId);
-                      }}
-                      title="Remove furniture"
-                      className="text-rose-400 hover:text-rose-300 ml-1 p-0.5 cursor-pointer"
+                    <div
+                      className={`flex items-center gap-1 transition-opacity bg-slate-900/95 text-white text-[9px] font-pixel px-2 py-0.5 rounded-full mt-1 border border-slate-700 shadow-lg whitespace-nowrap ${
+                        isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                      }`}
                     >
-                      <Trash2 className="w-3 h-3" />
-                    </button>
-                  </div>
-                </motion.div>
+                      <span>{item.name}</span>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          sound.playAlert();
+                          onRemoveFurniture(placed.instanceId);
+                        }}
+                        title="Remove furniture"
+                        className="text-rose-400 hover:text-rose-300 ml-1 p-0.5 cursor-pointer"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </motion.div>
+                </div>
               );
             })}
 

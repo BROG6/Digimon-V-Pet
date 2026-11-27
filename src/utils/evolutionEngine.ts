@@ -1112,6 +1112,12 @@ export function applyEvolutionToPetState(
     brains: targetBase.brains + trainedBonus.brains,
   };
 
+  const maxHpGain = Math.max(0, nextBattleStats.maxHp - prevEffective.maxHp);
+  const nextCurrentHp =
+    typeof prev.currentHp === 'number' && !Number.isNaN(prev.currentHp)
+      ? Math.min(nextBattleStats.maxHp, Math.max(0, Math.round(prev.currentHp) + maxHpGain))
+      : undefined;
+
   const draftPet: PetState = {
     ...prev,
     currentSpeciesId: target.id,
@@ -1145,12 +1151,14 @@ export function applyEvolutionToPetState(
     evolutionLocked: false,
     lastHungerDropAt: nowMs,
     lastPoopAt: nowMs,
+    lastHpRegenAt: nowMs,
     lastCareCheck: nowMs,
     careCallStartedAt: undefined,
     sleepCallStartedAt: undefined,
     isFrozen: false,
     frozenAt: undefined,
     battleStats: nextBattleStats,
+    currentHp: nextCurrentHp,
     learnedAttackIds: nextLearned,
     equippedAttackIds: nextEquipped,
     unlockedSpeciesIds: recordUnlockedSpeciesId(target.id, prev.unlockedSpeciesIds || []),

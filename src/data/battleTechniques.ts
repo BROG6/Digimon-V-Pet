@@ -32,72 +32,72 @@ export const ATTACK_ELEMENT_META: Record<AttackElement, AttackElementMeta> = {
     label: 'Fire',
     shortLabel: 'FIRE',
     badgeClass: 'text-orange-300 border-orange-500/50 bg-orange-950/60',
-    beatsLabel: 'Nature, Filth',
-    weaknessLabel: 'Ice',
+    beatsLabel: 'Nature, Filth (1.5x)',
+    weaknessLabel: 'Ice, Fire (0.75x)',
   },
   nature: {
     id: 'nature',
     label: 'Nature',
     shortLabel: 'NATR',
     badgeClass: 'text-emerald-300 border-emerald-500/50 bg-emerald-950/60',
-    beatsLabel: 'Air, Filth',
-    weaknessLabel: 'Fire',
+    beatsLabel: 'Air, Filth (1.5x)',
+    weaknessLabel: 'Fire, Nature (0.75x)',
   },
   air: {
     id: 'air',
     label: 'Air / Thunder',
     shortLabel: 'AIR',
     badgeClass: 'text-yellow-300 border-yellow-500/50 bg-yellow-950/60',
-    beatsLabel: 'Ice, Filth',
-    weaknessLabel: 'Nature',
+    beatsLabel: 'Ice, Filth (1.5x)',
+    weaknessLabel: 'Nature, Air (0.75x)',
   },
   ice: {
     id: 'ice',
     label: 'Ice / Water',
     shortLabel: 'ICE',
     badgeClass: 'text-cyan-300 border-cyan-500/50 bg-cyan-950/60',
-    beatsLabel: 'Fire, Filth',
-    weaknessLabel: 'Air',
+    beatsLabel: 'Fire, Filth (1.5x)',
+    weaknessLabel: 'Air, Ice (0.75x)',
   },
   holy: {
     id: 'holy',
     label: 'Holy',
     shortLabel: 'HOLY',
     badgeClass: 'text-amber-200 border-amber-400/50 bg-amber-950/60',
-    beatsLabel: 'Dark',
-    weaknessLabel: 'Dark, Filth',
+    beatsLabel: 'Dark (1.5x)',
+    weaknessLabel: 'Dark (1.5x both), Filth, Holy (0.75x)',
   },
   dark: {
     id: 'dark',
     label: 'Dark',
     shortLabel: 'DARK',
     badgeClass: 'text-purple-300 border-purple-500/50 bg-purple-950/60',
-    beatsLabel: 'Holy',
-    weaknessLabel: 'Holy, Filth',
+    beatsLabel: 'Holy (1.5x)',
+    weaknessLabel: 'Holy (1.5x both), Filth, Dark (0.75x)',
   },
   hand: {
     id: 'hand',
     label: 'Hand-to-Hand',
     shortLabel: 'HAND',
     badgeClass: 'text-rose-300 border-rose-500/50 bg-rose-950/60',
-    beatsLabel: 'Weapon, Filth',
-    weaknessLabel: 'Weapon',
+    beatsLabel: 'Weapon, Filth (1.5x)',
+    weaknessLabel: 'Weapon (1.5x both), Hand (0.75x)',
   },
   weapon: {
     id: 'weapon',
     label: 'Weapon / Mech',
     shortLabel: 'MECH',
     badgeClass: 'text-sky-300 border-sky-500/50 bg-sky-950/60',
-    beatsLabel: 'Hand-to-Hand',
-    weaknessLabel: 'Hand-to-Hand, Filth',
+    beatsLabel: 'Hand-to-Hand (1.5x)',
+    weaknessLabel: 'Hand (1.5x both), Filth, Mech (0.75x)',
   },
   filth: {
     id: 'filth',
     label: 'Filth',
     shortLabel: 'FILTH',
     badgeClass: 'text-lime-300 border-lime-500/50 bg-lime-950/60',
-    beatsLabel: 'Holy, Dark, Weapon',
-    weaknessLabel: 'Fire, Nature, Air, Ice, Hand',
+    beatsLabel: 'Holy, Dark, Weapon (1.5x)',
+    weaknessLabel: 'Fire, Nature, Air, Ice, Hand (0.75x)',
   },
   neutral: {
     id: 'neutral',
@@ -1028,11 +1028,17 @@ export function getSpeciesElementType(species?: DigimonSpecies): AttackElement {
 }
 
 /**
- * Digimon World: Next Order Elemental Matchups (1.5x damage):
+ * Digimon World: Next Order Elemental Matchups:
+ * Advantages (1.5x damage):
  * - Fire > Nature > Air > Ice > Fire
  * - Holy <-> Dark (mutual 1.5x)
  * - Hand-to-Hand <-> Weapon (mutual 1.5x)
  * - Filth takes 1.5x from Fire, Nature, Air, Ice, Hand; deals 1.5x to Holy, Dark, Weapon
+ *
+ * Disadvantages / Resisted (0.75x damage):
+ * - Reverse 4-element cycle: Fire -> Ice, Ice -> Air, Air -> Nature, Nature -> Fire
+ * - Reverse Filth asymmetries: Filth -> {Fire, Nature, Air, Ice, Hand}; {Holy, Dark, Weapon} -> Filth
+ * - Same-element resistance (non-neutral): Fire -> Fire, Ice -> Ice, etc.
  * - Neutral has no strengths or weaknesses (1.0x)
  */
 export function getElementDamageMultiplier(
@@ -1042,6 +1048,8 @@ export function getElementDamageMultiplier(
   if (attackElement === 'neutral' || defenderElement === 'neutral') {
     return 1.0;
   }
+
+  // 1.5x Advantages
   if (attackElement === 'fire' && defenderElement === 'nature') return 1.5;
   if (attackElement === 'nature' && defenderElement === 'air') return 1.5;
   if (attackElement === 'air' && defenderElement === 'ice') return 1.5;
@@ -1079,6 +1087,36 @@ export function getElementDamageMultiplier(
       defenderElement === 'weapon')
   ) {
     return 1.5;
+  }
+
+  // 0.75x Disadvantages / Resistances
+  if (attackElement === 'fire' && defenderElement === 'ice') return 0.75;
+  if (attackElement === 'ice' && defenderElement === 'air') return 0.75;
+  if (attackElement === 'air' && defenderElement === 'nature') return 0.75;
+  if (attackElement === 'nature' && defenderElement === 'fire') return 0.75;
+
+  if (
+    attackElement === 'filth' &&
+    (defenderElement === 'fire' ||
+      defenderElement === 'nature' ||
+      defenderElement === 'air' ||
+      defenderElement === 'ice' ||
+      defenderElement === 'hand')
+  ) {
+    return 0.75;
+  }
+
+  if (
+    defenderElement === 'filth' &&
+    (attackElement === 'holy' ||
+      attackElement === 'dark' ||
+      attackElement === 'weapon')
+  ) {
+    return 0.75;
+  }
+
+  if (attackElement === defenderElement) {
+    return 0.75;
   }
 
   return 1.0;

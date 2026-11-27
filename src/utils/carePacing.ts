@@ -65,6 +65,133 @@ export const WAKE_UP_HOUR = 7; // 7:00 AM
 export const EARLY_SLEEP_WINDOW_HOURS = 3; // Allow lights off within 3 hours before bedtime
 export const TRAINING_ENERGY_COST = 12;
 export const ENERGY_AWAKE_REGEN_MS = 120_000; // +1 Energy every 2 minutes awake (+30/hr)
+export const HP_REGEN_AWAKE_INTERVAL_MS = 45_000; // +1% Max HP (min 1) every 45s awake (~75m for 0->100%)
+export const HP_REGEN_SLEEP_INTERVAL_MS = 22_500; // 2x faster while sleeping (~37.5m for 0->100%)
+
+export type HealItemTier = 'recovery_small' | 'recovery_medium' | 'recovery_large' | 'recovery_max';
+
+export interface HealItemSpec {
+  id: HealItemTier;
+  tierLabel: string;
+  name: string;
+  shortName: string;
+  price: number;
+  hpPercent: number;
+  minHpHeal: number;
+  mpPercent: number;
+  curesSickness?: boolean;
+  stockField: 'recoverySmallStock' | 'recoveryMediumStock' | 'recoveryLargeStock' | 'recoveryMaxStock';
+  description: string;
+  accentClass: string;
+}
+
+export const HEAL_ITEM_SPECS: Record<HealItemTier, HealItemSpec> = {
+  recovery_small: {
+    id: 'recovery_small',
+    tierLabel: 'LV.1',
+    name: 'HP Floppy S',
+    shortName: 'Floppy S',
+    price: 60,
+    hpPercent: 0.25,
+    minHpHeal: 25,
+    mpPercent: 0,
+    stockField: 'recoverySmallStock',
+    description: 'Patch up battle scrapes. Restores 25% Max HP (min 25 HP).',
+    accentClass: 'text-emerald-300 border-emerald-500/40 bg-emerald-950/30',
+  },
+  recovery_medium: {
+    id: 'recovery_medium',
+    tierLabel: 'LV.2',
+    name: 'Recovery Disk',
+    shortName: 'Rec. Disk',
+    price: 150,
+    hpPercent: 0.5,
+    minHpHeal: 65,
+    mpPercent: 0,
+    stockField: 'recoveryMediumStock',
+    description: 'Standard med-disk. Restores 50% Max HP (min 65 HP).',
+    accentClass: 'text-sky-300 border-sky-500/40 bg-sky-950/30',
+  },
+  recovery_large: {
+    id: 'recovery_large',
+    tierLabel: 'LV.3',
+    name: 'Hyper Disk',
+    shortName: 'Hyper Disk',
+    price: 340,
+    hpPercent: 0.8,
+    minHpHeal: 140,
+    mpPercent: 0.25,
+    stockField: 'recoveryLargeStock',
+    description: 'High-grade combat restore. Restores 80% Max HP & +25% MP.',
+    accentClass: 'text-violet-300 border-violet-500/40 bg-violet-950/30',
+  },
+  recovery_max: {
+    id: 'recovery_max',
+    tierLabel: 'LV.4',
+    name: 'Omega Omni-Disk',
+    shortName: 'Omni-Disk',
+    price: 650,
+    hpPercent: 1.0,
+    minHpHeal: 9999,
+    mpPercent: 1.0,
+    curesSickness: true,
+    stockField: 'recoveryMaxStock',
+    description: 'Full emergency rebuild. Restores 100% HP & MP and cures Sickness.',
+    accentClass: 'text-amber-300 border-amber-500/50 bg-amber-950/35',
+  },
+};
+
+export const HEAL_ITEM_ORDER: HealItemTier[] = [
+  'recovery_small',
+  'recovery_medium',
+  'recovery_large',
+  'recovery_max',
+];
+
+export function getHealAmountForTier(tier: HealItemTier, maxHp: number): number {
+  const spec = HEAL_ITEM_SPECS[tier];
+  const safeMax = Math.max(1, Math.round(maxHp));
+  if (spec.hpPercent >= 1) return safeMax;
+  return Math.max(spec.minHpHeal, Math.round(safeMax * spec.hpPercent));
+}
+
+export function getRecoveryStockCount(pet: PetState, tier: HealItemTier): number {
+  const field = HEAL_ITEM_SPECS[tier].stockField;
+  return Math.max(0, Math.round(Number(pet[field]) || 0));
+}
+
+export function getEffectivePetCurrentHp(pet: PetState, effectiveMaxHp?: number): number {
+  const fallbackMax = Math.max(1, Math.round(effectiveMaxHp ?? pet.battleStats?.maxHp ?? 100));
+  if (typeof pet.currentHp !== 'number' || Number.isNaN(pet.currentHp)) {
+    return fallbackMax;
+  }
+  return Math.max(0, Math.min(fallbackMax, Math.round(pet.currentHp)));
+}
+
+function advancePassiveHpRegen(
+  prev: PetState,
+  now: number,
+  maxHp: number,
+  intervalMs: number
+): { currentHp: number; lastHpRegenAt: number } {
+  const cur = getEffectivePetCurrentHp(prev, maxHp);
+  if (cur >= maxHp) {
+    return { currentHp: maxHp, lastHpRegenAt: now };
+  }
+  const anchor = prev.lastHpRegenAt ?? prev.lastCareCheck ?? now;
+  const elapsed = Math.max(0, Math.min(now - anchor, 12 * 3_600_000));
+  const ticks = Math.floor(elapsed / intervalMs);
+  if (ticks <= 0) {
+    return { currentHp: cur, lastHpRegenAt: anchor };
+  }
+  const hpPerTick = Math.max(1, Math.round(maxHp * 0.01));
+  const nextHp = Math.min(maxHp, cur + ticks * hpPerTick);
+  const nextAnchor =
+    nextHp >= maxHp || elapsed >= 12 * 3_600_000
+      ? now
+      : anchor + ticks * intervalMs;
+  return { currentHp: nextHp, lastHpRegenAt: nextAnchor };
+}
 
 export function getStageBedtimeHour(stage: DigimonStage): number | null {
   return STAGE_BEDTIME_HOUR[stage] ?? null;
@@ -221,7 +348,12 @@ export function evaluateCareNeeds(pet: PetState, nowMs: number = Date.now()): Ca
  * - Care Mistakes trigger only from ignoring Call Light past 10m grace on Empty Hunger or Bedtime.
  * - Sleeping Digimon auto-wake cleanly at 7:00 AM.
  */
-export function advanceCareState(prev: PetState, now: number = Date.now()): CareStepResult {
+export function advanceCareState(
+  prev: PetState,
+  now: number = Date.now(),
+  effectiveMaxHp?: number
+): CareStepResult {
+  const resolvedMaxHp = Math.max(1, Math.round(effectiveMaxHp ?? prev.battleStats?.maxHp ?? 100));
   const emptyEvents: CareStepEvents = {
     hungerBecameLow: false,
     hungerBecameEmpty: false,
@@ -239,7 +371,7 @@ export function advanceCareState(prev: PetState, now: number = Date.now()): Care
     return { nextPet: prev, events: emptyEvents };
   }
 
-  // In Fridge / Cold Mode: completely pause hunger, energy, toilet, sleep calls, care mistakes, and sickness
+  // In Fridge / Cold Mode: completely pause hunger, energy, HP regen, toilet, sleep calls, care mistakes, and sickness
   if (prev.isFrozen) {
     return {
       nextPet: {
@@ -247,6 +379,7 @@ export function advanceCareState(prev: PetState, now: number = Date.now()): Care
         lastHungerDropAt: now,
         lastPoopAt: now,
         lastEnergyRegenAt: now,
+        lastHpRegenAt: now,
         lastCareCheck: now,
         sleepCallStartedAt: undefined,
       },
@@ -265,12 +398,20 @@ export function advanceCareState(prev: PetState, now: number = Date.now()): Care
     const sleepElapsed = Math.max(0, Math.min(now - sleepAnchor, 12 * 3_600_000));
     const energyGain = Math.floor((sleepElapsed / 60_000) * 4);
     const nextEnergy = Math.min(100, prev.energy + Math.max(10, energyGain));
+    const sleepHpResult = advancePassiveHpRegen(
+      prev,
+      now,
+      resolvedMaxHp,
+      prev.isSick ? HP_REGEN_AWAKE_INTERVAL_MS : HP_REGEN_SLEEP_INTERVAL_MS
+    );
     return {
       nextPet: {
         ...prev,
         lightsOff: false,
         isSleeping: false,
         energy: nextEnergy,
+        currentHp: sleepHpResult.currentHp,
+        lastHpRegenAt: now,
         sleepCallStartedAt: undefined,
         lastHungerDropAt: now,
         lastPoopAt: now,
@@ -284,7 +425,7 @@ export function advanceCareState(prev: PetState, now: number = Date.now()): Care
     };
   }
 
-  // While sleeping (lightsOff), hunger & poop timers pause and energy recovers gradually
+  // While sleeping (lightsOff), hunger & poop timers pause and energy + HP recover gradually
   if (prev.lightsOff) {
     const sleepAnchor = prev.lastEnergyRegenAt ?? prev.lastCareCheck ?? now;
     const sleepElapsed = Math.max(0, Math.min(now - sleepAnchor, 12 * 3_600_000));
@@ -296,10 +437,18 @@ export function advanceCareState(prev: PetState, now: number = Date.now()): Care
         : pointsRecovered > 0
         ? sleepAnchor + pointsRecovered * 15_000
         : sleepAnchor;
+    const sleepHpResult = advancePassiveHpRegen(
+      prev,
+      now,
+      resolvedMaxHp,
+      prev.isSick ? HP_REGEN_AWAKE_INTERVAL_MS : HP_REGEN_SLEEP_INTERVAL_MS
+    );
     return {
       nextPet: {
         ...prev,
         energy: nextEnergy,
+        currentHp: sleepHpResult.currentHp,
+        lastHpRegenAt: sleepHpResult.lastHpRegenAt,
         sleepCallStartedAt: undefined,
         lastHungerDropAt: now,
         lastPoopAt: now,
@@ -490,11 +639,17 @@ export function advanceCareState(prev: PetState, now: number = Date.now()): Care
     ? Math.max(0, (prev.discipline ?? 50) - 5)
     : (prev.discipline ?? 50);
 
+  // Slow out-of-battle HP regen (halved speed when sick)
+  const awakeHpInterval = isSick ? HP_REGEN_AWAKE_INTERVAL_MS * 2 : HP_REGEN_AWAKE_INTERVAL_MS;
+  const awakeHpResult = advancePassiveHpRegen(prev, now, resolvedMaxHp, awakeHpInterval);
+
   return {
     nextPet: {
       ...prev,
       hunger,
       energy,
+      currentHp: awakeHpResult.currentHp,
+      lastHpRegenAt: awakeHpResult.lastHpRegenAt,
       poopCount,
       isSick,
       sickSince,

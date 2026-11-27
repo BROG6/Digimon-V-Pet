@@ -1,10 +1,20 @@
 import React from 'react';
-import { Award, Lock, Sparkles, X } from 'lucide-react';
+import { Award, HeartPulse, Lock, Sparkles, X } from 'lucide-react';
 import { PetState, ShopItemId } from '../types/digimon';
+import { DIGIMON_DATABASE } from '../data/digidex';
+import { getEffectiveBattleStats } from '../data/battleTechniques';
+import {
+  HEAL_ITEM_ORDER,
+  HEAL_ITEM_SPECS,
+  getEffectivePetCurrentHp,
+  getHealAmountForTier,
+  getRecoveryStockCount,
+} from '../utils/carePacing';
 import {
   PixelBerryIcon,
   PixelMeatIcon,
   PixelMushroomIcon,
+  PixelRecoveryDiskIcon,
   PixelSirloinIcon,
   PixelVitaminIcon,
 } from './PixelItemIcons';
@@ -43,6 +53,10 @@ export const ShopModal: React.FC<ShopModalProps> = ({
 
   const rankProgress = computeTamerRankProgress(pet);
   const partnerUnavailable = Boolean(pet.isDead || pet.isFrozen || pet.stage === 'egg');
+  const currentSpecies = DIGIMON_DATABASE[pet.currentSpeciesId];
+  const maxHp = getEffectiveBattleStats(pet, currentSpecies).maxHp;
+  const currentHp = getEffectivePetCurrentHp(pet, maxHp);
+  const hpPct = maxHp > 0 ? Math.round((currentHp / maxHp) * 100) : 100;
 
   const standardItems: ShopCatalogItem[] = [
     {
@@ -113,6 +127,24 @@ export const ShopModal: React.FC<ShopModalProps> = ({
     },
   ];
 
+  const recoveryItems: (ShopCatalogItem & { ownedStock: number })[] = HEAL_ITEM_ORDER.map((tier) => {
+    const spec = HEAL_ITEM_SPECS[tier];
+    const healAmt = getHealAmountForTier(tier, maxHp);
+    const mpNote = spec.mpPercent >= 1 ? ' + 100% MP' : spec.mpPercent > 0 ? ` + ${Math.round(spec.mpPercent * 100)}% MP` : '';
+    const cureNote = spec.curesSickness ? ' + Cure' : '';
+    return {
+      id: spec.id,
+      name: `${spec.name} (${spec.tierLabel})`,
+      category: 'Battle Recovery',
+      description: spec.description,
+      price: spec.price,
+      rewardText: `+1 ${spec.shortName} · Restores ${spec.hpPercent >= 1 ? '100%' : `${healAmt}`} HP${mpNote}${cureNote}`,
+      icon: <PixelRecoveryDiskIcon tier={tier} className="w-8 h-8" />,
+      minTamerRank: 1,
+      ownedStock: getRecoveryStockCount(pet, tier),
+    };
+  });
+
   const rankExclusiveItems: ShopCatalogItem[] = [
     {
       id: 'sirloin',
@@ -154,9 +186,9 @@ export const ShopModal: React.FC<ShopModalProps> = ({
       id: 'miracle_elixir',
       name: 'Royal Miracle Elixir',
       category: 'Rank 4 Exclusive',
-      description: 'Golden recovery tonic that fully restores Hunger & Energy, cures sickness, and boosts DP.',
+      description: 'Golden recovery tonic that fully restores Battle HP, Hunger & Energy, cures sickness, and boosts DP.',
       price: 750,
-      rewardText: 'Instant: 100% Hunger & Energy, Cure, +30 Happy, +15 DP',
+      rewardText: 'Instant: 100% Battle HP, Hunger & Energy, Cure, +30 Happy, +15 DP',
       icon: '⚗️',
       minTamerRank: 4,
       requiresAlivePartner: true,
@@ -226,6 +258,11 @@ export const ShopModal: React.FC<ShopModalProps> = ({
               {item.discountBadge && (
                 <span className="font-pixel text-[8px] bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded border border-amber-500/40">
                   {item.discountBadge}
+                </span>
+              )}
+              {'ownedStock' in item && typeof (item as { ownedStock?: number }).ownedStock === 'number' && (
+                <span className="font-pixel text-[8px] bg-emerald-500/15 text-emerald-300 px-1.5 py-0.5 rounded border border-emerald-500/35 tabular-nums">
+                  OWNED: x{(item as { ownedStock: number }).ownedStock}
                 </span>
               )}
               {item.minTamerRank > 1 && (
@@ -358,7 +395,15 @@ export const ShopModal: React.FC<ShopModalProps> = ({
         </button>
 
         {/* Current Supplies Banner */}
-        <div className="grid grid-cols-3 gap-2 py-2.5 border-b border-slate-800/60 font-pixel text-[9px] shrink-0">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 py-2.5 border-b border-slate-800/60 font-pixel text-[9px] shrink-0">
+          <div className="bg-slate-950/80 p-2 rounded-xl border border-emerald-500/30 flex items-center justify-between gap-1">
+            <span className="text-emerald-300 inline-flex items-center gap-1 truncate">
+              <HeartPulse className="w-3.5 h-3.5 shrink-0" /> HP
+            </span>
+            <span className={`font-bold tabular-nums ${hpPct <= 30 ? 'text-rose-400' : 'text-emerald-300'}`}>
+              {currentHp}/{maxHp}
+            </span>
+          </div>
           <div className="bg-slate-950/80 p-2 rounded-xl border border-slate-800 flex items-center justify-between gap-1">
             <span className="text-slate-400 inline-flex items-center gap-1 truncate">
               <PixelMeatIcon className="w-3.5 h-3.5 shrink-0" /> Meat
@@ -381,6 +426,16 @@ export const ShopModal: React.FC<ShopModalProps> = ({
 
         {/* Catalog Items */}
         <div className="overflow-y-auto space-y-4 py-3 pr-1 flex-1">
+          <div className="space-y-2.5">
+            <div className="font-pixel text-[9px] text-emerald-300 px-1 flex items-center justify-between gap-2">
+              <span className="inline-flex items-center gap-1.5">
+                <HeartPulse className="w-3.5 h-3.5" />
+                <span>BATTLE RECOVERY DISKS (HP PERSISTS AFTER BATTLES)</span>
+              </span>
+            </div>
+            {recoveryItems.map(renderCatalogCard)}
+          </div>
+
           <div className="space-y-2.5">
             <div className="font-pixel text-[9px] text-slate-400 px-1">
               STANDARD BAZAAR SUPPLIES

@@ -5,7 +5,7 @@ import { DigimonSprite, DigimonPose } from './DigimonSprite';
 import { PixelMeatIcon, PixelVitaminIcon, PixelPoopIcon } from './PixelItemIcons';
 import { sound } from '../utils/audio';
 import { checkEvolutionEligibility, formatDurationMs } from '../utils/evolutionEngine';
-import { isWithinSleepWindow } from '../utils/carePacing';
+import { getEffectivePetCurrentHp, isWithinSleepWindow } from '../utils/carePacing';
 import { getEffectiveBattleStats } from '../data/battleTechniques';
 import { 
   Heart, 
@@ -186,6 +186,8 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
   const ageDays = Math.floor(ageHours / 24);
   const winRate = pet.battlesTotal > 0 ? Math.round((pet.battlesWon / pet.battlesTotal) * 100) : 0;
   const rpgStats = getEffectiveBattleStats(pet, species);
+  const currentHp = getEffectivePetCurrentHp(pet, rpgStats.maxHp);
+  const isLowHp = currentHp <= Math.round(rpgStats.maxHp * 0.35);
   const totalAtk = rpgStats.offense;
   const isBedtime = !pet.lightsOff && isWithinSleepWindow(pet.stage);
   const evoElig = checkEvolutionEligibility(pet, species);
@@ -1041,7 +1043,13 @@ export const DigiviceHUD: React.FC<DigiviceHUDProps> = ({
                     <div className="space-y-0.5 text-[8px]">
                       <div className="flex justify-between">
                         <span>HP / MP:</span>
-                        <span className="font-bold text-emerald-400">{rpgStats.maxHp} / {rpgStats.maxMp}</span>
+                        <span className="font-bold">
+                          <span className={currentHp <= 0 ? 'text-rose-400' : isLowHp ? 'text-amber-300' : 'text-emerald-400'}>
+                            {currentHp}/{rpgStats.maxHp}
+                          </span>
+                          <span className="text-slate-400"> · </span>
+                          <span className="text-cyan-300">{rpgStats.maxMp}</span>
+                        </span>
                       </div>
                       <div className="flex justify-between">
                         <span>OFF / DEF:</span>

@@ -14,6 +14,7 @@ export interface PlayBattleAttackOptions {
   spec: AttackVisualSpec;
   isCrit?: boolean;
   isSuperEffective?: boolean;
+  isResisted?: boolean;
 }
 
 class BattleSoundLibrary {
@@ -208,7 +209,12 @@ class BattleSoundLibrary {
    * Plays a two-phase Web Audio attack SFX (launch at t=0 + elemental impact at t=0.24s)
    * tailored to both attack motion (melee vs ranged) and attack element.
    */
-  public playAttackSound({ spec, isCrit = false, isSuperEffective = false }: PlayBattleAttackOptions) {
+  public playAttackSound({
+    spec,
+    isCrit = false,
+    isSuperEffective = false,
+    isResisted = false,
+  }: PlayBattleAttackOptions) {
     if (!this.canPlay()) return;
     const ctx = sound.getAudioContext();
     if (!ctx) return;
@@ -229,6 +235,8 @@ class BattleSoundLibrary {
     }
     if (isSuperEffective) {
       this.playSuperEffectiveLayer(ctx, impactAt + 0.03);
+    } else if (isResisted) {
+      this.playResistedLayer(ctx, impactAt + 0.02);
     }
   }
 
@@ -985,6 +993,22 @@ class BattleSoundLibrary {
       freqEnd: 1318.5,
       peakGain: 0.065,
       attack: 0.004,
+    });
+  }
+
+  private playResistedLayer(ctx: AudioContext, t: number) {
+    // Muted low-pitched dampening thud for 0.75x elemental resistance
+    this.scheduleTone(ctx, {
+      type: 'triangle',
+      startTime: t,
+      duration: 0.14,
+      freqStart: 220,
+      freqEnd: 92,
+      peakGain: 0.07,
+      attack: 0.003,
+      filterType: 'lowpass',
+      filterFreqStart: 420,
+      filterFreqEnd: 140,
     });
   }
 }

@@ -12,6 +12,7 @@ import {
 } from '../utils/evolutionEngine';
 import {
   formatBedtimeLabel,
+  getEffectivePetCurrentHp,
   getStageHungerHeartMs,
   getStagePoopIntervalMs,
 } from '../utils/carePacing';
@@ -120,6 +121,8 @@ export const StatsModal: React.FC<StatsModalProps> = ({
   const equippedMoves = getEquippedBattleMoves(pet, species);
   const equippedIdSet = new Set(equippedMoves.map((m) => m.id));
   const totalHp = rpgStats.maxHp;
+  const currentHp = getEffectivePetCurrentHp(pet, totalHp);
+  const hpPct = totalHp > 0 ? Math.min(100, Math.round((currentHp / totalHp) * 100)) : 100;
   const totalMp = rpgStats.maxMp;
   const totalAtk = rpgStats.offense;
   const totalDef = rpgStats.defense;
@@ -408,17 +411,35 @@ export const StatsModal: React.FC<StatsModalProps> = ({
               {/* HP Card */}
               <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800 space-y-1.5">
                 <div className="flex justify-between items-center text-xs font-pixel">
-                  <span className="text-emerald-400 flex items-center gap-1">
-                    <Heart className="w-3.5 h-3.5" /> MAX HP (BOULDER)
+                  <span className={`flex items-center gap-1 ${hpPct <= 25 ? 'text-rose-400' : hpPct <= 55 ? 'text-amber-300' : 'text-emerald-400'}`}>
+                    <Heart className="w-3.5 h-3.5" /> HP (BOULDER)
                   </span>
-                  <span className="text-white font-bold">{totalHp}</span>
+                  <span className="text-white font-bold">
+                    <span className={hpPct <= 25 ? 'text-rose-300' : hpPct <= 55 ? 'text-amber-200' : 'text-emerald-300'}>
+                      {currentHp}
+                    </span>
+                    <span className="text-slate-400"> / {totalHp}</span>
+                  </span>
                 </div>
                 <div className="w-full h-2 rounded-full bg-slate-800 overflow-hidden">
                   <div
-                    className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 rounded-full"
-                    style={{ width: `${Math.min(100, (totalHp / 800) * 100)}%` }}
+                    className={`h-full rounded-full transition-all ${
+                      hpPct <= 25
+                        ? 'bg-gradient-to-r from-rose-600 to-rose-400'
+                        : hpPct <= 55
+                        ? 'bg-gradient-to-r from-amber-500 to-yellow-400'
+                        : 'bg-gradient-to-r from-emerald-500 to-teal-400'
+                    }`}
+                    style={{ width: `${hpPct}%` }}
                   />
                 </div>
+                {currentHp < totalHp && (
+                  <p className="text-[10px] font-chakra text-slate-400">
+                    {currentHp === 0
+                      ? 'Knocked out — use a Recovery Disk or rest outside battle to recover HP.'
+                      : 'Regenerates slowly outside battle (2x faster while sleeping).'}
+                  </p>
+                )}
               </div>
 
               {/* MP Card */}

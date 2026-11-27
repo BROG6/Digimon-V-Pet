@@ -1,5 +1,5 @@
 import React from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion } from 'motion/react';
 import { AttackVisualSpec, SignatureVfxStyle } from '../data/battleTechniques';
 
 export interface ActiveBattleVfx {
@@ -8,6 +8,7 @@ export interface ActiveBattleVfx {
   spec: AttackVisualSpec;
   isCrit?: boolean;
   isSuperEffective?: boolean;
+  isResisted?: boolean;
   isSignature?: boolean;
   moveName?: string;
 }
@@ -1555,15 +1556,14 @@ const SignatureChoreography: React.FC<{
 };
 
 export const BattleAttackVfx: React.FC<BattleAttackVfxProps> = ({ activeVfx }) => {
+  if (!activeVfx) return null;
   return (
-    <AnimatePresence>
-      {activeVfx && (
-        <div
-          key={activeVfx.id}
-          className="absolute inset-0 pointer-events-none z-30 overflow-hidden"
-        >
-          {(() => {
-            const { attacker, spec, isCrit, isSuperEffective, isSignature, moveName } = activeVfx;
+    <div
+      key={activeVfx.id}
+      className="absolute inset-0 pointer-events-none z-30 overflow-hidden"
+    >
+      {(() => {
+        const { attacker, spec, isCrit, isSuperEffective, isResisted, isSignature, moveName } = activeVfx;
             const fromLeft = attacker === 'player';
             const attackerX = fromLeft ? '18%' : '82%';
             const defenderX = fromLeft ? '82%' : '18%';
@@ -1633,6 +1633,8 @@ export const BattleAttackVfx: React.FC<BattleAttackVfxProps> = ({ activeVfx }) =
                       ? '#fde047'
                       : isSuperEffective
                       ? '#34d399'
+                      : isResisted
+                      ? '#94a3b8'
                       : spec.colorHex;
                     return (
                       <motion.span
@@ -1654,8 +1656,6 @@ export const BattleAttackVfx: React.FC<BattleAttackVfxProps> = ({ activeVfx }) =
               </>
             );
           })()}
-        </div>
-      )}
-    </AnimatePresence>
+    </div>
   );
 };

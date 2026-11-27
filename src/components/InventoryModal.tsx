@@ -1,14 +1,24 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { Backpack, Check, Lock, Shield, Sparkles, Utensils, X } from 'lucide-react';
+import { Backpack, Check, HeartPulse, Lock, Shield, Sparkles, Utensils, X } from 'lucide-react';
 import { PetState, SpecialItemId } from '../types/digimon';
 import { DIGI_EGGS, DIGIMON_DATABASE, SPECIAL_ITEMS } from '../data/digidex';
 import { ADVENTURE_ZONES } from '../data/adventureZones';
+import { getEffectiveBattleStats } from '../data/battleTechniques';
+import {
+  HEAL_ITEM_ORDER,
+  HEAL_ITEM_SPECS,
+  HealItemTier,
+  getEffectivePetCurrentHp,
+  getHealAmountForTier,
+  getRecoveryStockCount,
+} from '../utils/carePacing';
 import { DigimonSprite } from './DigimonSprite';
 import {
   PixelBerryIcon,
   PixelMeatIcon,
   PixelMushroomIcon,
+  PixelRecoveryDiskIcon,
   PixelSirloinIcon,
   PixelVitaminIcon,
 } from './PixelItemIcons';
@@ -23,6 +33,7 @@ interface InventoryModalProps {
   onFeedMushroom: () => void;
   onFeedBerry: () => void;
   onGiveVitamin: () => void;
+  onUseRecoveryItem: (tier: HealItemTier) => void;
   onEquipSpecialItem: (itemId: SpecialItemId | null) => void;
 }
 
@@ -35,6 +46,7 @@ export const InventoryModal: React.FC<InventoryModalProps> = ({
   onFeedMushroom,
   onFeedBerry,
   onGiveVitamin,
+  onUseRecoveryItem,
   onEquipSpecialItem,
 }) => {
   const [activeTab, setActiveTab] = useState<'items' | 'relics'>('items');
@@ -44,6 +56,10 @@ export const InventoryModal: React.FC<InventoryModalProps> = ({
   const sirloinStock = pet.sirloinStock ?? 0;
   const mushroomStock = pet.mushroomStock ?? 0;
   const berryStock = pet.berryStock ?? 0;
+
+  const currentSpecies = DIGIMON_DATABASE[pet.currentSpeciesId];
+  const maxHp = getEffectiveBattleStats(pet, currentSpecies).maxHp;
+  const currentHp = getEffectivePetCurrentHp(pet, maxHp);
 
   const ownedRelics = pet.ownedSpecialItems || [];
   const allRelics = Object.values(SPECIAL_ITEMS);
@@ -206,10 +222,89 @@ export const InventoryModal: React.FC<InventoryModalProps> = ({
               )}
 
               {/* Quick Vitals Strip */}
-              <div className="grid grid-cols-3 gap-2 text-center font-pixel text-[9px] bg-slate-950/80 border border-slate-800 rounded-xl p-2.5">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-center font-pixel text-[9px] bg-slate-950/80 border border-slate-800 rounded-xl p-2.5">
+                <div className={currentHp < maxHp ? 'text-emerald-300 font-bold' : 'text-emerald-400'}>
+                  HP: {currentHp}/{maxHp}
+                </div>
                 <div className="text-amber-300">HUNGER: {pet.hunger}%</div>
                 <div className="text-cyan-300">ENERGY: {pet.energy}%</div>
                 <div className="text-rose-300">HAPPY: {pet.happiness}%</div>
+              </div>
+
+              {/* Battle Recovery Disks */}
+              <div className="space-y-2 pt-1">
+                <div className="flex items-center justify-between px-1 font-pixel text-[9px] text-emerald-300">
+                  <span className="inline-flex items-center gap-1.5">
+                    <HeartPulse className="w-3.5 h-3.5" />
+                    <span>BATTLE RECOVERY DISKS</span>
+                  </span>
+                  {currentHp < maxHp && (
+                    <span className="text-[8px] text-slate-400">
+                      Also regenerates slowly outside battle
+                    </span>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {HEAL_ITEM_ORDER.map((tier) => {
+                    const spec = HEAL_ITEM_SPECS[tier];
+                    const stock = getRecoveryStockCount(pet, tier);
+                    const healAmt = getHealAmountForTier(tier, maxHp);
+                    const needsHeal = currentHp < maxHp || Boolean(spec.curesSickness && pet.isSick);
+                    const disabled = isDisabledForPet || stock <= 0 || !needsHeal;
+                    return (
+                      <div
+                        key={tier}
+                        className={`p-3 bg-slate-950/85 border rounded-2xl flex items-center justify-between gap-2.5 ${spec.accentClass}`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="w-10 h-10 rounded-xl bg-slate-900 border border-slate-700/80 flex items-center justify-center shrink-0">
+                            <PixelRecoveryDiskIcon tier={tier} className="w-7 h-7" />
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="font-chakra font-bold text-white text-xs sm:text-sm truncate">
+                                {spec.name}
+                              </span>
+                              <span className="font-pixel text-[8px] px-1 py-0.5 rounded bg-slate-900 border border-slate-700 text-slate-300">
+                                {spec.tierLabel}
+                              </span>
+                            </div>
+                            <p className="text-[11px] font-chakra text-emerald-300 font-semibold truncate">
+                              +{spec.hpPercent >= 1 ? '100%' : healAmt} HP
+                              {spec.mpPercent >= 1
+                                ? ' · 100% MP'
+                                : spec.mpPercent > 0
+                                ? ` · +${Math.round(spec.mpPercent * 100)}% MP`
+                                : ''}
+                              {spec.curesSickness ? ' · Cure' : ''}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-col items-end gap-1 shrink-0">
+                          <span className="font-pixel text-[9px] text-slate-300 tabular-nums">
+                            x{stock}
+                          </span>
+                          <button
+                            disabled={disabled}
+                            onClick={() => {
+                              triggerHaptic('medium');
+                              onUseRecoveryItem(tier);
+                            }}
+                            className="min-h-[34px] px-3 py-1 rounded-xl bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-pixel text-[9px] font-bold cursor-pointer active:scale-95 transition-all disabled:opacity-35 disabled:cursor-not-allowed"
+                          >
+                            {needsHeal ? 'HEAL' : 'FULL'}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="font-pixel text-[9px] text-amber-300 px-1 pt-2">
+                FOOD &amp; VITAMINS
               </div>
 
               {consumables.map((item) => (

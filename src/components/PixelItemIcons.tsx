@@ -852,4 +852,92 @@ export const PixelSupplyCacheIcon: React.FC<{
   />
 );
 
+const RECOVERY_DISK_PALETTES: Record<
+  'recovery_small' | 'recovery_medium' | 'recovery_large' | 'recovery_max',
+  { label: string; palette: Record<string, string> }
+> = {
+  recovery_small: {
+    label: 'HP Floppy S',
+    palette: {
+      K: '#022c22',
+      L: '#6ee7b7',
+      M: '#10b981',
+      D: '#047857',
+      S: '#e2e8f0',
+      W: '#ffffff',
+      P: '#22c55e',
+    },
+  },
+  recovery_medium: {
+    label: 'Recovery Disk',
+    palette: {
+      K: '#082f49',
+      L: '#7dd3fc',
+      M: '#0ea5e9',
+      D: '#0369a1',
+      S: '#e2e8f0',
+      W: '#ffffff',
+      P: '#10b981',
+    },
+  },
+  recovery_large: {
+    label: 'Hyper Disk',
+    palette: {
+      K: '#2e1065',
+      L: '#d8b4fe',
+      M: '#a855f7',
+      D: '#6d28d9',
+      S: '#f1f5f9',
+      W: '#ffffff',
+      P: '#34d399',
+    },
+  },
+  recovery_max: {
+    label: 'Omega Omni-Disk',
+    palette: {
+      K: '#451a03',
+      L: '#fef08a',
+      M: '#f59e0b',
+      D: '#b45309',
+      S: '#fffbeb',
+      W: '#ffffff',
+      P: '#ef4444',
+    },
+  },
+};
 
+const RECOVERY_DISK_GRID = [
+  '................',
+  '..KKKKKKKKKKK...',
+  '.KLLLLLLSSSLMK..',
+  '.KLMMMMMSSSLMK..',
+  '.KLMMMMMSSSLMK..',
+  '.KLMMMMMMMMMMK..',
+  '.KMMMMMMMMMMMK..',
+  '.KMMWWWWWWWWMMK.',
+  '.KMMWWWPWWWWMMK.',
+  '.KMMWWPPPWWWMMK.',
+  '.KMMWWWPWWWWMMK.',
+  '.KMDWWWWWWWWDMK.',
+  '.KDDDDDDDDDDDDK.',
+  '..KKKKKKKKKKKK..',
+  '................',
+  '................',
+];
+
+export const PixelRecoveryDiskIcon: React.FC<{
+  tier: 'recovery_small' | 'recovery_medium' | 'recovery_large' | 'recovery_max';
+  className?: string;
+  size?: number;
+}> = ({ tier, className = 'w-8 h-8', size }) => {
+  const spec = RECOVERY_DISK_PALETTES[tier] || RECOVERY_DISK_PALETTES.recovery_small;
+  return (
+    <PixelGridIcon
+      grid={RECOVERY_DISK_GRID}
+      palette={spec.palette}
+      className={className}
+      size={size}
+      label={spec.label}
+    />
+  );
+};

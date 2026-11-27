@@ -81,11 +81,16 @@ import {
   saveUnlockedSpeciesIds,
 } from './utils/evolutionEngine';
 import {
+  HEAL_ITEM_SPECS,
+  HealItemTier,
   TRAINING_ENERGY_COST,
   advanceCareState,
   computeFutureCareAlertSchedule,
   evaluateCareNeeds,
   formatEarlyBedtimeLabel,
+  getEffectivePetCurrentHp,
+  getHealAmountForTier,
+  getRecoveryStockCount,
   getStageBedtimeHour,
   isWithinEarlyOrSleepWindow,
 } from './utils/carePacing';
@@ -193,7 +198,13 @@ export default function App() {
           sirloinStock: 0,
           mushroomStock: 0,
           berryStock: 0,
+          recoverySmallStock: 0,
+          recoveryMediumStock: 0,
+          recoveryLargeStock: 0,
+          recoveryMaxStock: 0,
           ...parsed,
+          currentHp: typeof parsed.currentHp === 'number' ? Math.max(0, Math.round(parsed.currentHp)) : undefined,
+          lastHpRegenAt: parsed.lastHpRegenAt || parsed.lastCareCheck || Date.now(),
           lifetimeBattlesWon: Math.max(parsed.lifetimeBattlesWon ?? 0, parsed.battlesWon ?? 0),
           battleHistory: Array.isArray(parsed.battleHistory) ? parsed.battleHistory.slice(0, 10) : [],
           currentWinStreak: typeof parsed.currentWinStreak === 'number' ? Math.max(0, parsed.currentWinStreak) : 0,
@@ -245,6 +256,10 @@ export default function App() {
       sirloinStock: 0,
       mushroomStock: 0,
       berryStock: 0,
+      recoverySmallStock: 0,
+      recoveryMediumStock: 0,
+      recoveryLargeStock: 0,
+      recoveryMaxStock: 0,
       vitaminStock: 5,
       activeRoomTheme: syncRoomThemeForLightCycle('file-island', initialNight),
       roomWeather: 'sunny',
@@ -256,6 +271,7 @@ export default function App() {
       lastCareCheck: Date.now(),
       lastHungerDropAt: Date.now(),
       lastPoopAt: Date.now(),
+      lastHpRegenAt: Date.now(),
       evolutionLocked: false,
       isDead: false,
       neglectTicks: 0,
@@ -502,7 +518,11 @@ export default function App() {
     const runCareTick = () => {
       const now = Date.now();
       setPet((prev) => {
-        const res = advanceCareState(prev, now);
+        const effectiveMaxHp = getEffectiveBattleStats(
+          prev,
+          DIGIMON_DATABASE[prev.currentSpeciesId]
+        ).maxHp;
+        const res = advanceCareState(prev, now, effectiveMaxHp);
         lastStepEventsRef.current = res.events;
         return advanceWeatherHappiness(res.nextPet, now);
       });
@@ -1364,6 +1384,12 @@ export default function App() {
       }
       const nextEnergy = Math.max(0, prev.energy - TRAINING_ENERGY_COST);
       const weatherSpec = getRoomWeatherSpec(prev.roomWeather);
+      const prevBattle = getEffectiveBattleStats(prev, prevSpecies);
+      const maxHpGain = Math.max(0, outcome.nextStats.maxHp - prevBattle.maxHp);
+      const nextCurrentHp =
+        typeof prev.currentHp === 'number'
+          ? Math.min(outcome.nextStats.maxHp, prev.currentHp + maxHpGain)
+          : prev.currentHp;
 
       return {
         ...prev,
@@ -1379,6 +1405,7 @@ export default function App() {
         discipline: Math.min(100, (prev.discipline ?? 50) + (success ? 5 : 2)),
         digiBits: prev.digiBits + (success ? 25 : 10),
         battleStats: outcome.nextStats,
+        currentHp: nextCurrentHp,
         learnedAttackIds: nextLearned,
         equippedAttackIds: nextEquipped.slice(0, MAX_EQUIPPED_ATTACKS),
       };
@@ -1409,6 +1436,13 @@ export default function App() {
       const now = Date.now();
       const nextEnergy = Math.max(0, prev.energy - TRAINING_ENERGY_COST);
       const weatherSpec = getRoomWeatherSpec(prev.roomWeather);
+      const prevSpecies = DIGIMON_DATABASE[prev.currentSpeciesId];
+      const prevBattle = getEffectiveBattleStats(prev, prevSpecies);
+      const maxHpGain = Math.max(0, outcome.nextStats.maxHp - prevBattle.maxHp);
+      const nextCurrentHp =
+        typeof prev.currentHp === 'number'
+          ? Math.min(outcome.nextStats.maxHp, prev.currentHp + maxHpGain)
+          : prev.currentHp;
       return {
         ...prev,
         trainingCount: prev.trainingCount + 1,
@@ -1423,6 +1457,7 @@ export default function App() {
         discipline: Math.min(100, (prev.discipline ?? 50) + 3),
         digiBits: prev.digiBits + 12,
         battleStats: outcome.nextStats,
+        currentHp: nextCurrentHp,
       };
     });
 
@@ -1495,11 +1530,78 @@ export default function App() {
     showNotification(`🎖️ TAMER RANK UP! Reached Rank ${newRank} (${newTitle}) — New Shop & Room unlocks!`);
   };
 
+  const handleSyncBattleHp = (remainingHp: number) => {
+    const now = Date.now();
+    setPet((prev) => {
+      const speciesObj = DIGIMON_DATABASE[prev.currentSpeciesId];
+      const maxHp = getEffectiveBattleStats(prev, speciesObj).maxHp;
+      const clamped = Math.max(0, Math.min(maxHp, Math.round(remainingHp)));
+      return {
+        ...prev,
+        currentHp: clamped,
+        lastHpRegenAt: now,
+      };
+    });
+  };
+
+  const handleUseRecoveryItem = (tier: HealItemTier): boolean => {
+    if (!requireAliveAndHatched()) return false;
+    const spec = HEAL_ITEM_SPECS[tier];
+    const stock = getRecoveryStockCount(pet, tier);
+    if (stock <= 0) {
+      sound.playAlert();
+      showNotification(`Out of ${spec.name}! Visit the Shop to buy Recovery Disks.`);
+      return false;
+    }
+
+    const speciesObj = DIGIMON_DATABASE[pet.currentSpeciesId];
+    const maxHp = getEffectiveBattleStats(pet, speciesObj).maxHp;
+    const curHp = getEffectivePetCurrentHp(pet, maxHp);
+    if (curHp >= maxHp && !(spec.curesSickness && pet.isSick)) {
+      sound.playButton();
+      showNotification('Partner HP is already at 100%!');
+      return false;
+    }
+
+    const now = Date.now();
+    const healAmt = getHealAmountForTier(tier, maxHp);
+    const healedHp = Math.min(maxHp, curHp + healAmt);
+    const actualGain = Math.max(0, healedHp - curHp);
+
+    sound.playVictory();
+    triggerHaptic('success');
+    setHudAction({ pose: 'happy', nonce: now + Math.random() });
+
+    setPet((prev) => {
+      const prevSpecies = DIGIMON_DATABASE[prev.currentSpeciesId];
+      const prevMaxHp = getEffectiveBattleStats(prev, prevSpecies).maxHp;
+      const prevCurHp = getEffectivePetCurrentHp(prev, prevMaxHp);
+      const nextStock = Math.max(0, getRecoveryStockCount(prev, tier) - 1);
+      const nextHp = Math.min(prevMaxHp, prevCurHp + getHealAmountForTier(tier, prevMaxHp));
+
+      return {
+        ...prev,
+        [spec.stockField]: nextStock,
+        currentHp: nextHp,
+        lastHpRegenAt: now,
+        isSick: spec.curesSickness ? false : prev.isSick,
+        sickSince: spec.curesSickness ? undefined : prev.sickSince,
+        neglectTicks: spec.curesSickness ? 0 : prev.neglectTicks,
+      };
+    });
+
+    showNotification(
+      `Used ${spec.name}! Restored +${actualGain} HP (${healedHp}/${maxHp})${spec.curesSickness && pet.isSick ? ' & cured sickness!' : '.'}`
+    );
+    return true;
+  };
+
   const handleBattleEnd = (
     won: boolean,
     coinsReward: number,
     dpReward: number,
-    opponentInfo?: { name: string; speciesId?: string }
+    opponentInfo?: { name: string; speciesId?: string },
+    remainingHp?: number
   ) => {
     const prevRank = computeTamerRankProgress(pet).rank;
     const nextLifetimeWins = won ? getLifetimeBattlesWon(pet) + 1 : getLifetimeBattlesWon(pet);
@@ -1516,20 +1618,32 @@ export default function App() {
       mode: 'colosseum',
       timestamp: Date.now(),
     };
+    const now = Date.now();
 
-    setPet((prev) => ({
-      ...prev,
-      battlesTotal: prev.battlesTotal + 1,
-      battlesWon: won ? prev.battlesWon + 1 : prev.battlesWon,
-      lifetimeBattlesWon: won ? getLifetimeBattlesWon(prev) + 1 : getLifetimeBattlesWon(prev),
-      stageBattlesTotal: (prev.stageBattlesTotal ?? 0) + 1,
-      stageBattlesWon: won ? (prev.stageBattlesWon ?? 0) + 1 : (prev.stageBattlesWon ?? 0),
-      digiBits: prev.digiBits + coinsReward,
-      dpPoints: prev.dpPoints + dpReward,
-      energy: Math.max(10, prev.energy - 15),
-      battleHistory: [newEntry, ...(prev.battleHistory || [])].slice(0, 10),
-      currentWinStreak: won ? (prev.currentWinStreak ?? 0) + 1 : 0,
-    }));
+    setPet((prev) => {
+      const speciesObj = DIGIMON_DATABASE[prev.currentSpeciesId];
+      const maxHp = getEffectiveBattleStats(prev, speciesObj).maxHp;
+      const nextHp =
+        typeof remainingHp === 'number'
+          ? Math.max(0, Math.min(maxHp, Math.round(remainingHp)))
+          : prev.currentHp;
+
+      return {
+        ...prev,
+        battlesTotal: prev.battlesTotal + 1,
+        battlesWon: won ? prev.battlesWon + 1 : prev.battlesWon,
+        lifetimeBattlesWon: won ? getLifetimeBattlesWon(prev) + 1 : getLifetimeBattlesWon(prev),
+        stageBattlesTotal: (prev.stageBattlesTotal ?? 0) + 1,
+        stageBattlesWon: won ? (prev.stageBattlesWon ?? 0) + 1 : (prev.stageBattlesWon ?? 0),
+        digiBits: prev.digiBits + coinsReward,
+        dpPoints: prev.dpPoints + dpReward,
+        energy: Math.max(10, prev.energy - 15),
+        currentHp: nextHp,
+        lastHpRegenAt: now,
+        battleHistory: [newEntry, ...(prev.battleHistory || [])].slice(0, 10),
+        currentWinStreak: won ? (prev.currentWinStreak ?? 0) + 1 : 0,
+      };
+    });
 
     if (won && nextRankProgress.rank > prevRank) {
       triggerRankUpCelebration(nextRankProgress.rank, nextRankProgress.title);
@@ -1557,6 +1671,7 @@ export default function App() {
       lifetimeBattlesWon: nextLifetimeWins,
       adventureClearedWave: nextAdventureWaves,
     });
+    const now = Date.now();
 
     setPet((prev) => {
       const prevWave = prev.adventureClearedWave?.[result.zoneId] ?? 0;
@@ -1568,6 +1683,12 @@ export default function App() {
           : existingRelics;
       const unlockedRelicInfo = result.unlockedRelicId ? SPECIAL_ITEMS[result.unlockedRelicId] : undefined;
       const shouldAutoEquip = unlockedRelicInfo && prev.eggId === unlockedRelicInfo.eggId;
+      const speciesObj = DIGIMON_DATABASE[prev.currentSpeciesId];
+      const maxHp = getEffectiveBattleStats(prev, speciesObj).maxHp;
+      const nextHp =
+        typeof result.remainingHp === 'number'
+          ? Math.max(0, Math.min(maxHp, Math.round(result.remainingHp)))
+          : prev.currentHp;
 
       const newEntry: BattleHistoryEntry = {
         id: `adv-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
@@ -1596,6 +1717,8 @@ export default function App() {
         berryStock: (prev.berryStock ?? 0) + (result.berryGained ?? 0),
         vitaminStock: Math.max(0, prev.vitaminStock - result.vitaminsUsed) + result.vitaminsGained,
         energy: Math.max(10, prev.energy - 12),
+        currentHp: nextHp,
+        lastHpRegenAt: now,
         ownedSpecialItems: nextRelics,
         equippedSpecialItem: shouldAutoEquip ? result.unlockedRelicId : prev.equippedSpecialItem,
         adventureClearedWave: {
@@ -1698,6 +1821,10 @@ export default function App() {
     }
 
     const itemMinPrices: Partial<Record<ShopItemId, number>> = {
+      recovery_small: HEAL_ITEM_SPECS.recovery_small.price,
+      recovery_medium: HEAL_ITEM_SPECS.recovery_medium.price,
+      recovery_large: HEAL_ITEM_SPECS.recovery_large.price,
+      recovery_max: HEAL_ITEM_SPECS.recovery_max.price,
       sirloin: 90,
       forage_basket: 180,
       training_chip: 550,
@@ -1713,12 +1840,20 @@ export default function App() {
     }
 
     let purchaseMessage = `Purchased item from Bazaar! 🪙 (-${effectiveCost} Bits)`;
-    if (itemId === 'forage_basket') {
+    if (
+      itemId === 'recovery_small' ||
+      itemId === 'recovery_medium' ||
+      itemId === 'recovery_large' ||
+      itemId === 'recovery_max'
+    ) {
+      const spec = HEAL_ITEM_SPECS[itemId];
+      purchaseMessage = `Bought ${spec.name} (${spec.tierLabel})! (-${effectiveCost} Bits · Added to Recovery Pouch)`;
+    } else if (itemId === 'forage_basket') {
       purchaseMessage = `Bought Trail Ration Crate! (-${effectiveCost} Bits · +2 Digi-Mushrooms & +2 Digi-Berries)`;
     } else if (itemId === 'training_chip') {
       purchaseMessage = `Installed Gym Mastery Chip! (-${effectiveCost} Bits · +6 OFF/DEF, +4 SPD/BRN, +2 Effort, +25 EXP)`;
     } else if (itemId === 'miracle_elixir') {
-      purchaseMessage = `Applied Royal Miracle Elixir! (-${effectiveCost} Bits · 100% Hunger & Energy, Cure, +30 Happy, +15 DP)`;
+      purchaseMessage = `Applied Royal Miracle Elixir! (-${effectiveCost} Bits · 100% Battle HP, Hunger & Energy, Cure, +30 Happy, +15 DP)`;
     } else if (itemId === 'sovereign_core') {
       purchaseMessage = `Merged Sovereign Data Core! (-${effectiveCost} Bits · +12 All RPG Stats, +15 STR, +30 DP, +100 EXP)`;
     }
@@ -1730,6 +1865,10 @@ export default function App() {
       let sirloinStock = prev.sirloinStock ?? 0;
       let mushroomStock = prev.mushroomStock ?? 0;
       let berryStock = prev.berryStock ?? 0;
+      let recoverySmallStock = prev.recoverySmallStock ?? 0;
+      let recoveryMediumStock = prev.recoveryMediumStock ?? 0;
+      let recoveryLargeStock = prev.recoveryLargeStock ?? 0;
+      let recoveryMaxStock = prev.recoveryMaxStock ?? 0;
       let vitaminStock = prev.vitaminStock;
       let isSick = prev.isSick;
       let hunger = prev.hunger;
@@ -1740,6 +1879,8 @@ export default function App() {
       let effort = prev.effort ?? 0;
       let battleExp = prev.battleExp ?? 0;
       let battleStats = prev.battleStats;
+      let currentHp = prev.currentHp;
+      let lastHpRegenAt = prev.lastHpRegenAt;
       let careCallStartedAt = prev.careCallStartedAt;
       let lastHungerDropAt = prev.lastHungerDropAt;
       let sickSince = prev.sickSince;
@@ -1754,6 +1895,14 @@ export default function App() {
       } else if (itemId === 'forage_basket') {
         mushroomStock += 2;
         berryStock += 2;
+      } else if (itemId === 'recovery_small') {
+        recoverySmallStock += 1;
+      } else if (itemId === 'recovery_medium') {
+        recoveryMediumStock += 1;
+      } else if (itemId === 'recovery_large') {
+        recoveryLargeStock += 1;
+      } else if (itemId === 'recovery_max') {
+        recoveryMaxStock += 1;
       } else if (itemId === 'vitamin') {
         vitaminStock += 1;
       } else if (itemId === 'vitamin_bundle') {
@@ -1774,28 +1923,35 @@ export default function App() {
           brains: baseBattle.brains + 4,
         };
       } else if (itemId === 'miracle_elixir') {
+        const now = Date.now();
         hunger = 100;
         energy = 100;
         happiness = Math.min(100, happiness + 30);
         dpPoints += 15;
+        currentHp = baseBattle.maxHp;
+        lastHpRegenAt = now;
         isSick = false;
         sickSince = undefined;
         neglectTicks = 0;
         careCallStartedAt = undefined;
-        lastHungerDropAt = Date.now();
+        lastHungerDropAt = now;
       } else if (itemId === 'sovereign_core') {
         battleExp += 100;
         strength += 15;
         dpPoints += 30;
         effort = Math.min(10, effort + 3);
+        const nextMaxHp = baseBattle.maxHp + 40;
         battleStats = {
-          maxHp: baseBattle.maxHp + 40,
+          maxHp: nextMaxHp,
           maxMp: baseBattle.maxMp + 15,
           offense: baseBattle.offense + 12,
           defense: baseBattle.defense + 12,
           speed: baseBattle.speed + 12,
           brains: baseBattle.brains + 12,
         };
+        if (typeof currentHp === 'number') {
+          currentHp = Math.min(nextMaxHp, currentHp + 40);
+        }
       }
 
       return {
@@ -1805,6 +1961,10 @@ export default function App() {
         sirloinStock,
         mushroomStock,
         berryStock,
+        recoverySmallStock,
+        recoveryMediumStock,
+        recoveryLargeStock,
+        recoveryMaxStock,
         vitaminStock,
         isSick,
         sickSince,
@@ -1817,6 +1977,8 @@ export default function App() {
         effort,
         battleExp,
         battleStats,
+        currentHp,
+        lastHpRegenAt,
         careCallStartedAt,
         lastHungerDropAt,
       };
@@ -1976,6 +2138,10 @@ export default function App() {
       sirloinStock: prev.sirloinStock ?? 0,
       mushroomStock: prev.mushroomStock ?? 0,
       berryStock: prev.berryStock ?? 0,
+      recoverySmallStock: prev.recoverySmallStock ?? 0,
+      recoveryMediumStock: prev.recoveryMediumStock ?? 0,
+      recoveryLargeStock: prev.recoveryLargeStock ?? 0,
+      recoveryMaxStock: prev.recoveryMaxStock ?? 0,
       vitaminStock: Math.max(5, prev.vitaminStock),
       activeRoomTheme: prev.activeRoomTheme || 'file-island',
       roomWeather: normalizeRoomWeather(prev.roomWeather),
@@ -1986,6 +2152,8 @@ export default function App() {
       lastCareCheck: now,
       lastHungerDropAt: now,
       lastPoopAt: now,
+      lastHpRegenAt: now,
+      currentHp: undefined,
       careCallStartedAt: undefined,
       sleepCallStartedAt: undefined,
       battleStats: undefined,
@@ -2057,7 +2225,9 @@ export default function App() {
 
       {/* TOP APP HEADER BAR (MOBILE-NATIVE & NOTCH SAFE) */}
       <header
-        className={`sticky top-0 z-40 border-b backdrop-blur-md px-3.5 py-2 flex items-center justify-between gap-2 android-safe-top-bar transition-all duration-700 ${
+        className={`sticky top-0 z-40 border-b ${
+          isColosseumOpen || isAdventureOpen ? '' : 'backdrop-blur-md'
+        } px-3.5 py-2 flex items-center justify-between gap-2 android-safe-top-bar transition-all duration-700 ${
           isNightMode
             ? 'border-indigo-950/90 bg-slate-950/95 brightness-[0.88]'
             : 'border-slate-800/80 bg-slate-900/95'
@@ -2494,51 +2664,84 @@ export default function App() {
           )}
 
         {/* Mobile Vitals Dashboard Bar */}
-        <div className="w-full px-2.5 sm:px-4 grid grid-cols-4 gap-1.5 mb-2.5 text-[9px] font-pixel">
-          {/* Hunger */}
-          <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-1.5 flex flex-col items-center">
-            <div className="flex items-center gap-1 text-amber-300">
-              <PixelMeatIcon className="w-3.5 h-3.5" />
-              <span>{pet.hunger}%</span>
-            </div>
-            <div className="w-full bg-slate-800 rounded-full h-1 mt-1 overflow-hidden">
-              <div className="bg-amber-400 h-full rounded-full transition-all" style={{ width: `${pet.hunger}%` }} />
-            </div>
-          </div>
+        {(() => {
+          const effectiveMaxHp = getEffectiveBattleStats(pet, currentSpecies).maxHp;
+          const currentBattleHp = getEffectivePetCurrentHp(pet, effectiveMaxHp);
+          const hpPct = effectiveMaxHp > 0 ? Math.min(100, Math.round((currentBattleHp / effectiveMaxHp) * 100)) : 100;
+          const isDamaged = currentBattleHp < effectiveMaxHp;
+          return (
+            <div className="w-full px-2.5 sm:px-4 grid grid-cols-5 gap-1.5 mb-2.5 text-[9px] font-pixel">
+              {/* Battle HP */}
+              <button
+                type="button"
+                onClick={() => {
+                  sound.playButton();
+                  setIsInventoryOpen(true);
+                }}
+                title={`Battle HP: ${currentBattleHp}/${effectiveMaxHp}${isDamaged ? ' (Regenerating outside battle — tap for Recovery Disks)' : ''}`}
+                className="bg-slate-900/90 hover:bg-slate-800/90 border border-slate-800 rounded-xl p-1.5 flex flex-col items-center cursor-pointer transition-colors"
+              >
+                <div className={`flex items-center gap-0.5 tabular-nums ${hpPct <= 25 ? 'text-rose-300' : hpPct <= 55 ? 'text-amber-300' : 'text-emerald-300'}`}>
+                  <span>❤️</span>
+                  <span className="truncate">{currentBattleHp}</span>
+                  {isDamaged && <span className="text-[7px] text-emerald-400">+</span>}
+                </div>
+                <div className="w-full bg-slate-800 rounded-full h-1 mt-1 overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all ${
+                      hpPct <= 25 ? 'bg-rose-400' : hpPct <= 55 ? 'bg-amber-400' : 'bg-emerald-400'
+                    }`}
+                    style={{ width: `${hpPct}%` }}
+                  />
+                </div>
+              </button>
 
-          {/* Energy */}
-          <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-1.5 flex flex-col items-center">
-            <div className="flex items-center gap-1 text-cyan-300">
-              <span>⚡</span>
-              <span>{pet.energy}%</span>
-            </div>
-            <div className="w-full bg-slate-800 rounded-full h-1 mt-1 overflow-hidden">
-              <div className="bg-cyan-400 h-full rounded-full transition-all" style={{ width: `${pet.energy}%` }} />
-            </div>
-          </div>
+              {/* Hunger */}
+              <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-1.5 flex flex-col items-center">
+                <div className="flex items-center gap-1 text-amber-300">
+                  <PixelMeatIcon className="w-3.5 h-3.5" />
+                  <span>{pet.hunger}%</span>
+                </div>
+                <div className="w-full bg-slate-800 rounded-full h-1 mt-1 overflow-hidden">
+                  <div className="bg-amber-400 h-full rounded-full transition-all" style={{ width: `${pet.hunger}%` }} />
+                </div>
+              </div>
 
-          {/* Happiness */}
-          <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-1.5 flex flex-col items-center">
-            <div className="flex items-center gap-1 text-rose-300">
-              <span>💖</span>
-              <span>{pet.happiness}%</span>
-            </div>
-            <div className="w-full bg-slate-800 rounded-full h-1 mt-1 overflow-hidden">
-              <div className="bg-rose-400 h-full rounded-full transition-all" style={{ width: `${pet.happiness}%` }} />
-            </div>
-          </div>
+              {/* Energy */}
+              <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-1.5 flex flex-col items-center">
+                <div className="flex items-center gap-1 text-cyan-300">
+                  <span>⚡</span>
+                  <span>{pet.energy}%</span>
+                </div>
+                <div className="w-full bg-slate-800 rounded-full h-1 mt-1 overflow-hidden">
+                  <div className="bg-cyan-400 h-full rounded-full transition-all" style={{ width: `${pet.energy}%` }} />
+                </div>
+              </div>
 
-          {/* DP / Battles */}
-          <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-1.5 flex flex-col items-center">
-            <div className="flex items-center gap-1 text-purple-300">
-              <span>⚔️</span>
-              <span>{pet.dpPoints} DP</span>
+              {/* Happiness */}
+              <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-1.5 flex flex-col items-center">
+                <div className="flex items-center gap-1 text-rose-300">
+                  <span>💖</span>
+                  <span>{pet.happiness}%</span>
+                </div>
+                <div className="w-full bg-slate-800 rounded-full h-1 mt-1 overflow-hidden">
+                  <div className="bg-rose-400 h-full rounded-full transition-all" style={{ width: `${pet.happiness}%` }} />
+                </div>
+              </div>
+
+              {/* DP / Battles */}
+              <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-1.5 flex flex-col items-center">
+                <div className="flex items-center gap-1 text-purple-300">
+                  <span>⚔️</span>
+                  <span>{pet.dpPoints}</span>
+                </div>
+                <div className="w-full bg-slate-800 rounded-full h-1 mt-1 overflow-hidden">
+                  <div className="bg-purple-400 h-full rounded-full transition-all" style={{ width: `${Math.min(100, pet.dpPoints * 2)}%` }} />
+                </div>
+              </div>
             </div>
-            <div className="w-full bg-slate-800 rounded-full h-1 mt-1 overflow-hidden">
-              <div className="bg-purple-400 h-full rounded-full transition-all" style={{ width: `${Math.min(100, pet.dpPoints * 2)}%` }} />
-            </div>
-          </div>
-        </div>
+          );
+        })()}
 
         {/* Compact Tamer Rank Progression Strip */}
         <div className="w-full px-2.5 sm:px-4 mb-2">
@@ -2980,7 +3183,9 @@ export default function App() {
 
       {/* NATIVE MOBILE FIXED BOTTOM DOCK */}
       <nav
-        className={`fixed bottom-0 left-0 right-0 z-40 backdrop-blur-md border-t pb-[max(calc(env(safe-area-inset-bottom,0px)+0.4rem),0.6rem)] pt-1.5 px-2 transition-all duration-700 ${
+        className={`fixed bottom-0 left-0 right-0 z-40 ${
+          isColosseumOpen || isAdventureOpen ? '' : 'backdrop-blur-md'
+        } border-t pb-[max(calc(env(safe-area-inset-bottom,0px)+0.4rem),0.6rem)] pt-1.5 px-2 transition-all duration-700 ${
           isNightMode
             ? 'bg-slate-950/95 border-indigo-950/90 brightness-[0.88]'
             : 'bg-slate-900/95 border-slate-800'
@@ -3106,6 +3311,8 @@ export default function App() {
         isOpen={isColosseumOpen}
         onClose={() => setIsColosseumOpen(false)}
         onBattleEnd={handleBattleEnd}
+        onSyncHp={handleSyncBattleHp}
+        onUseRecoveryItem={handleUseRecoveryItem}
         onOpenAdventure={() => handleOpenBattleMenu('adventure')}
       />
 
@@ -3115,6 +3322,8 @@ export default function App() {
         isOpen={isAdventureOpen}
         onClose={() => setIsAdventureOpen(false)}
         onAdventureComplete={handleAdventureComplete}
+        onSyncHp={handleSyncBattleHp}
+        onUseRecoveryItem={handleUseRecoveryItem}
       />
 
       <DigiRoom
@@ -3189,6 +3398,7 @@ export default function App() {
         onFeedMushroom={handleFeedMushroom}
         onFeedBerry={handleFeedBerry}
         onGiveVitamin={handleGiveVitamin}
+        onUseRecoveryItem={handleUseRecoveryItem}
         onEquipSpecialItem={handleEquipSpecialItem}
       />
 
@@ -3296,7 +3506,13 @@ export default function App() {
                 sirloinStock: 0,
                 mushroomStock: 0,
                 berryStock: 0,
+                recoverySmallStock: 0,
+                recoveryMediumStock: 0,
+                recoveryLargeStock: 0,
+                recoveryMaxStock: 0,
                 ...parsed,
+                currentHp: typeof parsed.currentHp === 'number' ? Math.max(0, Math.round(parsed.currentHp)) : undefined,
+                lastHpRegenAt: parsed.lastHpRegenAt || parsed.lastCareCheck || Date.now(),
                 lifetimeBattlesWon: Math.max(parsed.lifetimeBattlesWon ?? 0, parsed.battlesWon ?? 0),
                 battleHistory: Array.isArray(parsed.battleHistory) ? parsed.battleHistory.slice(0, 10) : [],
                 currentWinStreak: typeof parsed.currentWinStreak === 'number' ? Math.max(0, parsed.currentWinStreak) : 0,

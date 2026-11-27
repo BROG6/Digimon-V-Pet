@@ -31,12 +31,21 @@ import {
   mapMoveTypeToElement,
   rollCriticalHit,
 } from '../data/battleTechniques';
+import {
+  HEAL_ITEM_ORDER,
+  HEAL_ITEM_SPECS,
+  HealItemTier,
+  getEffectivePetCurrentHp,
+  getHealAmountForTier,
+  getRecoveryStockCount,
+} from '../utils/carePacing';
 import { DigimonSprite } from './DigimonSprite';
 import { BattleAttackVfx, ActiveBattleVfx } from './BattleAttackVfx';
 import {
   PixelBerryIcon,
   PixelMeatIcon,
   PixelMushroomIcon,
+  PixelRecoveryDiskIcon,
   PixelRelicIcon,
   PixelSirloinIcon,
   PixelSupplyCacheIcon,
@@ -51,6 +60,7 @@ import {
   FastForward,
   Flame,
   Footprints,
+  HeartPulse,
   Shield,
   Sparkles,
   Swords,
@@ -65,6 +75,8 @@ interface AdventureModalProps {
   isOpen: boolean;
   onClose: () => void;
   onAdventureComplete: (result: AdventureBattleResult) => void;
+  onSyncHp?: (remainingHp: number) => void;
+  onUseRecoveryItem?: (tier: HealItemTier) => boolean;
 }
 
 type ScreenView = 'zones' | 'walking' | 'battling' | 'victory' | 'defeat';
@@ -294,7 +306,7 @@ const BiomeBackdropArt: React.FC<{ biome: BiomeStyleConfig; animatedWalk?: boole
         {biome.props === 'jungle' && (
           <>
             <span className="absolute top-10 left-[18%] w-1.5 h-1.5 rounded-full bg-lime-300/70 animate-pulse" />
-            <span className="absolute top-16 left-[58%] w-1.5 h-1.5 rounded-full bg-emerald-300/70 animate-ping" />
+            <span className="absolute top-16 left-[58%] w-1.5 h-1.5 rounded-full bg-emerald-300/70 animate-pulse" />
             <span className="absolute top-8 left-[80%] w-1 h-1 rounded-full bg-amber-300/70 animate-pulse" />
           </>
         )}
@@ -314,7 +326,7 @@ const BiomeBackdropArt: React.FC<{ biome: BiomeStyleConfig; animatedWalk?: boole
         )}
         {biome.props === 'caldera' && (
           <>
-            <span className="absolute top-16 left-[28%] w-1.5 h-1.5 rounded-full bg-orange-400/90 animate-ping" />
+            <span className="absolute top-16 left-[28%] w-1.5 h-1.5 rounded-full bg-orange-400/90 animate-pulse" />
             <span className="absolute top-10 left-[65%] w-1.5 h-1.5 rounded-full bg-amber-400/80 animate-pulse" />
           </>
         )}
@@ -347,6 +359,8 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
   isOpen,
   onClose,
   onAdventureComplete,
+  onSyncHp,
+  onUseRecoveryItem,
 }) => {
   const [view, setView] = useState<ScreenView>('zones');
   const [selectedZoneId, setSelectedZoneId] = useState<string>(ADVENTURE_ZONES[0].id);
@@ -415,6 +429,8 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
 
   const remainingMeat = Math.max(0, pet.bigMeatStock - meatUsed);
   const remainingVitamins = Math.max(0, pet.vitaminStock - vitaminsUsed);
+  const persistentMaxHp = getEffectiveBattleStats(pet, species).maxHp;
+  const persistentCurrentHp = getEffectivePetCurrentHp(pet, persistentMaxHp);
 
   // Reset modal view & roll fresh element-matched waves when opened
   useEffect(() => {
@@ -448,7 +464,7 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
   const triggerAttackVfx = (
     attacker: 'player' | 'opponent',
     spec: AttackVisualSpec,
-    opts?: { isCrit?: boolean; isSuperEffective?: boolean; isSignature?: boolean; moveName?: string }
+    opts?: { isCrit?: boolean; isSuperEffective?: boolean; isResisted?: boolean; isSignature?: boolean; moveName?: string }
   ) => {
     setActiveVfx({
       id: Date.now() + Math.random(),
@@ -456,6 +472,7 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
       spec,
       isCrit: opts?.isCrit,
       isSuperEffective: opts?.isSuperEffective,
+      isResisted: opts?.isResisted,
       isSignature: opts?.isSignature,
       moveName: opts?.moveName,
     });
@@ -490,6 +507,7 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
     if (!species || pet.stage === 'egg') return;
 
     const stats = getEffectiveBattleStats(pet, species);
+    const startingHp = Math.max(1, getEffectivePetCurrentHp(pet, stats.maxHp));
     const equippedMoves = getEquippedBattleMoves(pet, species);
     const playerEl = getSpeciesElementType(species);
 
@@ -500,7 +518,7 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
       stage: pet.stage,
       crest: species.crest || 'courage',
       element: playerEl,
-      currentHp: stats.maxHp,
+      currentHp: startingHp,
       maxHp: stats.maxHp,
       mp: stats.maxMp,
       maxMp: stats.maxMp,
@@ -565,6 +583,10 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
   // Start Walking Expedition along the styled Biome Trail before Combat
   const startWaveBattle = (zone: AdventureZone, wave: AdventureWave) => {
     if (!species || pet.stage === 'egg') return;
+    if (getEffectivePetCurrentHp(pet, persistentMaxHp) <= 0) {
+      sound.playAlert();
+      return;
+    }
 
     sound.playButton();
     triggerHaptic('medium');
@@ -661,6 +683,7 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
           spec: oppSpec,
           isCrit: crit.isCrit,
           isSuperEffective: typeMult > 1,
+          isResisted: typeMult < 1,
         });
         triggerHaptic('heavy');
         setOpponentActionAnim(oppSpec.motion === 'melee' ? 'attack_melee' : 'attack_ranged');
@@ -668,6 +691,7 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
         triggerAttackVfx('opponent', oppSpec, {
           isCrit: crit.isCrit,
           isSuperEffective: typeMult > 1,
+          isResisted: typeMult < 1,
           isSignature: true,
           moveName: opponentFighter.signatureMove.name,
         });
@@ -689,11 +713,13 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
           triggerArenaShake();
           showDamagePopup(
             'player',
-            `${crit.isCrit ? 'CRIT! ' : ''}${typeMult > 1 ? '1.5x ' : ''}-${finalDamage}!`,
+            `${crit.isCrit ? 'CRIT! ' : ''}${typeMult > 1 ? '1.5x ' : typeMult < 1 ? '0.75x RES ' : ''}-${finalDamage}!`,
             crit.isCrit
               ? 'text-yellow-300 font-black'
               : isDefending
               ? 'text-cyan-300'
+              : typeMult < 1
+              ? 'text-slate-300 font-bold'
               : 'text-rose-400 font-extrabold'
           );
           setPlayerFighter((prev) =>
@@ -704,7 +730,7 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
         setBattleLogs((logs) => [
           {
             id: `opp-${Date.now()}`,
-            text: `${opponentFighter.name} ${oppSpec.motion === 'melee' ? 'unleashed' : 'fired'} ${opponentFighter.signatureMove.name} (${ATTACK_ELEMENT_META[moveEl].label}) for ${finalDamage} damage${crit.isCrit ? ' [CRITICAL HIT! 1.75x]' : ''}${typeMult > 1 ? ' [1.5x ADV!]' : ''}!`,
+            text: `${opponentFighter.name} ${oppSpec.motion === 'melee' ? 'unleashed' : 'fired'} ${opponentFighter.signatureMove.name} (${ATTACK_ELEMENT_META[moveEl].label}) for ${finalDamage} damage${crit.isCrit ? ' [CRITICAL HIT! 1.75x]' : ''}${typeMult > 1 ? ' [1.5x ADV!]' : typeMult < 1 ? ' [0.75x Resisted]' : ''}!`,
             type: 'special',
           },
           ...logs,
@@ -727,6 +753,7 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
           spec: atkSpec,
           isCrit: crit.isCrit,
           isSuperEffective: typeMult > 1,
+          isResisted: typeMult < 1,
         });
         triggerHaptic(crit.isCrit ? 'heavy' : 'medium');
         setOpponentActionAnim(atkSpec.motion === 'melee' ? 'attack_melee' : 'attack_ranged');
@@ -734,6 +761,7 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
         triggerAttackVfx('opponent', atkSpec, {
           isCrit: crit.isCrit,
           isSuperEffective: typeMult > 1,
+          isResisted: typeMult < 1,
         });
 
         const baseDmg = Math.max(
@@ -752,11 +780,13 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
           triggerArenaShake();
           showDamagePopup(
             'player',
-            `${crit.isCrit ? 'CRIT! ' : ''}${typeMult > 1 ? '1.5x ' : ''}-${finalDamage}${crit.isCrit ? '!' : ''}`,
+            `${crit.isCrit ? 'CRIT! ' : ''}${typeMult > 1 ? '1.5x ' : typeMult < 1 ? '0.75x RES ' : ''}-${finalDamage}${crit.isCrit ? '!' : ''}`,
             crit.isCrit
               ? 'text-yellow-300 font-black'
               : isDefending
               ? 'text-cyan-300'
+              : typeMult < 1
+              ? 'text-slate-300 font-bold'
               : 'text-rose-400 font-bold'
           );
           setPlayerFighter((prev) =>
@@ -767,7 +797,7 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
         setBattleLogs((logs) => [
           {
             id: `opp-${Date.now()}`,
-            text: `${opponentFighter.name} ${useRangedBasic ? 'fired an energy shot' : 'attacked'} for ${finalDamage} damage${crit.isCrit ? ' [CRITICAL HIT! 1.75x]' : ''}${typeMult > 1 ? ' [1.5x ADV]' : ''}.`,
+            text: `${opponentFighter.name} ${useRangedBasic ? 'fired an energy shot' : 'attacked'} for ${finalDamage} damage${crit.isCrit ? ' [CRITICAL HIT! 1.75x]' : ''}${typeMult > 1 ? ' [1.5x ADV]' : typeMult < 1 ? ' [0.75x Resisted]' : ''}.`,
             type: crit.isCrit ? 'special' : 'damage',
           },
           ...logs,
@@ -838,6 +868,7 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
         unlockedRelicId,
         meatUsed,
         vitaminsUsed,
+        remainingHp: Math.max(0, playerFighter.currentHp),
         isFirstClearOfWave,
         opponentName: opponentFighter.name,
         opponentSpeciesId: opponentFighter.speciesId,
@@ -864,6 +895,7 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
         walkFoodFound: walkLootRef.current,
         meatUsed,
         vitaminsUsed,
+        remainingHp: 0,
         isFirstClearOfWave: false,
         opponentName: opponentFighter.name,
         opponentSpeciesId: opponentFighter.speciesId,
@@ -908,6 +940,7 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
       spec: atkSpec,
       isCrit: crit.isCrit,
       isSuperEffective: typeMult > 1,
+      isResisted: typeMult < 1,
     });
     triggerHaptic(crit.isCrit ? 'heavy' : 'medium');
     setPlayerActionAnim('attack_melee');
@@ -915,6 +948,7 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
     triggerAttackVfx('player', atkSpec, {
       isCrit: crit.isCrit,
       isSuperEffective: typeMult > 1,
+      isResisted: typeMult < 1,
     });
 
     const rawDamage = Math.max(
@@ -939,11 +973,13 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
       triggerArenaShake();
       showDamagePopup(
         'opponent',
-        `${crit.isCrit ? 'CRIT! ' : ''}${typeMult > 1 ? '1.5x ADV! ' : ''}-${damage}${crit.isCrit ? '!' : ''}`,
+        `${crit.isCrit ? 'CRIT! ' : ''}${typeMult > 1 ? '1.5x ADV! ' : typeMult < 1 ? '0.75x RES ' : ''}-${damage}${crit.isCrit ? '!' : ''}`,
         crit.isCrit
           ? 'text-yellow-300 font-black'
           : typeMult > 1
           ? 'text-emerald-300 font-extrabold'
+          : typeMult < 1
+          ? 'text-slate-400 font-bold'
           : 'text-amber-300 font-bold'
       );
       setOpponentFighter((prev) =>
@@ -954,7 +990,7 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
     setBattleLogs((logs) => [
       {
         id: `pl-${Date.now()}`,
-        text: `${playerFighter.name} struck ${opponentFighter.name} for ${damage} damage (+8 MP)${crit.isCrit ? ' [CRITICAL HIT! 1.75x]' : ''}${typeMult > 1 ? ' [1.5x ADV!]' : ''}!`,
+        text: `${playerFighter.name} struck ${opponentFighter.name} for ${damage} damage (+8 MP)${crit.isCrit ? ' [CRITICAL HIT! 1.75x]' : ''}${typeMult > 1 ? ' [1.5x ADV!]' : typeMult < 1 ? ' [0.75x Resisted]' : ''}!`,
         type: crit.isCrit ? 'special' : 'damage',
       },
       ...logs,
@@ -988,6 +1024,7 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
       spec: moveSpec,
       isCrit: crit.isCrit,
       isSuperEffective: typeMult > 1,
+      isResisted: typeMult < 1,
     });
     triggerHaptic('heavy');
     setPlayerActionAnim(moveSpec.motion === 'melee' ? 'attack_melee' : 'attack_ranged');
@@ -995,6 +1032,7 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
     triggerAttackVfx('player', moveSpec, {
       isCrit: crit.isCrit,
       isSuperEffective: typeMult > 1,
+      isResisted: typeMult < 1,
       isSignature: true,
       moveName: playerFighter.signatureMove.name,
     });
@@ -1017,11 +1055,13 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
       triggerArenaShake();
       showDamagePopup(
         'opponent',
-        `${crit.isCrit ? 'CRIT! ' : ''}${typeMult > 1 ? '1.5x ADV! ' : ''}-${damage}!`,
+        `${crit.isCrit ? 'CRIT! ' : ''}${typeMult > 1 ? '1.5x ADV! ' : typeMult < 1 ? '0.75x RES ' : ''}-${damage}!`,
         crit.isCrit
           ? 'text-yellow-300 font-black'
           : typeMult > 1
           ? 'text-emerald-300 font-extrabold'
+          : typeMult < 1
+          ? 'text-slate-400 font-bold'
           : 'text-orange-400 font-extrabold'
       );
       setOpponentFighter((prev) =>
@@ -1032,7 +1072,7 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
     setBattleLogs((logs) => [
       {
         id: `pl-${Date.now()}`,
-        text: `${playerFighter.name} unleashed ${playerFighter.signatureMove.name} (${ATTACK_ELEMENT_META[moveEl].label}) for ${damage} damage${crit.isCrit ? ' [CRITICAL HIT! 1.75x]' : ''}${typeMult > 1 ? ' [1.5x ADV!]' : ''}!`,
+        text: `${playerFighter.name} unleashed ${playerFighter.signatureMove.name} (${ATTACK_ELEMENT_META[moveEl].label}) for ${damage} damage${crit.isCrit ? ' [CRITICAL HIT! 1.75x]' : ''}${typeMult > 1 ? ' [1.5x ADV!]' : typeMult < 1 ? ' [0.75x Resisted]' : ''}!`,
         type: 'special',
       },
       ...logs,
@@ -1067,6 +1107,7 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
       spec: moveSpec,
       isCrit: crit.isCrit,
       isSuperEffective: typeMult > 1,
+      isResisted: typeMult < 1,
     });
     triggerHaptic('heavy');
     setPlayerActionAnim(moveSpec.motion === 'melee' ? 'attack_melee' : 'attack_ranged');
@@ -1074,6 +1115,7 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
     triggerAttackVfx('player', moveSpec, {
       isCrit: crit.isCrit,
       isSuperEffective: typeMult > 1,
+      isResisted: typeMult < 1,
       moveName: move.name,
     });
 
@@ -1103,11 +1145,13 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
       triggerArenaShake();
       showDamagePopup(
         'opponent',
-        `${crit.isCrit ? 'CRIT! ' : ''}${typeMult > 1 ? '1.5x ADV! ' : ''}-${damage}!`,
+        `${crit.isCrit ? 'CRIT! ' : ''}${typeMult > 1 ? '1.5x ADV! ' : typeMult < 1 ? '0.75x RES ' : ''}-${damage}!`,
         crit.isCrit
           ? 'text-yellow-300 font-black'
           : typeMult > 1
           ? 'text-emerald-300 font-extrabold'
+          : typeMult < 1
+          ? 'text-slate-400 font-bold'
           : 'text-cyan-300 font-bold'
       );
       setOpponentFighter((prev) =>
@@ -1118,7 +1162,7 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
     setBattleLogs((logs) => [
       {
         id: `pl-tech-${Date.now()}`,
-        text: `${playerFighter.name} ${moveSpec.motion === 'melee' ? 'executed' : 'cast'} ${move.name} (${ATTACK_ELEMENT_META[move.element].label}, -${move.mpCost} MP) for ${damage} damage${crit.isCrit ? ' [CRITICAL HIT! 1.75x]' : ''}${typeMult > 1 ? ' [1.5x ADV!]' : ''}!`,
+        text: `${playerFighter.name} ${moveSpec.motion === 'melee' ? 'executed' : 'cast'} ${move.name} (${ATTACK_ELEMENT_META[move.element].label}, -${move.mpCost} MP) for ${damage} damage${crit.isCrit ? ' [CRITICAL HIT! 1.75x]' : ''}${typeMult > 1 ? ' [1.5x ADV!]' : typeMult < 1 ? ' [0.75x Resisted]' : ''}!`,
         type: crit.isCrit || typeMult > 1 ? 'special' : 'damage',
       },
       ...logs,
@@ -1257,10 +1301,65 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
     setTimeout(() => setPlayerActionAnim('idle'), 700);
   };
 
+  const handleUseBattleRecovery = (tier: HealItemTier) => {
+    if (!isPlayerTurn || !playerFighter) return;
+    if (getRecoveryStockCount(pet, tier) <= 0) return;
+    const spec = HEAL_ITEM_SPECS[tier];
+    if (playerFighter.currentHp >= playerFighter.maxHp && spec.mpPercent <= 0) return;
+
+    if (onUseRecoveryItem && !onUseRecoveryItem(tier)) return;
+
+    setIsPlayerTurn(false);
+    sound.playMedicine();
+    triggerHaptic('medium');
+    const healHp = getHealAmountForTier(tier, playerFighter.maxHp);
+    const maxMp = playerFighter.maxMp || 60;
+    const healMp = spec.mpPercent >= 1 ? maxMp : Math.round(maxMp * spec.mpPercent);
+
+    setPlayerActionAnim('happy');
+    showDamagePopup(
+      'player',
+      `+${spec.hpPercent >= 1 ? playerFighter.maxHp - playerFighter.currentHp : healHp} HP`,
+      'text-emerald-300 font-extrabold'
+    );
+
+    setPlayerFighter((prev) =>
+      prev
+        ? {
+            ...prev,
+            currentHp: Math.min(prev.maxHp, prev.currentHp + healHp),
+            mp: healMp > 0 ? Math.min(maxMp, (prev.mp ?? 0) + healMp) : prev.mp,
+          }
+        : null
+    );
+
+    setBattleLogs((logs) => [
+      {
+        id: `pl-rec-${Date.now()}`,
+        text: `${playerFighter.name} used ${spec.name} (+${healHp} HP${healMp > 0 ? `, +${healMp} MP` : ''})!`,
+        type: 'action',
+      },
+      ...logs,
+    ]);
+
+    setTimeout(() => setPlayerActionAnim('idle'), 700);
+  };
+
   if (!isOpen) return null;
 
+  const handleCloseModal = () => {
+    sound.playButton();
+    if (view === 'battling' && playerFighter) {
+      onSyncHp?.(Math.max(0, playerFighter.currentHp));
+    }
+    onClose();
+  };
+
   const handleEnterAdventureZone = (zone: AdventureZone) => {
-    if (!species || pet.stage === 'egg') return;
+    if (!species || pet.stage === 'egg' || persistentCurrentHp <= 0) {
+      if (persistentCurrentHp <= 0) sound.playAlert();
+      return;
+    }
     const zoneCleared = Math.min(zone.waves.length, clearedMap[zone.id] ?? 0);
     let zoneWaves = zoneWavesMap[zone.id] || zone.waves;
     let startIdx = zoneCleared;
@@ -1302,17 +1401,14 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
                   : `${selectedZone.name} · Wave ${activeWave?.waveNumber || 1}`}
               </h2>
               <p className="text-xs text-slate-400 truncate tabular-nums">
-                {pet.nickname || species?.name || 'Partner'} · STR {pet.strength} · DP {pet.dpPoints} · Cleared{' '}
+                {pet.nickname || species?.name || 'Partner'} · HP {persistentCurrentHp}/{persistentMaxHp} · Cleared{' '}
                 {totalClearedWaves}/{totalPossibleWaves} Waves
               </p>
             </div>
           </div>
 
           <button
-            onClick={() => {
-              sound.playButton();
-              onClose();
-            }}
+            onClick={handleCloseModal}
             className="min-h-[44px] min-w-[44px] rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center cursor-pointer shrink-0"
             aria-label="Close Adventure Mode"
           >
@@ -1333,26 +1429,64 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
           {view === 'zones' && (
             <div className="space-y-4">
               {/* Partner Readiness Strip */}
-              <div className="bg-slate-950/80 border border-slate-800 rounded-2xl p-3.5 flex flex-wrap items-center justify-between gap-3">
-                <div className="flex items-center gap-3 min-w-0">
-                  {species && (
-                    <div className="w-12 h-12 rounded-xl bg-slate-900 border border-slate-700/80 flex items-center justify-center overflow-hidden shrink-0">
-                      <DigimonSprite species={species} action="idle" scale={0.62} />
-                    </div>
-                  )}
-                  <div className="min-w-0">
-                    <div className="font-chakra font-bold text-white text-sm truncate">
-                      {pet.nickname || species?.name} ({species?.stage || pet.stage})
-                    </div>
-                    <div className="text-xs text-slate-400 tabular-nums">
-                      Strength {pet.strength} · Effort {pet.effort ?? 0}/10 · Big Meat {pet.bigMeatStock} · Vitamins{' '}
-                      {pet.vitaminStock}
+              <div className={`border rounded-2xl p-3.5 flex flex-col gap-2.5 ${
+                persistentCurrentHp <= 0
+                  ? 'bg-rose-950/55 border-rose-500/50'
+                  : 'bg-slate-950/80 border-slate-800'
+              }`}>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div className="flex items-center gap-3 min-w-0">
+                    {species && (
+                      <div className="w-12 h-12 rounded-xl bg-slate-900 border border-slate-700/80 flex items-center justify-center overflow-hidden shrink-0">
+                        <DigimonSprite species={species} action="idle" scale={0.62} />
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <div className="font-chakra font-bold text-white text-sm truncate flex items-center gap-2">
+                        <span>{pet.nickname || species?.name} ({species?.stage || pet.stage})</span>
+                        <span className={`inline-flex items-center gap-1 text-xs tabular-nums ${
+                          persistentCurrentHp <= 0 ? 'text-rose-300' : 'text-emerald-300'
+                        }`}>
+                          <HeartPulse className="w-3.5 h-3.5" />
+                          {persistentCurrentHp}/{persistentMaxHp} HP
+                        </span>
+                      </div>
+                      <div className="text-xs text-slate-400 tabular-nums">
+                        Strength {pet.strength} · Effort {pet.effort ?? 0}/10 · Big Meat {pet.bigMeatStock} · Vitamins{' '}
+                        {pet.vitaminStock}
+                      </div>
                     </div>
                   </div>
+                  <div className="text-xs text-emerald-300 font-chakra">
+                    {persistentCurrentHp <= 0
+                      ? '0 HP — Use a Recovery Disk or wait for passive HP regen!'
+                      : 'Damage carries over across battles · Use Disks or rest to heal!'}
+                  </div>
                 </div>
-                <div className="text-xs text-emerald-300 font-chakra">
-                  Trail drops Mushrooms/Berries · Ultimates & Megas drop Prime Sirloin!
-                </div>
+                {persistentCurrentHp < persistentMaxHp && HEAL_ITEM_ORDER.some((t) => getRecoveryStockCount(pet, t) > 0) && (
+                  <div className="flex flex-wrap items-center gap-2 pt-1 border-t border-white/10">
+                    {HEAL_ITEM_ORDER.map((tier) => {
+                      const stock = getRecoveryStockCount(pet, tier);
+                      if (stock <= 0) return null;
+                      const spec = HEAL_ITEM_SPECS[tier];
+                      return (
+                        <button
+                          key={tier}
+                          type="button"
+                          onClick={() => {
+                            sound.playMedicine();
+                            triggerHaptic('medium');
+                            onUseRecoveryItem?.(tier);
+                          }}
+                          className="px-2.5 py-1 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/30 border border-emerald-400/45 text-emerald-200 font-chakra font-bold text-xs flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <PixelRecoveryDiskIcon tier={tier} className="w-4 h-4" />
+                          <span>Use {spec.shortName} (x{stock})</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
 
               {/* Environment Biome Grid */}
@@ -1427,12 +1561,14 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
 
                         <button
                           type="button"
-                          disabled={pet.stage === 'egg'}
+                          disabled={pet.stage === 'egg' || persistentCurrentHp <= 0}
                           onClick={() => handleEnterAdventureZone(zone)}
                           className="w-full min-h-[42px] px-4 py-2 rounded-xl bg-slate-950/85 hover:bg-slate-900 border border-white/20 hover:border-amber-300/70 text-white font-chakra font-bold text-sm flex items-center justify-center gap-2 cursor-pointer transition-all active:scale-[0.98] disabled:opacity-45 disabled:cursor-not-allowed"
                         >
                           <Footprints className="w-4 h-4 text-emerald-300 shrink-0" />
-                          <span className="truncate">Enter {zone.name}</span>
+                          <span className="truncate">
+                            {persistentCurrentHp <= 0 ? 'Heal HP Before Entering' : `Enter ${zone.name}`}
+                          </span>
                         </button>
                       </div>
                     </div>
@@ -1650,7 +1786,7 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
 
                     {activeVfx?.isSignature && activeVfx.attacker === 'player' && (
                       <div
-                        className="absolute inset-0 -m-3 rounded-full border-2 animate-ping pointer-events-none z-20 opacity-75"
+                        className="absolute inset-0 -m-3 rounded-full border-2 animate-pulse pointer-events-none z-20 opacity-65"
                         style={{ borderColor: activeVfx.spec.colorHex }}
                       />
                     )}
@@ -1735,7 +1871,7 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
 
                     {activeVfx?.isSignature && activeVfx.attacker === 'opponent' && (
                       <div
-                        className="absolute inset-0 -m-3 rounded-full border-2 animate-ping pointer-events-none z-20 opacity-75"
+                        className="absolute inset-0 -m-3 rounded-full border-2 animate-pulse pointer-events-none z-20 opacity-65"
                         style={{ borderColor: activeVfx.spec.colorHex }}
                       />
                     )}
@@ -1772,6 +1908,8 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
                         className={`min-h-[50px] px-2.5 py-2 rounded-xl border text-left flex flex-col justify-between transition-all cursor-pointer active:scale-95 disabled:opacity-40 ${
                           mult > 1
                             ? 'bg-emerald-950/60 hover:bg-emerald-900/60 border-emerald-400/70'
+                            : mult < 1
+                            ? 'bg-slate-900/90 hover:bg-slate-800 border-slate-700/75 opacity-85'
                             : 'bg-slate-800/90 hover:bg-slate-700 border-slate-600/80'
                         }`}
                       >
@@ -1779,11 +1917,15 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
                           <span className="font-chakra font-bold text-xs text-white truncate">
                             {move.name}
                           </span>
-                          {mult > 1 && (
+                          {mult > 1 ? (
                             <span className="text-[10px] font-chakra font-bold text-emerald-300 shrink-0">
                               1.5x
                             </span>
-                          )}
+                          ) : mult < 1 ? (
+                            <span className="text-[10px] font-chakra font-bold text-slate-400 shrink-0">
+                              0.75x
+                            </span>
+                          ) : null}
                         </div>
                         <div className="flex items-center justify-between text-[10px] font-chakra text-slate-300 w-full mt-0.5">
                           <span>{elMeta.shortLabel} · {move.power}P</span>
@@ -1843,6 +1985,31 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
                 </button>
               </div>
 
+              {/* In-Battle Recovery Disks Pouch */}
+              {HEAL_ITEM_ORDER.some((t) => getRecoveryStockCount(pet, t) > 0) && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {HEAL_ITEM_ORDER.map((tier) => {
+                    const stock = getRecoveryStockCount(pet, tier);
+                    if (stock <= 0) return null;
+                    const spec = HEAL_ITEM_SPECS[tier];
+                    const canHeal = playerFighter.currentHp < playerFighter.maxHp || spec.mpPercent > 0;
+                    return (
+                      <button
+                        key={tier}
+                        disabled={!isPlayerTurn || !canHeal}
+                        onClick={() => handleUseBattleRecovery(tier)}
+                        className="min-h-[38px] px-2.5 py-1.5 bg-slate-950 hover:bg-slate-800 disabled:opacity-40 border border-emerald-500/35 rounded-xl flex items-center gap-1.5 font-chakra text-xs font-semibold text-emerald-200 cursor-pointer tabular-nums"
+                      >
+                        <PixelRecoveryDiskIcon tier={tier} className="w-4 h-4" />
+                        <span>
+                          {spec.shortName} (+{spec.hpPercent >= 1 ? '100%' : getHealAmountForTier(tier, playerFighter.maxHp)}) · x{stock}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
               {/* Field Supply Pouch + Retreat */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                 <button
@@ -1866,6 +2033,9 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
                 <button
                   onClick={() => {
                     sound.playButton();
+                    if (playerFighter) {
+                      onSyncHp?.(Math.max(0, playerFighter.currentHp));
+                    }
                     setView('zones');
                   }}
                   className="min-h-[44px] px-3 py-2 bg-slate-950 hover:bg-slate-800 border border-slate-700 rounded-xl font-chakra text-xs font-semibold text-slate-300 cursor-pointer"
@@ -1977,7 +2147,8 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
                 {nextWaveAfterVictory ? (
                   <button
                     onClick={() => startWaveBattle(selectedZone, nextWaveAfterVictory)}
-                    className="min-h-[44px] px-6 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-chakra font-bold text-sm cursor-pointer whitespace-nowrap"
+                    disabled={persistentCurrentHp <= 0}
+                    className="min-h-[44px] px-6 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 disabled:opacity-45 text-slate-950 font-chakra font-bold text-sm cursor-pointer whitespace-nowrap"
                   >
                     Continue to Wave {nextWaveAfterVictory.waveNumber} ({nextWaveAfterVictory.stageLabel})
                   </button>
@@ -2005,6 +2176,11 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
                   </button>
                 )}
               </div>
+              {playerFighter && (
+                <div className="mt-3 text-xs font-chakra text-slate-300 tabular-nums">
+                  HP Carried Over: <strong className="text-emerald-300">{playerFighter.currentHp}/{playerFighter.maxHp}</strong>
+                </div>
+              )}
             </div>
           )}
 
@@ -2015,12 +2191,12 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
                 Defeated by {opponentFighter?.name || DIGIMON_DATABASE[activeWave.speciesId]?.name || 'Wild Digimon'}
               </h3>
               <p className="text-rose-300 font-chakra font-semibold text-xs mt-1.5">
-                Area progress reset to Wave 1 — enemies in {selectedZone.name} shuffled!
+                Area progress reset to Wave 1 · Partner HP is 0/{playerFighter?.maxHp ?? persistentMaxHp}!
               </p>
               <p className="text-slate-300 text-sm mt-1 max-w-md">
                 {activeStageMods?.label
-                  ? `That ${activeWave.stageLabel} Digimon out-tiered your ${pet.stage}! Evolve higher or train your stats in the Dojo before challenging again.`
-                  : 'Even a tough defeat built combat instinct. Train in the Dojo, evolve higher, or stock up on supplies before restarting!'}
+                  ? `That ${activeWave.stageLabel} Digimon out-tiered your ${pet.stage}! Evolve higher or train your stats in the Dojo, and heal HP before challenging again.`
+                  : 'Use Recovery Disks from your Bag/Shop or wait outside battle for slow HP regeneration before restarting!'}
               </p>
 
               <div className="w-full max-w-md bg-slate-950 border border-slate-800 rounded-2xl p-4 my-5 flex flex-wrap items-center justify-around gap-3 font-chakra tabular-nums">
@@ -2055,12 +2231,6 @@ export const AdventureModal: React.FC<AdventureModalProps> = ({
               </div>
 
               <div className="flex flex-wrap items-center justify-center gap-3">
-                <button
-                  onClick={() => startWaveBattle(selectedZone, activeZoneWaves[0])}
-                  className="min-h-[44px] px-6 py-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 font-chakra font-bold text-sm cursor-pointer whitespace-nowrap"
-                >
-                  Enter {selectedZone.name} (Wave 1)
-                </button>
                 <button
                   onClick={() => {
                     sound.playButton();

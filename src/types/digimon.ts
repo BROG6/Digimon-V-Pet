@@ -206,6 +206,10 @@ export type ShopItemId =
   | 'vitamin'
   | 'vitamin_bundle'
   | 'medicine'
+  | 'recovery_small'
+  | 'recovery_medium'
+  | 'recovery_large'
+  | 'recovery_max'
   | 'training_chip'
   | 'miracle_elixir'
   | 'sovereign_core';
@@ -274,6 +278,7 @@ export interface PetState {
   lastHungerDropAt?: number;
   lastPoopAt?: number;
   lastEnergyRegenAt?: number;
+  lastHpRegenAt?: number;
   careCallStartedAt?: number;
   sleepCallStartedAt?: number;
   isFrozen?: boolean;
@@ -282,6 +287,11 @@ export interface PetState {
   battleExp?: number;
   unlockedSpeciesIds?: string[];
   battleStats?: BattleStats;
+  currentHp?: number;
+  recoverySmallStock?: number;
+  recoveryMediumStock?: number;
+  recoveryLargeStock?: number;
+  recoveryMaxStock?: number;
   learnedAttackIds?: string[];
   equippedAttackIds?: string[];
   battleHistory?: BattleHistoryEntry[];
@@ -335,6 +345,7 @@ export interface AdventureBattleResult {
   unlockedRelicId?: SpecialItemId;
   meatUsed: number;
   vitaminsUsed: number;
+  remainingHp?: number;
   isFirstClearOfWave: boolean;
   opponentName?: string;
   opponentSpeciesId?: string;

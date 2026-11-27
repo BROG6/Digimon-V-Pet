@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { DigimonSpecies, DigiEggInfo } from '../types/digimon';
 import { 
@@ -8,6 +8,169 @@ import {
 import { NEW_DIGIMON_SPRITES, SpriteFrame } from '../utils/newDigimonSprites';
 import { getEffectiveSpriteConfig } from '../utils/customSpriteManager';
 import { PixelBerryIcon, PixelMeatIcon, PixelMushroomIcon, PixelSirloinIcon, PixelVitaminIcon } from './PixelItemIcons';
+
+// Cached HTMLImageElement loader so spritesheet frames blit onto native-pixel canvases
+// without reallocating oversized DOM/GPU textures mid-attack.
+const spriteImageCache = new Map<string, HTMLImageElement>();
+const spriteImageListeners = new Map<string, Set<() => void>>();
+
+function acquireSpriteImage(src: string, onLoad: () => void): HTMLImageElement | null {
+  if (typeof window === 'undefined' || !src) return null;
+  const cached = spriteImageCache.get(src);
+  if (cached) {
+    if (cached.complete && cached.naturalWidth > 0) {
+      return cached;
+    }
+    let listeners = spriteImageListeners.get(src);
+    if (!listeners) {
+      listeners = new Set();
+      spriteImageListeners.set(src, listeners);
+    }
+    listeners.add(onLoad);
+    return null;
+  }
+
+  const img = new Image();
+  spriteImageCache.set(src, img);
+  const listeners = new Set<() => void>([onLoad]);
+  spriteImageListeners.set(src, listeners);
+
+  const flush = () => {
+    const activeListeners = spriteImageListeners.get(src);
+    if (!activeListeners) return;
+    spriteImageListeners.delete(src);
+    activeListeners.forEach((cb) => cb());
+  };
+
+  img.onload = flush;
+  img.onerror = () => {
+    spriteImageListeners.delete(src);
+  };
+  img.src = src;
+
+  if (img.complete && img.naturalWidth > 0) {
+    spriteImageListeners.delete(src);
+    return img;
+  }
+  return null;
+}
+
+function unsubscribeSpriteImage(src: string, onLoad: () => void) {
+  const listeners = spriteImageListeners.get(src);
+  if (listeners) {
+    listeners.delete(onLoad);
+  }
+}
+
+interface PixelSpriteCanvasProps {
+  sheetSrc: string;
+  frame: SpriteFrame;
+  canvasW: number;
+  canvasH: number;
+  drawX: number;
+  drawY: number;
+  displayW: number;
+  displayH: number;
+  style?: React.CSSProperties;
+  filter?: string;
+}
+
+const PixelSpriteCanvas: React.FC<PixelSpriteCanvasProps> = ({
+  sheetSrc,
+  frame,
+  canvasW,
+  canvasH,
+  drawX,
+  drawY,
+  displayW,
+  displayH,
+  style,
+  filter,
+}) => {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [imageReadyTick, setImageReadyTick] = useState(0);
+
+  useEffect(() => {
+    if (!sheetSrc) return;
+    let cancelled = false;
+    const notify = () => {
+      if (!cancelled) setImageReadyTick((t) => t + 1);
+    };
+    const ready = acquireSpriteImage(sheetSrc, notify);
+    if (ready) {
+      setImageReadyTick((t) => t + 1);
+    }
+    return () => {
+      cancelled = true;
+      unsubscribeSpriteImage(sheetSrc, notify);
+    };
+  }, [sheetSrc]);
+
+  useLayoutEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    ctx.clearRect(0, 0, canvasW, canvasH);
+    const img = spriteImageCache.get(sheetSrc);
+    if (!img || !img.complete || img.naturalWidth === 0 || frame.w <= 0 || frame.h <= 0) {
+      return;
+    }
+
+    ctx.imageSmoothingEnabled = false;
+    if (frame.rotate) {
+      const isRot90 = frame.rotate === 90 || frame.rotate === -90 || frame.rotate === 270;
+      const destW = isRot90 ? frame.h : frame.w;
+      const destH = isRot90 ? frame.w : frame.h;
+      const cx = drawX + destW * 0.5;
+      const cy = drawY + destH * 0.5;
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate((frame.rotate * Math.PI) / 180);
+      ctx.drawImage(
+        img,
+        frame.x,
+        frame.y,
+        frame.w,
+        frame.h,
+        -frame.w * 0.5,
+        -frame.h * 0.5,
+        frame.w,
+        frame.h
+      );
+      ctx.restore();
+    } else {
+      ctx.drawImage(
+        img,
+        frame.x,
+        frame.y,
+        frame.w,
+        frame.h,
+        drawX,
+        drawY,
+        frame.w,
+        frame.h
+      );
+    }
+  }, [sheetSrc, frame, canvasW, canvasH, drawX, drawY, imageReadyTick]);
+
+  return (
+    <canvas
+      ref={canvasRef}
+      width={canvasW}
+      height={canvasH}
+      className="pixel-art pointer-events-none select-none"
+      style={{
+        width: `${displayW}px`,
+        height: `${displayH}px`,
+        imageRendering: 'pixelated',
+        filter,
+        ...style,
+      }}
+    />
+  );
+};
 
 export type DigimonPose = 
   | 'standing' 
@@ -364,6 +527,27 @@ export const DigimonSprite: React.FC<DigimonSpriteProps> = ({
 
     return () => clearInterval(timer);
   }, [activePose, species?.id, species?.spriteId, facing, spriteRevision, spriteLookupKey]);
+
+  // Preload all sprite sheets for this species so combat pose transitions never flash blank
+  useEffect(() => {
+    const spriteLookupId = species?.spriteId || species?.id;
+    const config = spriteLookupId ? getEffectiveSpriteConfig(spriteLookupId) : undefined;
+    if (!config) return;
+    const sheets = new Set<string>();
+    if (config.sheetPath) sheets.add(config.sheetPath);
+    Object.values(config.frames).forEach((list) => {
+      list?.forEach((f) => {
+        if (f.sheetPath) sheets.add(f.sheetPath);
+      });
+    });
+    const noop = () => {};
+    sheets.forEach((src) => {
+      acquireSpriteImage(src, noop);
+    });
+    return () => {
+      sheets.forEach((src) => unsubscribeSpriteImage(src, noop));
+    };
+  }, [species?.id, species?.spriteId, spriteRevision]);
 
   // MEMORIAL / GRAVE RENDERER (When neglected to death)
   if (activePose === 'dead') {
@@ -785,26 +969,45 @@ export const DigimonSprite: React.FC<DigimonSpriteProps> = ({
             const boxStageW = activePose === 'sleeping' ? Math.max(baseStageW, unscaledFrameW) : baseStageW;
             const boxStageH = activePose === 'sleeping' ? Math.max(baseStageH, unscaledFrameH) : baseStageH;
 
-            const rawOffsetX = currentFrame.offsetX || 0;
-            const rawOffsetY = (currentFrame.offsetY || 0) + (newConfig.groundOffset || 0);
+            const getFramePlacement = (f: SpriteFrame) => {
+              const rot = f.rotate === 90 || f.rotate === -90 || f.rotate === 270;
+              const fw = rot ? f.h : f.w;
+              const fh = rot ? f.w : f.h;
+              const rawX = f.offsetX || 0;
+              const rawY = (f.offsetY || 0) + (newConfig.groundOffset || 0);
+              const fx = activePose === 'sleeping' ? (boxStageW - fw) * 0.5 : rawX;
+              const fy =
+                activePose === 'sleeping'
+                  ? Math.max(0, Math.min(rawY, Math.max(0, boxStageH - fh)))
+                  : rawY;
+              return { fx, fy, fw, fh };
+            };
 
-            // Faint/sleeping animations in digimon-up slide backward horizontally (-50..-123px);
-            // center them cleanly inside the stage box so they never clip out of the viewport.
-            const effectiveOffsetX =
-              activePose === 'sleeping'
-                ? (boxStageW - unscaledFrameW) * 0.5
-                : rawOffsetX;
-            const effectiveOffsetY =
-              activePose === 'sleeping'
-                ? Math.max(0, Math.min(rawOffsetY, Math.max(0, boxStageH - unscaledFrameH)))
-                : rawOffsetY;
+            let minX = Number.POSITIVE_INFINITY;
+            let minY = Number.POSITIVE_INFINITY;
+            let maxX = Number.NEGATIVE_INFINITY;
+            let maxY = Number.NEGATIVE_INFINITY;
+            for (const f of poseFrames) {
+              const { fx, fy, fw, fh } = getFramePlacement(f);
+              minX = Math.min(minX, fx);
+              minY = Math.min(minY, fy);
+              maxX = Math.max(maxX, fx + fw);
+              maxY = Math.max(maxY, fy + fh);
+            }
+            if (!Number.isFinite(minX)) {
+              minX = 0;
+              minY = 0;
+              maxX = unscaledFrameW;
+              maxY = unscaledFrameH;
+            }
+            const curPlacement = getFramePlacement(currentFrame);
+            const canvasW = Math.max(1, Math.ceil(maxX - minX));
+            const canvasH = Math.max(1, Math.ceil(maxY - minY));
+            const drawX = Math.round(curPlacement.fx - minX);
+            const drawY = Math.round(curPlacement.fy - minY);
 
             const stageW = boxStageW * pixelScale;
             const stageH = boxStageH * pixelScale;
-            const frameX = effectiveOffsetX * pixelScale;
-            const frameY = effectiveOffsetY * pixelScale;
-            const frameW = unscaledFrameW * pixelScale;
-            const frameH = unscaledFrameH * pixelScale;
 
             const chompAnim = activePose === 'eating'
               ? (eatBeat === 1 || eatBeat === 2
@@ -832,6 +1035,10 @@ export const DigimonSprite: React.FC<DigimonSpriteProps> = ({
               ? { x: 0, y: 0, scaleX: [1, 1.035, 1], scaleY: [1, 1.045, 1], rotate: 0 }
               : { x: 0, y: 0, scaleX: 1, scaleY: 1, rotate: 0 };
 
+            const spriteFilter = lcdMode
+              ? 'grayscale(100%) contrast(150%) brightness(0.65)'
+              : species.spriteFilter || undefined;
+
             return (
               <motion.div
                 animate={chompAnim}
@@ -851,54 +1058,46 @@ export const DigimonSprite: React.FC<DigimonSpriteProps> = ({
                   transformOrigin: 'bottom center',
                 }}
               >
-                <div
+                <PixelSpriteCanvas
+                  sheetSrc={currentFrame.sheetPath || newConfig.sheetPath}
+                  frame={currentFrame}
+                  canvasW={canvasW}
+                  canvasH={canvasH}
+                  drawX={drawX}
+                  drawY={drawY}
+                  displayW={canvasW * pixelScale}
+                  displayH={canvasH * pixelScale}
+                  filter={spriteFilter}
                   style={{
                     position: 'absolute',
-                    left: `${frameX}px`,
-                    top: `${frameY}px`,
-                    width: `${frameW}px`,
-                    height: `${frameH}px`,
-                    overflow: 'hidden',
+                    left: `${minX * pixelScale}px`,
+                    top: `${minY * pixelScale}px`,
                   }}
-                >
-                  <div
-                    style={{
-                      width: `${currentFrame.w * pixelScale}px`,
-                      height: `${currentFrame.h * pixelScale}px`,
-                      position: 'absolute',
-                      top: '50%',
-                      left: '50%',
-                      transform: `translate(-50%, -50%) ${currentFrame.rotate ? `rotate(${currentFrame.rotate}deg)` : ''}`,
-                      transformOrigin: 'center center',
-                      overflow: 'hidden',
-                    }}
-                  >
-                    <img
-                      src={currentFrame.sheetPath || newConfig.sheetPath}
-                      alt={species.name}
-                      className="pixel-art absolute max-w-none pointer-events-none select-none"
-                      style={{
-                        width: `${(currentFrame.sheetWidth || newConfig.sheetWidth) * pixelScale}px`,
-                        height: `${(currentFrame.sheetHeight || newConfig.sheetHeight) * pixelScale}px`,
-                        left: `-${currentFrame.x * pixelScale}px`,
-                        top: `-${currentFrame.y * pixelScale}px`,
-                        imageRendering: 'pixelated',
-                        filter: lcdMode
-                          ? 'grayscale(100%) contrast(150%) brightness(0.65)'
-                          : species.spriteFilter || undefined,
-                      }}
-                    />
-                  </div>
-                </div>
+                />
               </motion.div>
             );
           }
 
-          const displayW = (isRotated ? currentFrame.h : currentFrame.w) * pixelScale;
-          const displayH = (isRotated ? currentFrame.w : currentFrame.h) * pixelScale;
+          let maxFrameW = 1;
+          let maxFrameH = 1;
+          for (const f of poseFrames) {
+            const rot = f.rotate === 90 || f.rotate === -90 || f.rotate === 270;
+            maxFrameW = Math.max(maxFrameW, rot ? f.h : f.w);
+            maxFrameH = Math.max(maxFrameH, rot ? f.w : f.h);
+          }
+          const curFrameW = isRotated ? currentFrame.h : currentFrame.w;
+          const curFrameH = isRotated ? currentFrame.w : currentFrame.h;
+          const drawX = Math.round((maxFrameW - curFrameW) * 0.5);
+          const drawY = Math.round(maxFrameH - curFrameH);
+
+          const displayW = maxFrameW * pixelScale;
+          const displayH = maxFrameH * pixelScale;
           const effectiveGroundOffsetY = activePose === 'sleeping'
             ? 0
             : ((currentFrame.offsetY || 0) + (newConfig.groundOffset || 0)) * pixelScale;
+          const spriteFilter = lcdMode
+            ? 'grayscale(100%) contrast(150%) brightness(0.65)'
+            : species.spriteFilter || undefined;
 
           return (
             <motion.div
@@ -950,41 +1149,24 @@ export const DigimonSprite: React.FC<DigimonSpriteProps> = ({
                   ? { repeat: Infinity, duration: 2.6, ease: 'easeInOut' }
                   : { duration: 0.12 }
               }
-              className="relative overflow-hidden pixel-art"
+              className="relative overflow-visible pixel-art"
               style={{
                 width: `${displayW}px`,
                 height: `${displayH}px`,
                 transformOrigin: 'bottom center',
               }}
             >
-              <div
-                style={{
-                  width: `${currentFrame.w * pixelScale}px`,
-                  height: `${currentFrame.h * pixelScale}px`,
-                  position: 'absolute',
-                  top: '50%',
-                  left: '50%',
-                  transform: `translate(-50%, -50%) ${currentFrame.rotate ? `rotate(${currentFrame.rotate}deg)` : ''}`,
-                  transformOrigin: 'center center',
-                  overflow: 'hidden',
-                }}
-              >
-                <img
-                  src={currentFrame.sheetPath || newConfig.sheetPath}
-                  alt={species.name}
-                  className="pixel-art absolute max-w-none pointer-events-none select-none"
-                  style={{
-                    width: `${(currentFrame.sheetWidth || newConfig.sheetWidth) * pixelScale}px`,
-                    height: `${(currentFrame.sheetHeight || newConfig.sheetHeight) * pixelScale}px`,
-                    left: `-${currentFrame.x * pixelScale}px`,
-                    top: `-${currentFrame.y * pixelScale}px`,
-                    imageRendering: 'pixelated',
-                    filter: lcdMode
-                      ? 'grayscale(100%) contrast(150%) brightness(0.65)'
-                      : species.spriteFilter || undefined,
-                  }}
-                />
-              </div>
+              <PixelSpriteCanvas
+                sheetSrc={currentFrame.sheetPath || newConfig.sheetPath}
+                frame={currentFrame}
+                canvasW={maxFrameW}
+                canvasH={maxFrameH}
+                drawX={drawX}
+                drawY={drawY}
+                displayW={displayW}
+                displayH={displayH}
+                filter={spriteFilter}
+              />
             </motion.div>
           );
         })()}
